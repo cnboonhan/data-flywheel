@@ -16,6 +16,11 @@ DATASETS=(
 CHECKPOINTS=(
   # Example:
   # "model Qwen/Qwen3-VL-2B-Instruct * qwen3-vl-2b-instruct"
+  # GR00T-N1.7: official RoboDojo fine-tune (lives in the RoboDojo dataset repo)
+  "dataset RoboDojo-Benchmark/RoboDojo ckpt/RoboDojo/GR00T_N17/* robodojo-gr00t_n17"
+  # OpenWAM: benchmark fine-tunes
+  "model OpenWAM/OpenWAM-Alpha-Sim-RoboDojo * openwam-sim-robodojo"
+  "model OpenWAM/OpenWAM-Alpha-Sim-RoboTwin-Full * openwam-sim-robotwin-full"
 )
 
 ENTRIES=()
