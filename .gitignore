@@ -1,0 +1,7 @@
+# Downloaded data and weights stay out of git (see scripts/download_*.sh).
+datasets/*
+checkpoints/*
+!.gitkeep
+
+__pycache__/
+.DS_Store

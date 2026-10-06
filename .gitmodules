@@ -1,0 +1,15 @@
+[submodule "eval/system1/RoboDojo"]
+	path = eval/system1/RoboDojo
+	url = https://github.com/robodojo-benchmark/RoboDojo.git
+[submodule "eval/system2/IsaacLab-Arena"]
+	path = eval/system2/IsaacLab-Arena
+	url = https://github.com/isaac-sim/IsaacLab-Arena.git
+[submodule "eval/system1/RoboTwin"]
+	path = eval/system1/RoboTwin
+	url = https://github.com/RoboTwin-Platform/RoboTwin.git
+[submodule "sensors/yubi-hw"]
+	path = sensors/yubi-hw
+	url = https://github.com/Toyota/yubi-hw.git
+[submodule "sensors/yubi-sw"]
+	path = sensors/yubi-sw
+	url = https://github.com/airoa-org/yubi-sw.git
