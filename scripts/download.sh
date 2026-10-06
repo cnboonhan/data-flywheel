@@ -18,6 +18,8 @@ CHECKPOINTS=(
   # "model Qwen/Qwen3-VL-2B-Instruct * qwen3-vl-2b-instruct"
   # GR00T-N1.7: official RoboDojo fine-tune (lives in the RoboDojo dataset repo)
   "dataset RoboDojo-Benchmark/RoboDojo ckpt/RoboDojo/GR00T_N17/* robodojo-gr00t_n17"
+  # GR00T-N1.7 VLM backbone, loaded in full at startup (gated: accept terms + hf auth login)
+  "model nvidia/Cosmos-Reason2-2B * cosmos-reason2-2b"
   # OpenWAM: benchmark fine-tunes
   "model OpenWAM/OpenWAM-Alpha-Sim-RoboDojo * openwam-sim-robodojo"
   "model OpenWAM/OpenWAM-Alpha-Sim-RoboTwin-Full * openwam-sim-robotwin-full"
