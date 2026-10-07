@@ -31,22 +31,6 @@ if [[ $(hostname -s) != "${SERVICE_NODE%%.*}" ]]; then
   exec ssh "${tty[@]}" "$SERVICE_NODE" "bash -lc $(printf '%q' "cd $(printf '%q' "$here") && ./ctl.sh $(printf '%q ' "$@")")"
 fi
 
-# Caddy's basic_auth wants a bcrypt hash, never the plaintext password. bcrypt
-# salts differ on every run, so cache the hash (keyed by the password's sha256)
-# or Caddy's environment would change, and the container be recreated, on
-# every `up`.
-if [[ -z ${ADMIN_PASSWORD_HASH:-} ]]; then
-  mkdir -p "$STATE_DIR/caddy"
-  cache="$STATE_DIR/caddy/admin.hash"
-  key=$(printf '%s' "$ADMIN_PASSWORD" | sha256sum | cut -d' ' -f1)
-  if [[ ! -f $cache || $(cut -d' ' -f1 "$cache") != "$key" ]]; then
-    hash=$(docker run --rm caddy:2.11 caddy hash-password --plaintext "$ADMIN_PASSWORD")
-    (umask 077; printf '%s %s\n' "$key" "$hash" > "$cache")
-  fi
-  ADMIN_PASSWORD_HASH=$(cut -d' ' -f2 "$cache")
-  export ADMIN_PASSWORD_HASH
-fi
-
 compose=(docker compose --project-name flywheel)
 
 gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; }
@@ -66,6 +50,20 @@ bootstrap_gitea() {
 
   if [[ ! -s $STATE_DIR/act_runner/.runner && ! -s $STATE_DIR/act_runner/token ]]; then
     (umask 077; gitea actions generate-runner-token > "$STATE_DIR/act_runner/token")
+  fi
+
+  # Keycloak as an OIDC login source ("Sign in with Keycloak"; accounts auto-register).
+  # Gitea validates the discovery URL when adding it, so wait until Keycloak
+  # answers through Caddy (its realm import takes a while on first start).
+  local discovery="https://$SERVICE_HOST:$CADDY_PORT/auth/realms/flywheel/.well-known/openid-configuration"
+  if ! gitea admin auth list 2>/dev/null | grep -q 'keycloak'; then
+    for _ in $(seq 60); do
+      "${compose[@]}" exec -T gitea curl -fs --cacert /ca/root.crt "$discovery" >/dev/null 2>&1 && break
+      sleep 5
+    done
+    gitea admin auth add-oauth --name keycloak --provider openidConnect --key gitea --secret "$KC_GITEA_SECRET" \
+      --auto-discover-url "$discovery" \
+      --scopes openid --scopes profile --scopes email --group-claim-name groups --skip-local-2fa
   fi
 
   local api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
@@ -109,7 +107,7 @@ MLFLOW_TRACKING_USERNAME=$ADMIN_USER
 MLFLOW_TRACKING_PASSWORD=$ADMIN_PASSWORD
 MLFLOW_TRACKING_SERVER_CERT_PATH=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
 MLFLOW_DISABLE_AGENT_HINT=1
-S3_ENDPOINT_URL=https://$SERVICE_HOST:$S3_PORT
+S3_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT
 AWS_CA_BUNDLE=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
 AWS_ACCESS_KEY_ID=$ADMIN_USER
 AWS_SECRET_ACCESS_KEY=$ADMIN_PASSWORD
@@ -124,16 +122,69 @@ EOF
   done
 }
 
+# Add a person to every service under one username:
+#   ctl.sh user add <name> <email> [password]
+# Keycloak (SSO: Gitea, Grafana, FiftyOne, Rerun, Prometheus, Loki), MLflow
+# (own accounts, basic auth for API clients) and the S3 gateway (an access key
+# pair, printed once). Password defaults to a random one, printed.
+user_add() {
+  local name=${1:?name} email=${2:?email} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
+  local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh)
+  "${kc[@]}" config credentials --server http://localhost:8080/auth --realm master --user "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null
+  if "${kc[@]}" get users -r flywheel -q "username=$name" --fields username 2>/dev/null | grep -q "\"$name\""; then
+    echo "keycloak: $name exists"
+  else
+    "${kc[@]}" create users -r flywheel -s "username=$name" -s "email=$email" -s enabled=true -s emailVerified=true >/dev/null
+    "${kc[@]}" set-password -r flywheel --username "$name" --new-password "$pw"
+    local gid; gid=$("${kc[@]}" get groups -r flywheel -q search=users --fields id,name 2>/dev/null | python3 -c 'import sys,json; print([g["id"] for g in json.load(sys.stdin) if g["name"]=="users"][0])')
+    local uid; uid=$("${kc[@]}" get users -r flywheel -q "username=$name" --fields id | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["id"])')
+    "${kc[@]}" update "users/$uid/groups/$gid" -r flywheel -n >/dev/null
+    echo "keycloak: created $name (group users)"
+  fi
+
+  local api="http://localhost:5000/mlflow/api/2.0/mlflow" code
+  code=$(docker compose --project-name flywheel exec -T mlflow python -c "
+import json, urllib.request, base64, sys
+req = urllib.request.Request('$api/users/create', data=json.dumps({'username': '$name', 'password': '$pw'}).encode(), method='POST',
+    headers={'Content-Type': 'application/json', 'Host': '$SERVICE_HOST', 'Authorization': 'Basic ' + base64.b64encode(b'$ADMIN_USER:$ADMIN_PASSWORD').decode()})
+try: urllib.request.urlopen(req); print('created')
+except urllib.error.HTTPError as e: print('exists' if e.code in (400, 409) else f'error {e.code}: {e.read()[:200]}')")
+  echo "mlflow: $code (basic auth: $name / password)"
+
+  local secret; secret=$(openssl rand -hex 20)
+  if docker compose --project-name flywheel exec -T -e ROOT_ACCESS_KEY_ID="$ADMIN_USER" -e ROOT_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" versitygw \
+       versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 create-user -a "$name" -s "$secret" -r user >/dev/null 2>&1; then
+    echo "s3: access key $name, secret $secret   (endpoint https://s3.$SERVICE_HOST:$CADDY_PORT; shown once)"
+  else
+    echo "s3: $name exists (or create failed); secret unchanged"
+  fi
+  echo "password: $pw   (Keycloak + MLflow)"
+}
+
+if [[ $1 == user ]]; then
+  case ${2:-} in
+    add) user_add "${@:3}" ;;
+    *) echo "usage: ctl.sh user add <name> <email> [password]" >&2; exit 2 ;;
+  esac
+  exit
+fi
+
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner mongo fiftyone; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
     mkdir -p "$STATE_DIR/$d"
   done
-  # Gitea first so the runner finds its token when it starts. No --build:
-  # compose builds a missing image anyway, and with --build it recreates the
-  # container even when the rebuilt image is identical.
-  "${compose[@]}" up -d gitea
+  # Keycloak imports the realm (clients, groups, the admin user) on first start.
+  (umask 077; python3 -c '
+import os, re, sys
+t = open("keycloak/realm.json.tmpl").read()
+print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t))' > "$STATE_DIR/keycloak/import/flywheel-realm.json")
+  # Everything but the runner first: the bootstrap needs Gitea, Caddy and
+  # Keycloak up, and the runner needs the token the bootstrap writes. No
+  # --build: compose builds a missing image anyway, and with --build it
+  # recreates the container even when the rebuilt image is identical.
+  "${compose[@]}" up -d "${@:2}" $("${compose[@]}" config --services | grep -vx act_runner)
   bootstrap_gitea
   [[ -n ${SLURM_LOGIN_HOST:-} ]] && bootstrap_slurm
   exec "${compose[@]}" up -d "${@:2}"

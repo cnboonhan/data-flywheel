@@ -7,10 +7,37 @@
 	metrics
 }
 
-# Web UIs, one path per service. Nothing is stripped: each backend is
-# configured to serve from its prefix, so redirects and asset URLs stay right.
-# `localhost` is included so the cert also matches through an SSH tunnel.
-https://{$SERVICE_HOST}:8443, https://localhost:8443 {
+# Everything is on one port. Apps that can serve under a path are path-routed
+# on the base host; the three that can't (FiftyOne, Rerun, the S3 API) get a
+# subdomain of it. SERVICE_HOST is a name that resolves to the node from
+# anywhere (sslip.io); through an SSH tunnel, map it and the subdomains to
+# 127.0.0.1 in /etc/hosts.
+
+# Single sign-on for apps without a login of their own: Caddy asks
+# oauth2-proxy, which holds a session cookie for .SERVICE_HOST; a browser
+# without one is sent to Keycloak via /oauth2/start and comes back here.
+(sso) {
+	reverse_proxy oauth2-proxy:4180 {
+		method GET
+		rewrite /oauth2/auth
+		header_up X-Forwarded-Method {method}
+		header_up X-Forwarded-Uri {uri}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		@ok status 2xx
+		handle_response @ok {
+			request_header X-Auth-Request-User {rp.header.X-Auth-Request-User}
+			request_header X-Auth-Request-Email {rp.header.X-Auth-Request-Email}
+			request_header X-Auth-Request-Groups {rp.header.X-Auth-Request-Groups}
+		}
+		@denied status 401 403
+		handle_response @denied {
+			redir * https://{$SERVICE_HOST}:{$CADDY_PORT}/oauth2/start?rd={scheme}://{http.request.hostport}{uri} 302
+		}
+	}
+}
+
+https://{$SERVICE_HOST}:8443 {
 	log {
 		output stdout
 		format console
@@ -19,43 +46,51 @@ https://{$SERVICE_HOST}:8443, https://localhost:8443 {
 	redir /mlflow /mlflow/
 	redir /grafana /grafana/
 	redir /prometheus /prometheus/
-	redir /s3 /s3/
 	redir /gitea /gitea/
+	redir /auth /auth/
+	redir /s3 https://s3.{$SERVICE_HOST}:{$CADDY_PORT}/ui/
+	redir /fiftyone https://fiftyone.{$SERVICE_HOST}:{$CADDY_PORT}/
+	redir /rerun https://rerun.{$SERVICE_HOST}:{$CADDY_PORT}/
 
-	handle /mlflow/* {
-		reverse_proxy mlflow:5000
+	# Keycloak (own login UI) and the oauth2-proxy endpoints (sign-in, callback, sign-out).
+	handle /auth/* {
+		reverse_proxy keycloak:8080
 	}
+	handle /oauth2/* {
+		reverse_proxy oauth2-proxy:4180 {
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Native OIDC logins (Keycloak is an auth source in both).
 	handle /gitea/* {
 		reverse_proxy gitea:3000
 	}
 	handle /grafana/* {
 		reverse_proxy grafana:3000
 	}
-	# Prometheus and Loki have no login of their own, so the proxy asks for the
-	# admin one. Grafana reaches them on the compose network and is unaffected.
+	# MLflow keeps its own accounts: API clients (training jobs) authenticate
+	# with basic auth, which browser SSO can't replace. ctl.sh mirrors users.
+	handle /mlflow/* {
+		reverse_proxy mlflow:5000
+	}
+
+	# No login of their own: SSO at the proxy.
 	handle /prometheus/* {
-		basic_auth {
-			{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-		}
+		import sso
 		reverse_proxy prometheus:9090
 	}
-	# Loki's own API already lives under /loki/ (e.g. /loki/api/v1/push).
 	handle /loki/* {
-		basic_auth {
-			{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-		}
+		import sso
 		reverse_proxy loki:3100
 	}
-	handle /s3/* {
-		reverse_proxy versitygw:7071
-	}
-	# The CA root, so clients can fetch it before they can verify anything.
+
 	handle /ca.crt {
 		root * /data/caddy/pki/authorities/local
 		rewrite * /root.crt
 		file_server
 	}
-
 	handle {
 		root * /srv
 		templates
@@ -63,31 +98,27 @@ https://{$SERVICE_HOST}:8443, https://localhost:8443 {
 	}
 }
 
-# S3 API. SigV4 signs the request path, so this gets its own port instead of a prefix.
-https://{$SERVICE_HOST}:8444, https://localhost:8444 {
-	reverse_proxy versitygw:7070
-}
-
-# FiftyOne App. It redirects any sub-path to /, so it gets its own port; it has
-# no login of its own.
-https://{$SERVICE_HOST}:8445, https://localhost:8445 {
-	basic_auth {
-		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-	}
+# FiftyOne App: redirects every sub-path to /, hence a subdomain.
+https://fiftyone.{$SERVICE_HOST}:8443 {
+	import sso
 	reverse_proxy fiftyone:5151
 }
 
-# Rerun web viewer, plus the episode recordings it opens (?url=https://<host>:8446/data/<dataset>/<episode>.rrd).
-# Same origin, so the browser's login covers both. Rerun has no login of its own.
-https://{$SERVICE_HOST}:8446, https://localhost:8446 {
-	basic_auth {
-		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-	}
+# Rerun web viewer plus the episode recordings it opens (?url=https://rerun.<host>:8443/data/<dataset>/<episode>.rrd).
+https://rerun.{$SERVICE_HOST}:8443 {
+	import sso
 	handle_path /data/* {
 		root * /rerun
 		file_server
 	}
 	reverse_proxy rerun:9090
+}
+
+# S3 API and the gateway's web UI (under /ui). SigV4 signs the request path,
+# so no prefix and no SSO here: clients hold access keys, which ctl.sh issues
+# per user; the UI logs in with those keys.
+https://s3.{$SERVICE_HOST}:8443 {
+	reverse_proxy versitygw:7070
 }
 
 # Prometheus scrape endpoint; plain HTTP, reachable only on the compose network.

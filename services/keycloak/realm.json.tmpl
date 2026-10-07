@@ -1,0 +1,83 @@
+{
+  "realm": "flywheel",
+  "enabled": true,
+  "displayName": "Data Flywheel",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      {"name": "admin", "description": "Administrator everywhere"},
+      {"name": "user", "description": "Regular user"}
+    ]
+  },
+  "groups": [
+    {"name": "admins", "realmRoles": ["admin", "user"]},
+    {"name": "users", "realmRoles": ["user"]}
+  ],
+  "users": [
+    {
+      "username": "${ADMIN_USER}",
+      "email": "${ADMIN_USER}@flywheel.local",
+      "firstName": "Flywheel",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "${ADMIN_PASSWORD}", "temporary": false}],
+      "groups": ["/admins"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "gitea",
+      "name": "Gitea",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${KC_GITEA_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://${SERVICE_HOST}:${CADDY_PORT}/gitea/user/oauth2/keycloak/callback"],
+      "webOrigins": ["https://${SERVICE_HOST}:${CADDY_PORT}"],
+      "protocolMappers": [
+        {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
+         "config": {"claim.name": "groups", "full.path": "false", "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"}}
+      ]
+    },
+    {
+      "clientId": "grafana",
+      "name": "Grafana",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${KC_GRAFANA_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://${SERVICE_HOST}:${CADDY_PORT}/grafana/login/generic_oauth"],
+      "webOrigins": ["https://${SERVICE_HOST}:${CADDY_PORT}"],
+      "protocolMappers": [
+        {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
+         "config": {"claim.name": "groups", "full.path": "false", "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"}}
+      ]
+    },
+    {
+      "clientId": "oauth2-proxy",
+      "name": "Proxy login for FiftyOne, Rerun, Prometheus, Loki",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${KC_OAUTH2_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://${SERVICE_HOST}:${CADDY_PORT}/oauth2/callback"],
+      "webOrigins": ["https://${SERVICE_HOST}:${CADDY_PORT}"],
+      "protocolMappers": [
+        {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
+         "config": {"claim.name": "groups", "full.path": "false", "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"}},
+        {"name": "audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+         "config": {"included.client.audience": "oauth2-proxy", "id.token.claim": "true", "access.token.claim": "true"}}
+      ]
+    }
+  ]
+}

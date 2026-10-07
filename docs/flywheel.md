@@ -39,7 +39,7 @@ The Store column is the Compose stack behind Caddy (`https://<host>:8443`, one a
 | Versity S3 gateway | `raw`, `processed`, `mlflow` buckets | `:8444` API, `/s3/` UI |
 | Gitea + act_runner | pipelines repo (`admin/pipelines`) and the Actions runner that executes them | `/gitea/` |
 | MLflow | experiment tracking, run artifacts (checkpoints in `s3://mlflow`), model registry | `/mlflow/` |
-| FiftyOne + Mongo | browsing datasets as samples | `:8445` |
+| FiftyOne + Mongo | browsing datasets as samples | `fiftyone.<host>` |
 | Prometheus, Loki, Grafana | metrics and logs of the stack | `/prometheus/`, `/loki/`, `/grafana/` |
 
 Datasets become *browsable* only once an ingest pipeline has turned them into FiftyOne samples; see stage 3.
@@ -59,7 +59,7 @@ The `admin/pipelines` repo holds the workflows (`.gitea/workflows/`) and the scr
 | `episodes-lerobot`, `episodes-mcap` | raw (LeRobot v2/v3, ROS 2 mcap) → `processed/episodes/<dataset>/<episode>/` | The **canonical episode layout**: per-camera mp4s, `episode.json`, `signals.parquet`. One converter per raw format; everything downstream reads only this |
 | `ingest-episodes` | canonical episodes → `processed/rerun/*.rrd` + FiftyOne `episodes/<dataset>` | A Rerun recording per episode (cameras and signals on one timeline) and a grouped FiftyOne dataset: one group per episode, one slice per camera, `rerun_url` field |
 
-**Viewing an episode:** FiftyOne (`:8445`) for the catalogue — filter by task, robot, duration, gripper range, play any camera; its `rerun_url` field opens the same episode in **Rerun** (`:8446`, admin login) with all cameras and every joint/IMU/wrench signal scrubbing together. Both read the canonical layout, so a new raw format needs one converter and nothing else.
+**Viewing an episode:** FiftyOne (`fiftyone.<host>`) for the catalogue — filter by task, robot, duration, gripper range, play any camera; its `rerun_url` field opens the same episode in **Rerun** (`rerun.<host>`, same SSO session) with all cameras and every joint/IMU/wrench signal scrubbing together. Both read the canonical layout, so a new raw format needs one converter and nothing else.
 
 Triggers: `workflow_dispatch` (Actions tab or API) and `push` today. Reacting to uploads automatically is the one missing piece: the gateway can post bucket events to a webhook, and a small bridge turning those into `workflow_dispatch` calls would close it. Files `mv`'d into a bucket directory never raise events; a scheduled scan would catch those.
 
@@ -94,7 +94,7 @@ sbatch --export=ALL /tier1/htx_boonhan/services/pipelines/slurm/train-xpolicylab
 
 Or from Gitea: the `train-xpolicylab` workflow does the same over SSH and streams the Slurm log into the Actions log (the bridge is enabled by `SLURM_LOGIN_HOST` in `.env`; `ctl.sh up` sets up the key and secrets).
 
-Results: **https://localhost:8443/mlflow/** → experiment `xpolicylab` for curves and parameters, **Models** for the registry. First runs on Galaxea `Make_The_Bed` (51 episodes): ACT 30 epochs in 71 s, val loss 87.8 → 1.7; DP 3 epochs, val loss 0.047; both registered as version 1.
+Results: **https://<SERVICE_HOST>:8443/mlflow/** → experiment `xpolicylab` for curves and parameters, **Models** for the registry. First runs on Galaxea `Make_The_Bed` (51 episodes): ACT 30 epochs in 71 s, val loss 87.8 → 1.7; DP 3 epochs, val loss 0.047; both registered as version 1.
 
 `env_cfg=arx_x5` is a stand-in label: Galaxea's r1lite has the same 14-D layout (6 joints + 1 gripper per arm). A proper `r1lite` entry means editing `utils/robot/_robot_info.json` and adding `env_cfg/r1lite.yml` inside the submodules, i.e. a fork.
 
@@ -111,7 +111,7 @@ mv /tier1/htx_boonhan/datasets/galaxea-open-world-r1lite /tier1/htx_boonhan/serv
 # 2. processed: unpack one task archive through the S3 gateway, then make it browsable
 #    (Gitea → Actions → unpack-archives: archives=galaxea-open-world-r1lite/lerobot/Make_The_Bed_*.tar.gz)
 #    (Gitea → Actions → ingest-lerobot: name=galaxea-open-world-r1lite bucket=processed path=galaxea-open-world-r1lite/*)
-#    → FiftyOne https://localhost:8445, dataset galaxea-open-world-r1lite, 204 episode videos
+#    → FiftyOne https://fiftyone.<host>:8443, dataset galaxea-open-world-r1lite, 204 episode videos
 
 # 3. training format: xspark HDF5 (Slurm CPU job, ~0.4 s/episode)
 #    (Gitea → Actions → convert-xpolicylab: subsets=galaxea-open-world-r1lite/Make_The_Bed_*)
@@ -127,8 +127,8 @@ mv /tier1/htx_boonhan/datasets/galaxea-open-world-r1lite /tier1/htx_boonhan/serv
 | Need | Where |
 |---|---|
 | Start / stop / update the stack | `services/ctl.sh up` / `down` (runs compose on the service node over ssh) |
-| Logins | one admin login in `services/.env` (`ADMIN_USER` / `ADMIN_PASSWORD`) for every service |
-| Reach it from a laptop | ssh tunnel on 8443, 8444, 8445, then `https://localhost:8443/`; trust `/ca.crt` once |
+| Logins | Keycloak single sign-on (`/auth`); `services/ctl.sh user add <name> <email>` creates a person in Keycloak, MLflow and the S3 gateway; the admin login is `ADMIN_USER` / `ADMIN_PASSWORD` in `services/.env` |
+| Reach it from a laptop | ssh tunnel on 8443 plus `/etc/hosts` entries for `flywheel.<ip>.sslip.io` and its `fiftyone.`, `rerun.`, `s3.` subdomains → `https://flywheel.<ip>.sslip.io:8443/`; trust `/ca.crt` once |
 | State on disk | `/tier1/htx_boonhan/services/<service>/`; buckets under `versitygw/buckets/` |
 | Pipelines code | Gitea `admin/pipelines`; checkout for Slurm at `/tier1/htx_boonhan/services/pipelines` |
 | Slurm logs | `/tier1/htx_boonhan/services/slurm-logs/<job>-<id>.log` |

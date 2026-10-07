@@ -49,15 +49,26 @@ If a git operation deletes and recreates files under `services/` (switching to a
 
 ## Access
 
-Everything is HTTPS. Caddy runs a local CA (`local_certs`) and issues a certificate for `$SERVICE_HOST` and `localhost`.
+Everything is HTTPS on **one port, 8443**. Apps that can serve under a path are path-routed on `SERVICE_HOST`; the three that can't get a subdomain of it:
+
+| URL | Service |
+|---|---|
+| `https://<SERVICE_HOST>:8443/` | index, `/gitea`, `/mlflow`, `/grafana`, `/prometheus`, `/loki`, `/auth` (Keycloak), `/oauth2` (SSO), `/ca.crt` |
+| `https://fiftyone.<SERVICE_HOST>:8443/` | FiftyOne |
+| `https://rerun.<SERVICE_HOST>:8443/` | Rerun viewer, recordings under `/data/` |
+| `https://s3.<SERVICE_HOST>:8443/` | S3 API; the gateway's web UI at `/ui/` |
+
+`SERVICE_HOST` is `flywheel.<node IP>.sslip.io`: a public wildcard DNS name that resolves to the node from anywhere (the cluster has no DNS for subdomains of the node). Single sign-on needs one stable hostname, which is why `localhost` is no longer an alias. Caddy runs a local CA (`local_certs`) and issues the certificates.
 
 **From a machine that can reach the node directly:** open `https://<SERVICE_HOST>:8443/`.
 
-**From your laptop through the login node:** forward both ports, then use `localhost`.
+**From your laptop through the login node:** forward 8443 and point the names at the tunnel in `/etc/hosts` (wildcards aren't supported there, so list the four):
 
 ```bash
-ssh -L 8443:C2-GB300-02-C03:8443 -L 8444:C2-GB300-02-C03:8444 -L 8445:C2-GB300-02-C03:8445 -L 8446:C2-GB300-02-C03:8446 <login-node>
-# then open https://localhost:8443/
+ssh -L 8443:C2-GB300-02-C03:8443 <login-node>
+# /etc/hosts on the laptop:
+# 127.0.0.1 flywheel.10.80.81.30.sslip.io fiftyone.flywheel.10.80.81.30.sslip.io rerun.flywheel.10.80.81.30.sslip.io s3.flywheel.10.80.81.30.sslip.io
+# then open https://flywheel.10.80.81.30.sslip.io:8443/
 ```
 
 To make that permanent, add an entry to `~/.ssh/config` on your laptop. The `LocalForward` lines carry the same port mappings; everything else is whatever you already use to reach the login node.
@@ -169,7 +180,30 @@ Policy environments are uv venvs at `/tier1/htx_boonhan/services/envs/<policy, l
 
 `env_cfg=arx_x5` is a stand-in: Galaxea's r1lite has the same 14-D layout, and a proper `r1lite` entry needs edits inside the XPolicyLab and RoboDojo submodules (`utils/robot/_robot_info.json`, `env_cfg/r1lite.yml`), i.e. a fork.
 
-## Logins
+## Logins and single sign-on
+
+**Keycloak** (`/auth/`, realm `flywheel`) is the identity provider. One login covers:
+
+| Service | How |
+|---|---|
+| Gitea, Grafana | native OIDC ("Sign in with Keycloak"); accounts auto-register on first login, Grafana maps the `admins` group to Admin |
+| FiftyOne, Rerun, Prometheus, Loki | no login of their own: Caddy asks **oauth2-proxy** (`/oauth2/`), which holds a session cookie for `.SERVICE_HOST`; without one the browser is sent to Keycloak and back |
+| MLflow | its own accounts (basic auth): API clients such as training jobs can't do browser SSO. Same username and password, mirrored by `ctl.sh user add` |
+| S3 API and its web UI | access keys per user (SigV4), issued by `ctl.sh user add`; no browser session involved |
+
+The Keycloak admin console is at `/auth/admin/flywheel/console/` (the bootstrap admin is `ADMIN_USER`); `/oauth2/sign_out` ends the proxy session. Groups `admins` and `users`; oauth2-proxy admits both.
+
+**Adding a person everywhere:**
+
+```bash
+services/ctl.sh user add <name> <email> [password]
+```
+
+Creates the Keycloak user (group `users`), the MLflow account, and an S3 access key pair (printed once), with one password for Keycloak and MLflow (random if not given). Gitea and Grafana accounts appear on their first Keycloak login. Idempotent.
+
+The realm (clients, groups, mappers, the admin user) comes from `keycloak/realm.json.tmpl`, rendered by `ctl.sh up` with the secrets from `.env` and imported on Keycloak's first start only; later changes are made in the console (or wipe `$STATE_DIR/keycloak/db` to re-import).
+
+## Logins (reference)
 
 One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywhere by `docker-compose.yml`:
 
@@ -179,7 +213,7 @@ One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywher
 | MLflow | admin user of the basic-auth app; further users created by the admin |
 | Grafana | admin user |
 | S3 gateway (API and `/s3/` UI) | root account: access key = user, secret key = password |
-| Prometheus, Loki, FiftyOne, Rerun | HTTP basic auth at the proxy (`caddy/Caddyfile`); `ctl.sh` turns the password into the bcrypt hash Caddy wants |
+| Prometheus, Loki, FiftyOne, Rerun | single sign-on at the proxy (Keycloak via oauth2-proxy, see above) |
 
 Caveat when **changing** the password: the S3 gateway and the proxy pick it up on the next `ctl.sh up`, but MLflow and Grafana only read it the first time they create their admin user. After editing `.env`, also run:
 
