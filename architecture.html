@@ -71,7 +71,7 @@
   <h1>Data Flywheel</h1>
 
   <figure>
-    <svg viewBox="0 0 1570 566" role="img" aria-label="Data Flywheel pipeline, left to right: Build, Store (Raw), Processed, Train, Evaluate, with a feedback loop from Evaluate back to Build and Processed.">
+    <svg viewBox="0 0 1570 582" role="img" aria-label="Data Flywheel pipeline, left to right: Build, Store (Raw), Processed, Train, Evaluate, with a feedback loop from Evaluate back to Build and Processed.">
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
@@ -80,15 +80,15 @@
 
       <!-- Stages -->
       <text class="h" x="105" y="26" text-anchor="middle">Build</text>
-      <rect class="lane" x="10" y="44" width="190" height="416" rx="10"/>
+      <rect class="lane" x="10" y="44" width="190" height="432" rx="10"/>
       <text class="h" x="445" y="26" text-anchor="middle">Store (Raw)</text>
-      <rect class="lane" x="350" y="44" width="190" height="416" rx="10"/>
+      <rect class="lane" x="350" y="44" width="190" height="432" rx="10"/>
       <text class="h" x="785" y="26" text-anchor="middle">Processed</text>
-      <rect class="lane" x="690" y="44" width="190" height="416" rx="10"/>
+      <rect class="lane" x="690" y="44" width="190" height="432" rx="10"/>
       <text class="h" x="1125" y="26" text-anchor="middle">Train</text>
-      <rect class="lane" x="1030" y="44" width="190" height="416" rx="10"/>
+      <rect class="lane" x="1030" y="44" width="190" height="432" rx="10"/>
       <text class="h" x="1465" y="26" text-anchor="middle">Evaluate</text>
-      <rect class="lane" x="1370" y="44" width="190" height="416" rx="10"/>
+      <rect class="lane" x="1370" y="44" width="190" height="432" rx="10"/>
 
       <!-- 1 Build -->
       <rect class="box" x="15" y="60" width="180" height="44" rx="8"/>
@@ -104,19 +104,20 @@
       <a href="https://huggingface.co/datasets/simple-world-lab/HiFi-UMI-2K" target="_blank" rel="noopener"><text class="lnk" x="105" y="222" text-anchor="middle">HiFi-UMI-2K</text></a>
       <a href="https://huggingface.co/datasets/OpenGalaxea/Galaxea-Open-World-Dataset" target="_blank" rel="noopener"><text class="lnk" x="105" y="238" text-anchor="middle">Galaxea Open-World</text></a>
 
-      <rect class="box" x="15" y="268" width="180" height="44" rx="8"/>
-      <text class="t" x="105" y="287" text-anchor="middle">Sim Scenes</text>
-      <a href="https://developer.nvidia.com/isaac/lab-arena" target="_blank" rel="noopener"><text class="lnk" x="105" y="303" text-anchor="middle">Isaac Lab-Arena</text></a>
+      <rect class="box" x="15" y="268" width="180" height="60" rx="8"/>
+      <text class="t" x="105" y="286" text-anchor="middle">Sim Scenes</text>
+      <a href="https://developer.nvidia.com/isaac/lab-arena" target="_blank" rel="noopener"><text class="lnk" x="105" y="302" text-anchor="middle">Isaac Lab-Arena</text></a>
+      <a href="https://docs.nvidia.com/nurec/" target="_blank" rel="noopener"><text class="lnk" x="105" y="318" text-anchor="middle">NuRec</text></a>
 
-      <rect class="box" x="15" y="332" width="180" height="44" rx="8"/>
-      <text class="t" x="105" y="358" text-anchor="middle">Physical Scenes</text>
+      <rect class="box" x="15" y="348" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="374" text-anchor="middle">Physical Scenes</text>
       <!-- Sim Scenes ↔ Physical Scenes -->
-      <path class="e" d="M197 290 H216 V354 H197" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-      <text class="el" x="221" y="326">Sync Specs</text>
+      <path class="e" d="M197 290 H216 V370 H197" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+      <text class="el" x="221" y="334">Sync Specs</text>
 
-      <rect class="box" x="15" y="396" width="180" height="44" rx="8"/>
-      <text class="t" x="105" y="415" text-anchor="middle">Inference Compute</text>
-      <a href="https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/index.html" target="_blank" rel="noopener"><text class="lnk" x="105" y="431" text-anchor="middle">Triton Inference Server</text></a>
+      <rect class="box" x="15" y="412" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="431" text-anchor="middle">Inference Compute</text>
+      <a href="https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/index.html" target="_blank" rel="noopener"><text class="lnk" x="105" y="447" text-anchor="middle">Triton Inference Server</text></a>
 
       <!-- 2 Store -->
       <rect class="box" x="355" y="60" width="180" height="44" rx="8"/>
@@ -186,21 +187,21 @@
       <text class="el" x="955" y="157" text-anchor="middle">Experiments</text>
 
       <!-- Train → Store: trained model deployed to the registry (gap where it passes the feedback branch) -->
-      <path class="e" d="M1125 460 V482 H791 M779 482 H445 V314" marker-end="url(#arrow)"/>
-      <text class="el" x="615" y="475" text-anchor="middle">Deploy</text>
+      <path class="e" d="M1125 476 V498 H791 M779 498 H445 V314" marker-end="url(#arrow)"/>
+      <text class="el" x="615" y="491" text-anchor="middle">Deploy</text>
 
       <!-- Store → Build: model deployed from the registry to inference compute -->
-      <path class="e" d="M400 312 V418 H197" marker-end="url(#arrow)"/>
-      <text class="el" x="275" y="411" text-anchor="middle">Deploy</text>
+      <path class="e" d="M400 312 V434 H197" marker-end="url(#arrow)"/>
+      <text class="el" x="275" y="427" text-anchor="middle">Deploy</text>
 
       <!-- Evaluate → Store: evaluation logs written back to storage (below the columns, gap where it passes the feedback branch) -->
-      <path class="e" d="M1420 460 V508 H791 M779 508 H420 V462" marker-end="url(#arrow)"/>
-      <text class="el" x="1275" y="501" text-anchor="middle">Eval Logs</text>
+      <path class="e" d="M1420 476 V524 H791 M779 524 H420 V478" marker-end="url(#arrow)"/>
+      <text class="el" x="1275" y="517" text-anchor="middle">Eval Logs</text>
 
       <!-- Feedback loop: Evaluate → Build and Process -->
-      <path class="loop" d="M1465 460 V534 H105 V462" marker-end="url(#arrow)"/>
-      <path class="loop" d="M785 534 V462" marker-end="url(#arrow)"/>
-      <text class="looplabel" x="785" y="554" text-anchor="middle">Feedback Loop</text>
+      <path class="loop" d="M1465 476 V550 H105 V478" marker-end="url(#arrow)"/>
+      <path class="loop" d="M785 550 V478" marker-end="url(#arrow)"/>
+      <text class="looplabel" x="785" y="570" text-anchor="middle">Feedback Loop</text>
     </svg>
   </figure>
 </main>
