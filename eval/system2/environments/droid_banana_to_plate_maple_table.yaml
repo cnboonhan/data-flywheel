@@ -1,0 +1,60 @@
+env_name: droid_banana_to_plate_maple_table
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: maple_table
+  registry_name: maple_table_robolab
+  params: {}
+objects:
+- id: banana
+  registry_name: banana_ycb_robolab
+  params: {}
+- id: plate
+  registry_name: plate_small_vomp_robolab
+  params: {}
+- id: bagel_1
+  registry_name: bagel_00_objaverse_robolab
+  params: {}
+- id: bagel_2
+  registry_name: bagel_00_objaverse_robolab
+  params: {}
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+relations:
+- kind: is_anchor
+  subject: maple_table
+  params: {}
+- kind: 'on'
+  subject: banana
+  reference: maple_table
+  params: {}
+- kind: 'on'
+  subject: plate
+  reference: maple_table
+  params: {}
+- kind: 'on'
+  subject: bagel_1
+  reference: maple_table
+  params: {}
+- kind: 'on'
+  subject: bagel_2
+  reference: maple_table
+  params: {}
+- kind: 'on'
+  subject: bowl
+  reference: maple_table
+  params: {}
+task:
+  composition: atomic
+  description: Droid picks up the banana from the maple table and places it on the
+    plate.
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: banana
+      destination_location: plate
+      destination_object: plate
+      background_scene: maple_table

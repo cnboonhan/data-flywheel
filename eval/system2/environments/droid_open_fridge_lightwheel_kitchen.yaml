@@ -1,0 +1,28 @@
+env_name: droid_open_fridge_lightwheel_kitchen
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: kitchen_background
+  registry_name: lightwheel_robocasa_kitchen
+  params: {}
+objects: []
+object_references:
+- id: fridge
+  parent_id: kitchen_background
+  prim_path: fridge_main_group
+  object_type: articulation
+  params:
+    openable_joint_name: fridge_door_joint
+relations:
+- kind: is_anchor
+  subject: fridge
+  params: {}
+task:
+  composition: atomic
+  description: Droid opens the fridge door in a Lightwheel kitchen.
+  subtasks:
+  - kind: OpenDoorTask
+    params:
+      openable_object: fridge
