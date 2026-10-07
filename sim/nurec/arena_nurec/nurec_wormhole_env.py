@@ -29,7 +29,7 @@ SCENE_DIR = ROOT / "datasets" / "nurec-nova_carter-wormhole" / "nova_carter-worm
 
 def _latest_export(run_glob: str) -> str:
     """Newest 3DGRUT export matching sim/nurec/runs/<run_glob>, or "" if none has been trained yet."""
-    hits = sorted((ROOT / "sim" / "nurec" / "runs").glob(f"{run_glob}/*/export_last_lightfield.usdz"))
+    hits = sorted((ROOT / "sim" / "nurec" / "runs").glob(f"{run_glob}/*/export_last_lightfield.usdz"), key=lambda p: p.stat().st_mtime)
     return str(hits[-1]) if hits else ""
 
 

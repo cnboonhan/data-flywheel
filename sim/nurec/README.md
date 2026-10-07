@@ -57,7 +57,14 @@ bash sim/nurec/train.sh datasets/nurec-zh_lounge/zh_lounge/colmap zh_lounge
 
 Runs land in `sim/nurec/runs/<name>/` (gitignored). The `zh_lounge` entry in `scripts/download.sh` is the test case: NVIDIA's 374 photos + COLMAP poses of an office lounge, plus their own reconstruction in `usd/` to compare against.
 
-**Result (2026-10-07, RTX 5090 Laptop):** `zh_lounge`, 7k iterations (`n_iterations=7000`), ~5 min including the first-run kernel compile; 1M Gaussians (the MCMC cap); held-out mean PSNR 24.9 dB, SSIM 0.89, LPIPS 0.39 over 47 views; `export_last_lightfield.usdz` of 236 MB with one `ParticleField3DGaussianSplat` prim. The full 30k run is the default and should land a few dB higher.
+**Results (2026-10-07, RTX 5090 Laptop, `zh_lounge`, 47 held-out views, 1M Gaussians = the MCMC cap):**
+
+| Run | Iterations | Wall time | PSNR | SSIM | LPIPS |
+|---|---|---|---|---|---|
+| `zh_lounge_fast` (`n_iterations=7000`) | 7k | ~5 min incl. first-run kernel compile | 24.9 dB | 0.89 | 0.39 |
+| `zh_lounge` (default) | 30k | 31 min | 27.2 dB | 0.92 | 0.34 |
+
+Both export a 236 MB `export_last_lightfield.usdz` with one `ParticleField3DGaussianSplat` prim; both load in Arena (`--background nurec_zh_lounge_ours`).
 
 The export is **Y-up** (COLMAP convention) with no authored extent, while Isaac Sim stages are Z-up; NVIDIA's reference `usd/zh_lounge.usda` applies a rotation to level it. In Arena, give the background an `initial_pose` that rotates +90° about X (quaternion xyzw `(0.7071, 0, 0, 0.7071)`), then nudge the height. The mono workflow gives no collision mesh, so add proxies by hand.
 
