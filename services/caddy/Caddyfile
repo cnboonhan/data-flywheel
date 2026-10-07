@@ -20,9 +20,13 @@ https://{$SERVICE_HOST}:8443, https://localhost:8443 {
 	redir /grafana /grafana/
 	redir /prometheus /prometheus/
 	redir /s3 /s3/
+	redir /gitea /gitea/
 
 	handle /mlflow/* {
 		reverse_proxy mlflow:5000
+	}
+	handle /gitea/* {
+		reverse_proxy gitea:3000
 	}
 	handle /grafana/* {
 		reverse_proxy grafana:3000

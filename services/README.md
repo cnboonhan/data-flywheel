@@ -4,6 +4,7 @@ The **Store** column of the [architecture diagram](../architecture.html), as a D
 
 | Path | Service | Image |
 |---|---|---|
+| `/gitea` | Git hosting and Actions (CI/CD over the datasets) | `gitea/gitea`, `gitea/act_runner` |
 | `/mlflow` | Model registry, experiment tracking | `ghcr.io/mlflow/mlflow` |
 | `/grafana` | Dashboards (Prometheus and Loki pre-provisioned) | `grafana/grafana` |
 | `/prometheus` | Metrics | `prom/prometheus` |
@@ -87,12 +88,29 @@ ssh -fN flywheel      # tunnel in the background
 
 The S3 web UI at `/s3/` runs in the browser and calls the S3 API on port 8444 directly. Its login page offers both `https://localhost:8444` (through the tunnel) and `https://<SERVICE_HOST>:8444` (direct); pick the one your browser can reach. If you haven't trusted the CA, open `https://localhost:8444/health` once and accept the certificate, because the UI's background requests can't show that prompt.
 
+## Gitea and Actions
+
+Gitea is the home of dataset pipelines: code lives in repos, and Gitea Actions (GitHub Actions-compatible workflows under `.gitea/workflows/`) runs them. `ctl.sh up` bootstraps it on first run:
+
+- creates the admin user from `ADMIN_USER` / `ADMIN_PASSWORD`;
+- generates a runner registration token into `$STATE_DIR/act_runner/token` and registers the `act_runner` container (name `$SERVICE_NODE`, labels `ubuntu-latest` and `python`);
+- creates the private repo `admin/pipelines` with the secrets `S3_ACCESS_KEY` / `S3_SECRET_KEY` and the example workflow `gitea/examples/process-raw.yml`.
+
+Jobs run as sibling containers through the node's Docker socket (`act_runner/config.yaml`). They join the compose network, so `S3_ENDPOINT_URL=http://versitygw:7070` and `AWS_DEFAULT_REGION` are preset in every job; the example lists the `raw` bucket with boto3 and writes a manifest into `processed`. Clone over HTTPS (SSH is disabled):
+
+```bash
+git -c http.sslCAInfo=flywheel-ca.crt clone https://<SERVICE_HOST>:8443/gitea/admin/pipelines.git
+```
+
+Reacting to new data: there is no event wiring yet. Workflows trigger on `push`, `schedule` (cron, e.g. poll the bucket) and `workflow_dispatch` (API or the Run button). The S3 gateway can post bucket events to a webhook (`--event-webhook-url`), so a small bridge that turns those into `workflow_dispatch` calls would make uploads trigger runs.
+
 ## Logins
 
 One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywhere by `docker-compose.yml`:
 
 | Service | How the admin login is used |
 |---|---|
+| Gitea | admin user; registration is off, the admin creates accounts |
 | MLflow | admin user of the basic-auth app; further users created by the admin |
 | Grafana | admin user |
 | S3 gateway (API and `/s3/` UI) | root account: access key = user, secret key = password |
@@ -133,7 +151,9 @@ Each service keeps its state under `$STATE_DIR/<service>` (default `/tier1/htx_b
 ```
 caddy/        CA and certificates (data/caddy/pki), config
 versitygw/    buckets/ (objects), meta/ (object metadata sidecar), iam/ (users)
-mlflow/       mlflow.db (sqlite), artifacts/
+mlflow/       mlflow.db (sqlite), basic_auth.db, artifacts/
+gitea/        data/ (repos, sqlite db, LFS), config/app.ini
+act_runner/   .runner (registration), token, cache/
 prometheus/   TSDB
 loki/         chunks, index, compactor
 grafana/      grafana.db, plugins

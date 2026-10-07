@@ -1,0 +1,32 @@
+# Example pipeline: list the raw bucket and write a manifest into processed.
+# Lives at .gitea/workflows/process-raw.yml in the `pipelines` repo. Runs on
+# push and on demand; `workflow_dispatch` is also what an S3-event bridge would
+# call to react to new uploads.
+name: process-raw
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: "Prefix in the raw bucket to process (empty = everything)"
+        default: ""
+
+jobs:
+  manifest:
+    runs-on: python
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+      PREFIX: ${{ inputs.prefix }}
+    steps:
+      - run: pip -q install boto3
+      - run: |
+          python - <<'EOF'
+          import os, json, boto3
+          s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"])
+          prefix = os.environ.get("PREFIX", "")
+          pages = s3.get_paginator("list_objects_v2").paginate(Bucket="raw", Prefix=prefix)
+          objs = [{"key": o["Key"], "size": o["Size"]} for p in pages for o in p.get("Contents", [])]
+          print(f"raw/{prefix}: {len(objs)} objects, {sum(o['size'] for o in objs)/1e9:.1f} GB")
+          s3.put_object(Bucket="processed", Key="manifests/raw.json", Body=json.dumps(objs).encode())
+          EOF

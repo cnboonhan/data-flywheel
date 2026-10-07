@@ -47,17 +47,54 @@ if [[ -z ${ADMIN_PASSWORD_HASH:-} ]]; then
   export ADMIN_PASSWORD_HASH
 fi
 
-compose=(docker compose --project-name flywheel "$@")
+compose=(docker compose --project-name flywheel)
 
-# `up` needs the state directories to exist with the right owner before the
-# bind mounts are created, otherwise dockerd makes them as root.
+gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; }
+
+# First-run setup Gitea can't take from env: the admin user, the runner's
+# registration token, and the `pipelines` repo with the example workflow.
+bootstrap_gitea() {
+  for _ in $(seq 30); do
+    "${compose[@]}" exec -T gitea curl -fs http://localhost:3000/gitea/api/healthz >/dev/null 2>&1 && break
+    sleep 2
+  done
+
+  if ! gitea admin user list --admin 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "$ADMIN_USER"; then
+    gitea admin user create --admin --username "$ADMIN_USER" --password "$ADMIN_PASSWORD" \
+      --email "$ADMIN_USER@flywheel.local" --must-change-password=false
+  fi
+
+  if [[ ! -s $STATE_DIR/act_runner/.runner && ! -s $STATE_DIR/act_runner/token ]]; then
+    (umask 077; gitea actions generate-runner-token > "$STATE_DIR/act_runner/token")
+  fi
+
+  local api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  if ! "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines" >/dev/null 2>&1; then
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
+      -d '{"name":"pipelines","private":true,"auto_init":true,"default_branch":"main","description":"Dataset processing and mixing pipelines (Gitea Actions)"}' \
+      "$api/user/repos" >/dev/null
+    for s in S3_ACCESS_KEY:$ADMIN_USER S3_SECRET_KEY:$ADMIN_PASSWORD; do
+      "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+        -d "{\"data\":\"${s#*:}\"}" "$api/repos/$ADMIN_USER/pipelines/actions/secrets/${s%%:*}" >/dev/null
+    done
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
+      -d "{\"content\":\"$(base64 -w0 gitea/examples/process-raw.yml)\",\"message\":\"Add process-raw example workflow\"}" \
+      "$api/repos/$ADMIN_USER/pipelines/contents/.gitea/workflows/process-raw.yml" >/dev/null
+  fi
+}
+
 if [[ $1 == up ]]; then
-  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana; do
+  # The state directories must exist with the right owner before the bind
+  # mounts are created, otherwise dockerd makes them as root.
+  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner; do
     mkdir -p "$STATE_DIR/$d"
   done
-  # No --build: compose builds a missing image anyway, and with --build it
-  # recreates the container even when the rebuilt image is identical.
-  compose=(docker compose --project-name flywheel up -d "${@:2}")
+  # Gitea first so the runner finds its token when it starts. No --build:
+  # compose builds a missing image anyway, and with --build it recreates the
+  # container even when the rebuilt image is identical.
+  "${compose[@]}" up -d gitea
+  bootstrap_gitea
+  exec "${compose[@]}" up -d "${@:2}"
 fi
 
-exec "${compose[@]}"
+exec "${compose[@]}" "$@"

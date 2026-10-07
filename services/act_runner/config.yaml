@@ -1,0 +1,29 @@
+# act_runner config. Runs jobs as sibling containers through the node's Docker
+# socket; they join the compose network so they reach the S3 gateway at
+# http://versitygw:7070 without TLS or the public hostname.
+log:
+  level: info
+
+runner:
+  file: .runner
+  capacity: 2
+  timeout: 12h          # dataset jobs are long
+  fetch_interval: 2s
+  envs:
+    S3_ENDPOINT_URL: http://versitygw:7070
+    AWS_DEFAULT_REGION: us-east-1
+  labels:
+    - "ubuntu-latest:docker://docker.gitea.com/runner-images:ubuntu-latest"
+    - "python:docker://python:3.12-slim"
+
+cache:
+  enabled: true
+  dir: /data/cache
+  host: act_runner    # how job containers reach the cache server (compose service name)
+  port: 0
+
+container:
+  network: flywheel_default
+  privileged: false
+  workdir_parent: workspace
+  force_pull: false

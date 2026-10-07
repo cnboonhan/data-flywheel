@@ -19,3 +19,8 @@ scrape_configs:
     metrics_path: /grafana/metrics
     static_configs:
       - targets: [grafana:3000]
+
+  - job_name: gitea
+    metrics_path: /gitea/metrics
+    static_configs:
+      - targets: [gitea:3000]

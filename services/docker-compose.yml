@@ -27,7 +27,7 @@ services:
       - ./caddy/site:/srv:ro
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
-    depends_on: [mlflow, grafana, prometheus, loki, versitygw]
+    depends_on: [mlflow, grafana, prometheus, loki, versitygw, gitea]
 
   versitygw:
     <<: *common
@@ -116,3 +116,58 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ${STATE_DIR}/grafana:/var/lib/grafana
     depends_on: [prometheus, loki]
+
+  gitea:
+    <<: *common
+    image: gitea/gitea:1.25-rootless
+    environment:
+      USER: git   # our uid has no passwd entry; Gitea checks the name against RUN_USER (git)
+      GITEA__server__ROOT_URL: https://${SERVICE_HOST}:${CADDY_PORT:-8443}/gitea/
+      GITEA__server__DOMAIN: ${SERVICE_HOST}
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__USE_SUB_URL_PATH: "true"   # serve under /gitea/ itself; Caddy strips nothing
+      GITEA__server__LOCAL_ROOT_URL: http://localhost:3000/gitea/   # what git hooks call back; must carry the sub-path too
+      GITEA__server__DISABLE_SSH: "true"      # clone/push over HTTPS
+      GITEA__server__OFFLINE_MODE: "true"
+      GITEA__server__LFS_START_SERVER: "true"
+      GITEA__security__INSTALL_LOCK: "true"   # skip the web installer; everything is configured here
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /var/lib/gitea/data/gitea.db
+      GITEA__actions__ENABLED: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__REQUIRE_SIGNIN_VIEW: "true"
+      GITEA__repository__DEFAULT_PRIVATE: private
+      GITEA__repository__ENABLE_PUSH_CREATE_USER: "true"
+      GITEA__webhook__ALLOWED_HOST_LIST: private,loopback
+      GITEA__metrics__ENABLED: "true"
+      GITEA__log__MODE: console
+    volumes:
+      - ${STATE_DIR}/gitea/data:/var/lib/gitea
+      - ${STATE_DIR}/gitea/config:/etc/gitea
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:3000/gitea/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Runs Gitea Actions jobs as sibling containers via the node's Docker socket.
+  # ctl.sh registers it: it generates the token with `gitea actions
+  # generate-runner-token` and writes it to ${STATE_DIR}/act_runner/token.
+  act_runner:
+    <<: *common
+    image: gitea/act_runner:0.2.13
+    group_add:
+      - "${DOCKER_GID:-983}"   # gid of /var/run/docker.sock on the node
+    environment:
+      HOME: /data
+      CONFIG_FILE: /config.yaml
+      GITEA_INSTANCE_URL: http://gitea:3000/gitea/
+      GITEA_RUNNER_REGISTRATION_TOKEN_FILE: /data/token
+      GITEA_RUNNER_NAME: ${SERVICE_NODE}
+    volumes:
+      - ./act_runner/config.yaml:/config.yaml:ro
+      - ${STATE_DIR}/act_runner:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitea:
+        condition: service_healthy
