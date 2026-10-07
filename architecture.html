@@ -127,13 +127,18 @@
       <text class="t" x="445" y="143" text-anchor="middle">Data Storage</text>
       <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener"><text class="lnk" x="445" y="159" text-anchor="middle">Versity S3 Gateway</text></a>
 
-      <rect class="box" x="360" y="188" width="170" height="44" rx="8"/>
-      <text class="t" x="445" y="207" text-anchor="middle">Model Registry</text>
-      <a href="https://mlflow.org/" target="_blank" rel="noopener"><text class="lnk" x="445" y="223" text-anchor="middle">MLflow</text></a>
+      <rect class="box" x="360" y="188" width="170" height="60" rx="8"/>
+      <text class="t" x="445" y="206" text-anchor="middle">Logging</text>
+      <a href="https://grafana.com/docs/grafana/latest/fundamentals/getting-started/first-dashboards/get-started-grafana-prometheus/" target="_blank" rel="noopener"><text class="lnk" x="445" y="222" text-anchor="middle">Prometheus</text></a>
+      <a href="https://grafana.com/oss/loki/" target="_blank" rel="noopener"><text class="lnk" x="445" y="238" text-anchor="middle">Loki</text></a>
+
+      <rect class="box" x="360" y="268" width="170" height="44" rx="8"/>
+      <text class="t" x="445" y="287" text-anchor="middle">Model Registry</text>
+      <a href="https://mlflow.org/" target="_blank" rel="noopener"><text class="lnk" x="445" y="303" text-anchor="middle">MLflow</text></a>
 
       <!-- Build → Store -->
       <path class="e" d="M200 244 H348" marker-end="url(#arrow)"/>
-      <text class="el" x="275" y="237" text-anchor="middle">Data Upload and Sync</text>
+      <text class="el" x="275" y="237" text-anchor="middle">Upload and Sync</text>
 
       <!-- 3 Process -->
       <rect class="box" x="700" y="60" width="170" height="44" rx="8"/>
@@ -180,8 +185,12 @@
       <text class="el" x="955" y="157" text-anchor="middle">Experiments</text>
 
       <!-- Train → Store: trained model deployed to the registry (gap where it passes the feedback branch) -->
-      <path class="e" d="M1125 460 V482 H791 M779 482 H445 V234" marker-end="url(#arrow)"/>
+      <path class="e" d="M1125 460 V482 H791 M779 482 H445 V314" marker-end="url(#arrow)"/>
       <text class="el" x="615" y="475" text-anchor="middle">Deploy</text>
+
+      <!-- Store → Build: model deployed from the registry to inference compute -->
+      <path class="e" d="M400 312 V418 H192" marker-end="url(#arrow)"/>
+      <text class="el" x="275" y="411" text-anchor="middle">Deploy</text>
 
       <!-- Feedback loop: Evaluate → Build and Process -->
       <path class="loop" d="M1465 460 V508 H105 V462" marker-end="url(#arrow)"/>
