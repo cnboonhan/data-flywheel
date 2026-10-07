@@ -9,3 +9,6 @@ __pycache__/
 
 # Store stack secrets (see services/.env.example).
 services/.env
+
+# 3DGRUT training runs (checkpoints, exports)
+sim/nurec/runs/

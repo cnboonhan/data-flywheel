@@ -1,4 +1,4 @@
-"""Register a `cliproxy` inference endpoint in IsaacLab-Arena (loaded via PYTHONPATH by arena_envgen.sh).
+"""Register a `cliproxy` inference endpoint in IsaacLab-Arena (loaded via PYTHONPATH by envgen.sh).
 
 Arena's endpoint presets are fixed, and its Streamlit GUI runs in a separate process, so the preset
 is added with an import hook: as soon as any process imports Arena's inference_backend module,

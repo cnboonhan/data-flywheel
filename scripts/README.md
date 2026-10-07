@@ -4,8 +4,8 @@
 |---|---|
 | `download.sh` | Lists of Hugging Face repos (`DATASETS=(...)`, `CHECKPOINTS=(...)`); runs the downloader |
 | `hf_download.py` | Downloader: checks access and size, lets you pick repos, resumes interrupted downloads |
-| `arena_envgen.sh` | Runs IsaacLab-Arena agentic environment generation through a local LLM proxy (see [`eval/system2`](../eval/system2/README.md)) |
-| `arena_cliproxy/` | `sitecustomize.py` that registers the `cliproxy` inference endpoint in Arena; loaded by `arena_envgen.sh` |
+
+IsaacLab-Arena tooling (environment generation, NuRec scenes) lives under [`sim/`](../sim/README.md).
 
 ## Download data and checkpoints
 

@@ -21,8 +21,9 @@ git -c url."https://github.com/".insteadOf=git@github.com: \
 | [`checkpoints/`](checkpoints/README.md) | Downloaded checkpoints (gitignored) |
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
-| [`scripts/`](scripts/README.md) | Data/checkpoint downloader, Arena environment generation |
+| [`scripts/`](scripts/README.md) | Data/checkpoint downloader |
 | [`services/`](services/README.md) | Store stack (S3 gateway, MLflow, Prometheus, Loki, Grafana) behind Caddy, as Docker Compose |
+| [`sim/`](sim/README.md) | Simulation tooling: NuRec real-to-sim scenes, IsaacLab-Arena environment generation |
 
 - **Download data and checkpoints:** see [`scripts/`](scripts/README.md#download-data-and-checkpoints).
 - **Evaluation:** see [`eval/`](eval/README.md).

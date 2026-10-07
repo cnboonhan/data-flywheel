@@ -11,6 +11,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATASETS=(
   "dataset OpenGalaxea/Galaxea-Open-World-Dataset * galaxea-open-world"
   "dataset simple-world-lab/HiFi-UMI-2K * hifi-umi-2k"
+  # NuRec sample scene (gated: accept terms + hf auth login). Conference room captured by a Nova Carter
+  # with the stereo workflow: splat USDZ + collision mesh + occupancy map. Skips raw_images.zip (18 GB).
+  "dataset nvidia/PhysicalAI-Robotics-NuRec nova_carter-wormhole/*.usdz,nova_carter-wormhole/occupancy_map.*,nova_carter-wormhole/training_trajectory* nurec-nova_carter-wormhole"
+  # NuRec mono-workflow test case: ~300 Nikon Z7 photos + COLMAP poses of an office lounge, with NVIDIA's own
+  # 3DGRUT result to compare against (see sim/nurec/README.md).
+  "dataset nvidia/PhysicalAI-Robotics-NuRec zh_lounge/* nurec-zh_lounge"
 )
 
 CHECKPOINTS=(
