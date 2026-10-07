@@ -51,5 +51,5 @@ XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_
 
 ## Git
 
-- Push goes over SSH (`remote.origin.pushurl`); fetch uses HTTPS.
+- Push goes over SSH on port 443, because port 22 is blocked from the cluster: `remote.origin.pushurl` is `ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`. Fetch uses HTTPS. On a fresh clone, set the pushurl with `git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`.
 - Commit only when asked.
