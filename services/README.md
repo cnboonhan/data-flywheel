@@ -110,7 +110,9 @@ Reacting to new data: there is no event wiring yet. Workflows trigger on `push`,
 
 [FiftyOne](https://github.com/voxel51/fiftyone) browses the datasets: videos, episodes, metadata, filters. The App is at `https://<SERVICE_HOST>:8445/` (or `https://localhost:8445/` through the tunnel) with the admin login. It shows what pipelines have *ingested* into its MongoDB (`mongo` service), and streams media from the bucket directories, which are mounted read-only at `/buckets` in the FiftyOne container and in every Actions job container (`act_runner/config.yaml`), so ingested filepaths resolve in both.
 
-`gitea/examples/ingest-hifi-umi.yml` is the first ingestion pipeline. HiFi-UMI-2K is LeRobot v3: each part has one mp4 per camera holding ~1 100 episodes as time ranges. A FiftyOne sample is one such mp4 (`chunk`, `part`, `camera` fields) with an `episodes` field of temporal detections (task text, frame range, episode index), and the saved view **episodes** turns those into one clip per episode per camera. Run it from the repo's Actions tab with a chunk glob; it skips videos already ingested.
+Ingest scripts live in `fiftyone/`, one per dataset format; the workflows in `gitea/examples/` call them. Jobs that run in the FiftyOne image can't use `actions/checkout` (no `node` there), so they fetch the repo archive from Gitea's API with a few lines of Python instead. `ctl.sh up` seeds both into the `pipelines` repo (`fiftyone/*.py`, `.gitea/workflows/*.yml`) once; from then on the repo's copies are what runs, so edit them there.
+
+- `fiftyone/ingest_lerobot.py` + `ingest-lerobot.yml`: LeRobot v3 (HiFi-UMI-2K). Each part has one mp4 per camera holding ~1 100 episodes as time ranges. A FiftyOne sample is one such mp4 (`chunk`, `part`, `camera` fields) with an `episodes` field of temporal detections (task text, frame range, episode index), and the saved view **episodes** turns those into one clip per episode per camera. Run it from the repo's Actions tab with the dataset name and a chunk glob; it skips videos already ingested.
 
 ## Logins
 

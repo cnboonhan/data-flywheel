@@ -78,12 +78,16 @@ bootstrap_gitea() {
         -d "{\"data\":\"${s#*:}\"}" "$api/repos/$ADMIN_USER/pipelines/actions/secrets/${s%%:*}" >/dev/null
     done
   fi
-  # Example workflows go in once; edit them in the repo afterwards.
-  for f in gitea/examples/*.yml; do
-    local path=".gitea/workflows/$(basename "$f")"
+  # Seed files go in once; edit them in the pipelines repo afterwards.
+  local f path
+  for f in gitea/examples/*.yml fiftyone/*.py; do
+    case $f in
+      gitea/examples/*) path=".gitea/workflows/$(basename "$f")" ;;
+      *) path="$f" ;;
+    esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
-      -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $(basename "$f" .yml) example workflow\"}" \
+      -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $path\"}" \
       "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null
   done
 }
