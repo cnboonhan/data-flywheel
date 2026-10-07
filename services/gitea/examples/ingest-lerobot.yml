@@ -1,16 +1,19 @@
-# Ingest a LeRobot v3 dataset from the raw bucket into FiftyOne, using
+# Ingest LeRobot datasets (v2 or v3) from a bucket into FiftyOne, using
 # fiftyone/ingest_lerobot.py from this repo. Lives at
 # .gitea/workflows/ingest-lerobot.yml in the `pipelines` repo.
 name: ingest-lerobot
 on:
   workflow_dispatch:
     inputs:
-      dataset:
-        description: "Dataset directory in the raw bucket"
+      name:
+        description: "FiftyOne dataset name"
         default: "HiFi-UMI-2K"
-      chunks:
-        description: "Glob of chunks to ingest (e.g. chunk-000* or * for all)"
-        default: "chunk-0000"
+      path:
+        description: "Glob under the bucket matching LeRobot roots (dirs with meta/info.json)"
+        default: "HiFi-UMI-2K/chunk-0000/part-*"
+      bucket:
+        description: "Bucket the path is in"
+        default: "raw"
 
 jobs:
   ingest:
@@ -38,4 +41,4 @@ jobs:
                       tar.extract(m, ".")
           EOF
       - run: pip -q install pyarrow pandas
-      - run: python fiftyone/ingest_lerobot.py --dataset "${{ inputs.dataset }}" --chunks "${{ inputs.chunks }}"
+      - run: python fiftyone/ingest_lerobot.py --name "${{ inputs.name }}" --root "/buckets/${{ inputs.bucket }}" --path "${{ inputs.path }}"

@@ -1,0 +1,39 @@
+# Unpack tar archives from raw into processed through the S3 gateway, using
+# fiftyone/unpack_archives.py from this repo. Galaxea ships one LeRobot v2
+# dataset per task as a tar.gz; after this, ingest-lerobot can read them from
+# the processed bucket with path "galaxea-open-world-r1lite/*".
+name: unpack-archives
+on:
+  workflow_dispatch:
+    inputs:
+      archives:
+        description: "Glob of archives under the raw bucket"
+        default: "galaxea-open-world-r1lite/lerobot/*.tar.gz"
+      dest:
+        description: "Prefix in the processed bucket"
+        default: "galaxea-open-world-r1lite"
+
+jobs:
+  unpack:
+    runs-on: python
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+    steps:
+      - name: checkout
+        env:
+          URL: ${{ github.api_url }}/repos/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
+          TOKEN: ${{ github.token }}
+        run: |
+          python - <<'EOF'
+          import io, os, tarfile, urllib.request
+          req = urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})
+          with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(req).read())) as tar:
+              top = tar.getnames()[0].split("/")[0]
+              for m in tar.getmembers():
+                  m.name = m.name[len(top) + 1:]
+                  if m.name:
+                      tar.extract(m, ".")
+          EOF
+      - run: pip -q install boto3
+      - run: python fiftyone/unpack_archives.py --archives "${{ inputs.archives }}" --dest "${{ inputs.dest }}"
