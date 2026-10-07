@@ -26,9 +26,21 @@ services/ctl.sh logs -f caddy
 services/ctl.sh down
 ```
 
-`ctl.sh` runs `docker compose` on `$SERVICE_NODE` (C2-GB300-02-C03 on the `raus_manual` partition) through `srun`. Containers belong to that node's dockerd with `restart: unless-stopped`, so they outlive the Slurm job. On any other machine, set `SERVICE_NODE` to its hostname and `ctl.sh` runs compose locally.
+`ctl.sh` is a thin wrapper: it exports `.env`, derives the bcrypt hash Caddy needs, creates the state directories, and runs `docker compose`. Run from the login node it re-runs itself on `$SERVICE_NODE` (C2-GB300-02-C03) over ssh; the repo and state are on `/tier1`, so paths match. Slurm isn't involved. Containers belong to the node's dockerd with `restart: unless-stopped`, so they keep running after the script returns and come back after a reboot. On any other machine, set `SERVICE_NODE` to its hostname and `ctl.sh` runs compose locally.
+
+Plain `docker compose` works too, on the node, with `.env` exported and `ADMIN_PASSWORD_HASH` set:
+
+```bash
+ssh C2-GB300-02-C03
+cd /tier1/htx_boonhan/workspaces/data-flywheel/services
+set -a; . ./.env; set +a
+export ADMIN_PASSWORD_HASH=$(docker run --rm caddy:2.11 caddy hash-password --plaintext "$ADMIN_PASSWORD")
+docker compose -p flywheel up -d
+```
 
 `ctl.sh up` picks up changes to `docker-compose.yml` and `.env`. The config files are bind-mounted, so after editing `caddy/Caddyfile`, `prometheus/prometheus.yml` or `loki/loki.yml` run `ctl.sh restart <service>`.
+
+After editing `mlflow/Dockerfile`, run `ctl.sh up --build`; a plain `up` only builds the image when it's missing.
 
 If a git operation deletes and recreates files under `services/` (switching to a branch without the directory, a rebase, `git stash`), the running containers keep the old, deleted inodes and start returning 404s or lose their config. Run `ctl.sh up --force-recreate` afterwards.
 
