@@ -77,16 +77,21 @@ bootstrap_gitea() {
       "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
         -d "{\"data\":\"${s#*:}\"}" "$api/repos/$ADMIN_USER/pipelines/actions/secrets/${s%%:*}" >/dev/null
     done
-    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
-      -d "{\"content\":\"$(base64 -w0 gitea/examples/process-raw.yml)\",\"message\":\"Add process-raw example workflow\"}" \
-      "$api/repos/$ADMIN_USER/pipelines/contents/.gitea/workflows/process-raw.yml" >/dev/null
   fi
+  # Example workflows go in once; edit them in the repo afterwards.
+  for f in gitea/examples/*.yml; do
+    local path=".gitea/workflows/$(basename "$f")"
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
+      -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $(basename "$f" .yml) example workflow\"}" \
+      "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null
+  done
 }
 
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner mongo fiftyone; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Gitea first so the runner finds its token when it starts. No --build:

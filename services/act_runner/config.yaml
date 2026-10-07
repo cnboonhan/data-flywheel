@@ -27,3 +27,9 @@ container:
   privileged: false
   workdir_parent: workspace
   force_pull: false
+  # Bucket directories, read-only, at the same path the FiftyOne container
+  # uses, so ingested filepaths resolve there. Must match STATE_DIR in .env;
+  # a bind mount is ignored unless its source is listed in valid_volumes.
+  options: -v /tier1/htx_boonhan/services/versitygw/buckets:/buckets:ro
+  valid_volumes:
+    - /tier1/htx_boonhan/services/versitygw/buckets

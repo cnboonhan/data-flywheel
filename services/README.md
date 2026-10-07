@@ -12,8 +12,9 @@ The **Store** column of the [architecture diagram](../architecture.html), as a D
 | `/s3` | S3 gateway web UI | `versity/versitygw` |
 | `/ca.crt` | Root certificate of the local CA | `caddy` |
 | port `8444` | S3 API | `versity/versitygw` |
+| port `8445` | FiftyOne App (dataset browser) | `voxel51/fiftyone`, `mongo` |
 
-The web UIs listen on **port 8443**. The S3 API gets its **own port (8444)** because SigV4 signs the request path, so it can't sit behind a prefix.
+The web UIs listen on **port 8443**. Two services get their **own port**: the S3 API (8444) because SigV4 signs the request path, so it can't sit behind a prefix, and FiftyOne (8445) because its App redirects every sub-path to `/`.
 
 All images are multi-arch (`linux/arm64` and `linux/amd64`), so the same files run on the GB300 node and on an Intel machine; nothing pins a platform.
 
@@ -54,7 +55,7 @@ Everything is HTTPS. Caddy runs a local CA (`local_certs`) and issues a certific
 **From your laptop through the login node:** forward both ports, then use `localhost`.
 
 ```bash
-ssh -L 8443:C2-GB300-02-C03:8443 -L 8444:C2-GB300-02-C03:8444 <login-node>
+ssh -L 8443:C2-GB300-02-C03:8443 -L 8444:C2-GB300-02-C03:8444 -L 8445:C2-GB300-02-C03:8445 <login-node>
 # then open https://localhost:8443/
 ```
 
@@ -66,6 +67,7 @@ Host flywheel
     User <your-user>
     LocalForward 8443 C2-GB300-02-C03:8443
     LocalForward 8444 C2-GB300-02-C03:8444
+    LocalForward 8445 C2-GB300-02-C03:8445
     ServerAliveInterval 30
     ExitOnForwardFailure yes
 ```
@@ -104,6 +106,12 @@ git -c http.sslCAInfo=flywheel-ca.crt clone https://<SERVICE_HOST>:8443/gitea/ad
 
 Reacting to new data: there is no event wiring yet. Workflows trigger on `push`, `schedule` (cron, e.g. poll the bucket) and `workflow_dispatch` (API or the Run button). The S3 gateway can post bucket events to a webhook (`--event-webhook-url`), so a small bridge that turns those into `workflow_dispatch` calls would make uploads trigger runs.
 
+## FiftyOne
+
+[FiftyOne](https://github.com/voxel51/fiftyone) browses the datasets: videos, episodes, metadata, filters. The App is at `https://<SERVICE_HOST>:8445/` (or `https://localhost:8445/` through the tunnel) with the admin login. It shows what pipelines have *ingested* into its MongoDB (`mongo` service), and streams media from the bucket directories, which are mounted read-only at `/buckets` in the FiftyOne container and in every Actions job container (`act_runner/config.yaml`), so ingested filepaths resolve in both.
+
+`gitea/examples/ingest-hifi-umi.yml` is the first ingestion pipeline. HiFi-UMI-2K is LeRobot v3: each part has one mp4 per camera holding ~1 100 episodes as time ranges. A FiftyOne sample is one such mp4 (`chunk`, `part`, `camera` fields) with an `episodes` field of temporal detections (task text, frame range, episode index), and the saved view **episodes** turns those into one clip per episode per camera. Run it from the repo's Actions tab with a chunk glob; it skips videos already ingested.
+
 ## Logins
 
 One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywhere by `docker-compose.yml`:
@@ -114,7 +122,7 @@ One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywher
 | MLflow | admin user of the basic-auth app; further users created by the admin |
 | Grafana | admin user |
 | S3 gateway (API and `/s3/` UI) | root account: access key = user, secret key = password |
-| Prometheus, Loki | HTTP basic auth at the proxy (`caddy/Caddyfile`); `ctl.sh` turns the password into the bcrypt hash Caddy wants |
+| Prometheus, Loki, FiftyOne | HTTP basic auth at the proxy (`caddy/Caddyfile`); `ctl.sh` turns the password into the bcrypt hash Caddy wants |
 
 Caveat when **changing** the password: the S3 gateway and the proxy pick it up on the next `ctl.sh up`, but MLflow and Grafana only read it the first time they create their admin user. After editing `.env`, also run:
 
@@ -154,6 +162,8 @@ versitygw/    buckets/ (objects), meta/ (object metadata sidecar), iam/ (users)
 mlflow/       mlflow.db (sqlite), basic_auth.db, artifacts/
 gitea/        data/ (repos, sqlite db, LFS), config/app.ini
 act_runner/   .runner (registration), token, cache/
+mongo/        FiftyOne's database (datasets, samples, saved views)
+fiftyone/     FiftyOne config and cache
 prometheus/   TSDB
 loki/         chunks, index, compactor
 grafana/      grafana.db, plugins

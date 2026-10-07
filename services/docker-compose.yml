@@ -16,10 +16,12 @@ services:
     ports:
       - "${CADDY_PORT:-8443}:8443"   # web UIs, path-routed: /mlflow, /grafana, /prometheus, /loki, /s3
       - "${S3_PORT:-8444}:8444"      # S3 API (SigV4 signs the path, so it can't live under a prefix)
+      - "${FIFTYONE_PORT:-8445}:8445" # FiftyOne App (redirects sub-paths to /)
     environment:
       SERVICE_HOST: ${SERVICE_HOST}
       CADDY_PORT: ${CADDY_PORT:-8443}
       S3_PORT: ${S3_PORT:-8444}
+      FIFTYONE_PORT: ${FIFTYONE_PORT:-8445}
       ADMIN_USER: ${ADMIN_USER}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}   # bcrypt; ctl.sh derives it from ADMIN_PASSWORD
     volumes:
@@ -171,3 +173,27 @@ services:
     depends_on:
       gitea:
         condition: service_healthy
+
+  mongo:
+    <<: *common
+    image: mongo:8
+    command: ["mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "4"]   # default cache is half the node's RAM
+    volumes:
+      - ${STATE_DIR}/mongo:/data/db
+
+  # FiftyOne App. Datasets are ingested by pipeline jobs into the same Mongo;
+  # media is read straight from the bucket directories, mounted at /buckets in
+  # both this container and the job containers so filepaths match.
+  fiftyone:
+    <<: *common
+    image: voxel51/fiftyone:latest
+    command: ["fiftyone", "app", "launch", "--remote", "--port", "5151", "--wait", "-1"]
+    environment:
+      HOME: /fiftyone
+      FIFTYONE_DATABASE_URI: mongodb://mongo:27017
+      FIFTYONE_DEFAULT_APP_ADDRESS: 0.0.0.0
+      FIFTYONE_DO_NOT_TRACK: "true"
+    volumes:
+      - ${STATE_DIR}/fiftyone:/fiftyone
+      - ${STATE_DIR}/versitygw/buckets:/buckets:ro
+    depends_on: [mongo]

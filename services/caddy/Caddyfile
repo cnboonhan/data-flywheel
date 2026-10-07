@@ -68,6 +68,15 @@ https://{$SERVICE_HOST}:8444, https://localhost:8444 {
 	reverse_proxy versitygw:7070
 }
 
+# FiftyOne App. It redirects any sub-path to /, so it gets its own port; it has
+# no login of its own.
+https://{$SERVICE_HOST}:8445, https://localhost:8445 {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+	}
+	reverse_proxy fiftyone:5151
+}
+
 # Prometheus scrape endpoint; plain HTTP, reachable only on the compose network.
 http://:9100 {
 	metrics
