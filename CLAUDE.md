@@ -8,6 +8,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - `scripts/download.sh`: the repo lists (`DATASETS=(...)`, `CHECKPOINTS=(...)`). `scripts/hf_download.py` is the downloader.
 - `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
+- `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy (`envgen.sh`, `cliproxy/` import hook).
 - `sim/nurec/`: NuRec real-to-sim pipeline (scripts, Arena hook, README). `sim/nurec/3dgrut` is the 3DGRUT trainer.
 - Everything under `eval/` and `sensors/`, plus `sim/nurec/3dgrut`, is an **upstream git submodule**.
 

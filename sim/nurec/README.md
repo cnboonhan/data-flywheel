@@ -34,7 +34,7 @@ Variants: `particle_spg-runtime.usdz` applies PPISP (learned camera ISP) through
 2. **Register it as a background.** `arena_nurec/nurec_wormhole_env.py` subclasses `LibraryBackground` with `usd_path` pointing at the USDZ and `object_min_z` for the drop check, and defines an environment (`cube_goal_pose`'s Franka + cube) that uses it. Arena loads the module through its `--external_environment_class_path` hook, so the submodule is not modified.
 3. **Run.** `bash sim/nurec/arena_smoke_test.sh` runs 60 zero-action steps headless and writes per-camera videos to `eval/system2/IsaacLab-Arena/outputs/<timestamp>/`. Add `--viz kit` for a GUI and fly the viewport camera to walk through the scene.
 
-To add your own scene: copy the background class, point `usd_path` at your USDZ, and add a `scripts/download.sh` entry if it is hosted. For the LLM environment generator (`scripts/arena_envgen.sh`), the background then appears in the `BACKGROUNDS` catalog under its registered name.
+To add your own scene: copy the background class, point `usd_path` at your USDZ, and add a `scripts/download.sh` entry if it is hosted. For the LLM environment generator (`sim/isaaclab_arena/envgen.sh`), the background then appears in the `BACKGROUNDS` catalog under its registered name.
 
 ## Reconstruct a scene with 3DGRUT
 

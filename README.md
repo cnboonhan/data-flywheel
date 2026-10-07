@@ -21,8 +21,8 @@ git -c url."https://github.com/".insteadOf=git@github.com: \
 | [`checkpoints/`](checkpoints/README.md) | Downloaded checkpoints (gitignored) |
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
-| [`sim/`](sim/README.md) | Building sim scenes from real spaces with NuRec |
-| [`scripts/`](scripts/README.md) | Data/checkpoint downloader, Arena environment generation |
+| [`sim/`](sim/README.md) | Simulation tooling: NuRec real-to-sim scenes, IsaacLab-Arena environment generation |
+| [`scripts/`](scripts/README.md) | Data/checkpoint downloader |
 
 - **Download data and checkpoints:** see [`scripts/`](scripts/README.md#download-data-and-checkpoints).
 - **Evaluation:** see [`eval/`](eval/README.md).
