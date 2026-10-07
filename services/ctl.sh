@@ -80,7 +80,7 @@ bootstrap_gitea() {
   fi
   # Seed files go in once; edit them in the pipelines repo afterwards.
   local f path
-  for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch; do
+  for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh; do
     case $f in
       gitea/examples/*) path=".gitea/workflows/$(basename "$f")" ;;
       *) path="$f" ;;
@@ -89,6 +89,38 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
       -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $path\"}" \
       "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null
+  done
+}
+
+# Let Actions jobs submit Slurm work: an SSH key for the runner, locked to the
+# slurm-submit forced command on SLURM_LOGIN_HOST, stored as repo secrets; and
+# the credentials Slurm jobs need, in a file only the submitting user reads.
+bootstrap_slurm() {
+  local dir="$STATE_DIR/act_runner/ssh" key api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  mkdir -p "$dir"
+  [[ -f $dir/id_ed25519 ]] || ssh-keygen -q -t ed25519 -N "" -C "flywheel-actions-runner" -f "$dir/id_ed25519"
+  key=$(cut -d' ' -f1,2 "$dir/id_ed25519.pub")
+  local line="command=\"$here/slurm/slurm-submit\",restrict $key flywheel-actions-runner"
+  mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+  grep -qF "$key" ~/.ssh/authorized_keys || echo "$line" >> ~/.ssh/authorized_keys
+  (umask 077; cat > "$STATE_DIR/slurm.env" <<EOF
+MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
+MLFLOW_TRACKING_USERNAME=$ADMIN_USER
+MLFLOW_TRACKING_PASSWORD=$ADMIN_PASSWORD
+MLFLOW_TRACKING_SERVER_CERT_PATH=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
+MLFLOW_DISABLE_AGENT_HINT=1
+S3_ENDPOINT_URL=https://$SERVICE_HOST:$S3_PORT
+AWS_CA_BUNDLE=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
+AWS_ACCESS_KEY_ID=$ADMIN_USER
+AWS_SECRET_ACCESS_KEY=$ADMIN_PASSWORD
+AWS_DEFAULT_REGION=${S3_REGION:-us-east-1}
+UV_CACHE_DIR=$STATE_DIR/uv-cache
+EOF
+  )
+  for s in "SLURM_SSH_KEY=$(cat "$dir/id_ed25519")" "SLURM_SSH_HOST=$USER@$SLURM_LOGIN_HOST"; do
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+      -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "${s#*=}")" \
+      "$api/repos/$ADMIN_USER/pipelines/actions/secrets/${s%%=*}" >/dev/null
   done
 }
 
@@ -103,6 +135,7 @@ if [[ $1 == up ]]; then
   # container even when the rebuilt image is identical.
   "${compose[@]}" up -d gitea
   bootstrap_gitea
+  [[ -n ${SLURM_LOGIN_HOST:-} ]] && bootstrap_slurm
   exec "${compose[@]}" up -d "${@:2}"
 fi
 

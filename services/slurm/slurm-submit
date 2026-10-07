@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Forced command for the Actions runner's SSH key (see authorized_keys entry
+# written by ctl.sh). The runner can only do what is listed here, with the
+# pipelines checkout and Slurm log directory as the only reachable paths.
+#
+#   sbatch <sha> <script.sbatch> [args...]   check out <sha> of the pipelines repo, submit slurm/<script>; prints the job id
+#   status <jobid>                           prints the job state (PENDING, RUNNING, COMPLETED, FAILED, ...)
+#   log <jobid> <offset>                     prints the job's log from byte <offset>
+#   cancel <jobid>
+set -euo pipefail
+# A forced-command session gets no login environment: load the slurm module
+# the way /etc/profile.d does, which sets PATH and the config-source variables.
+set +u; source /etc/profile.d/modules.sh 2>/dev/null || true; module load slurm 2>/dev/null || true; set -u   # modules init trips set -u
+export PATH="$PATH:/cm/local/apps/slurm/current/bin:/usr/local/bin:/usr/bin:/bin"
+PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
+LOG_DIR=${SLURM_LOG_DIR:-/tier1/htx_boonhan/services/slurm-logs}
+ENV_FILE=${SLURM_ENV_FILE:-/tier1/htx_boonhan/services/slurm.env}   # MLflow/S3 credentials for jobs, never in Gitea
+
+set -- ${SSH_ORIGINAL_COMMAND:-}
+cmd=${1:-}; shift || true
+jobid() { [[ ${1:-} =~ ^[0-9]+$ ]] || { echo "bad job id" >&2; exit 2; }; }
+
+case $cmd in
+  sbatch)
+    sha=${1:?sha}; script=${2:?script}; shift 2
+    [[ $sha =~ ^[0-9a-f]{7,40}$ && $script =~ ^[A-Za-z0-9._-]+\.sbatch$ ]] || { echo "bad sha or script name" >&2; exit 2; }
+    git -C "$PIPELINES_ROOT" fetch -q origin && git -C "$PIPELINES_ROOT" checkout -q "$sha"
+    [[ -f $PIPELINES_ROOT/slurm/$script ]] || { echo "no such script: slurm/$script" >&2; exit 2; }
+    set -a; [[ -f $ENV_FILE ]] && source "$ENV_FILE"; set +a
+    cd "$LOG_DIR"
+    sbatch --parsable --export=ALL,PIPELINES_ROOT="$PIPELINES_ROOT" "$PIPELINES_ROOT/slurm/$script" "$@"
+    ;;
+  status)
+    jobid "$1"
+    state=$(squeue -h -j "$1" -o %T 2>/dev/null || true)
+    [[ -n $state ]] || state=$(sacct -n -X -j "$1" -o State 2>/dev/null | head -1 | tr -d ' ')
+    echo "${state:-UNKNOWN}"
+    ;;
+  log)
+    jobid "$1"; off=${2:-0}; [[ $off =~ ^[0-9]+$ ]] || off=0
+    f=$(ls "$LOG_DIR"/*-"$1".log 2>/dev/null | head -1)
+    [[ -n $f ]] && tail -c +"$((off + 1))" "$f" || true
+    ;;
+  cancel)
+    jobid "$1"; scancel "$1"
+    ;;
+  *)
+    echo "slurm-submit: refusing '$cmd'" >&2; exit 2
+    ;;
+esac

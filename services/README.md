@@ -1,6 +1,6 @@
 # services
 
-The **Store** column of the [architecture diagram](../architecture.html), as a Docker Compose stack behind a Caddy reverse proxy.
+The **Store** column of the [architecture diagram](../architecture.html), as a Docker Compose stack behind a Caddy reverse proxy. For how a dataset travels through the whole loop, raw → processed → trained → registered, see [docs/flywheel.md](../docs/flywheel.md).
 
 | Path | Service | Image |
 |---|---|---|
@@ -133,6 +133,8 @@ sbatch --export="$EXP,S3_ENDPOINT_URL=https://$SERVICE_HOST:8444,AWS_CA_BUNDLE=<
 sbatch --export="$EXP" /tier1/htx_boonhan/services/pipelines/slurm/train-xpolicylab.sbatch ACT Galaxea Make_The_Bed_20250730_012 arx_x5 joint 0
 sbatch --export="$EXP" /tier1/htx_boonhan/services/pipelines/slurm/train-xpolicylab.sbatch DP  Galaxea Make_The_Bed_20250730_012 arx_x5 joint 0
 ```
+
+**From Gitea Actions:** the workflows `train-xpolicylab` and `convert-xpolicylab` submit these same scripts as Slurm jobs and stream the job log into the Actions log until it ends (`slurm/follow.sh`). They reach Slurm over SSH as you, with a dedicated key that `ctl.sh up` creates at `$STATE_DIR/act_runner/ssh/` and adds to `~/.ssh/authorized_keys` locked to the forced command `services/slurm/slurm-submit` (`restrict`, so no shell, no forwarding): it can only `sbatch` a script from the pipelines checkout at the commit being run, query a job's state, read its log, or cancel it. The private key and `user@SLURM_LOGIN_HOST` go into the pipelines repo as the Actions secrets `SLURM_SSH_KEY` / `SLURM_SSH_HOST`. Jobs get their MLflow/S3 credentials from `$STATE_DIR/slurm.env` (mode 600, written by `ctl.sh`), never from Gitea. Set `SLURM_LOGIN_HOST` in `.env` to enable all of this; leave it empty to disable.
 
 The Slurm scripts find the Python next to them through `PIPELINES_ROOT`, a checkout of the Gitea `pipelines` repo at `/tier1/htx_boonhan/services/pipelines` (sbatch copies the script itself into the spool dir). `ctl.sh up` seeds `xpolicylab/*.py` and `slurm/*.sbatch` into that repo once; `git pull` the checkout after changing them there.
 

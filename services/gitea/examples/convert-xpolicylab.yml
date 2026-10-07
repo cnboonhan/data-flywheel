@@ -1,0 +1,42 @@
+# Convert unpacked Galaxea task datasets into XPolicyLab xspark HDF5 under
+# processed/xpolicylab, as a Slurm CPU job submitted over SSH.
+name: convert-xpolicylab
+on:
+  workflow_dispatch:
+    inputs:
+      subsets:
+        description: "Glob of unpacked Galaxea task datasets under the processed bucket"
+        default: "galaxea-open-world-r1lite/*"
+      limit:
+        description: "Episodes per subset (0 = all)"
+        default: "0"
+      env_cfg:
+        description: "XPolicyLab env_cfg_type to file the data under"
+        default: "arx_x5"
+
+jobs:
+  slurm:
+    runs-on: ubuntu-latest
+    steps:
+      # Fetch the repo archive with the stdlib (actions/checkout needs a reachable
+      # clone URL; the runner's internal one isn't on the job's trust path).
+      - name: checkout
+        env:
+          URL: ${{ github.api_url }}/repos/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
+          TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'EOF'
+          import io, os, tarfile, urllib.request
+          req = urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})
+          with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(req).read())) as tar:
+              top = tar.getnames()[0].split("/")[0]
+              for m in tar.getmembers():
+                  m.name = m.name[len(top) + 1:]
+                  if m.name:
+                      tar.extract(m, ".")
+          EOF
+      - name: submit and follow
+        env:
+          SSH_KEY: ${{ secrets.SLURM_SSH_KEY }}
+          SSH_HOST: ${{ secrets.SLURM_SSH_HOST }}
+        run: bash slurm/follow.sh convert-galaxea-xspark.sbatch "${{ inputs.subsets }}" "${{ inputs.limit }}" "${{ inputs.env_cfg }}"
