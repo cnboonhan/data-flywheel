@@ -6,3 +6,6 @@ checkpoints/*
 
 __pycache__/
 .DS_Store
+
+# 3DGRUT training runs (checkpoints, exports)
+sim/nurec/runs/

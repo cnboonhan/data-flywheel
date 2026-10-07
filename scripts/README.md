@@ -6,8 +6,8 @@
 | `hf_download.py` | Downloader: checks access and size, lets you pick repos, resumes interrupted downloads |
 | `arena_envgen.sh` | Runs IsaacLab-Arena agentic environment generation through a local LLM proxy (see [`eval/system2`](../eval/system2/README.md)) |
 | `arena_cliproxy/` | `sitecustomize.py` that registers the `cliproxy` inference endpoint in Arena; loaded by `arena_envgen.sh` |
-| `arena_nurec.sh` | Smoke-tests a NuRec (Gaussian splat) scene inside Arena and records robot-camera videos (see [`sim/`](../sim/README.md)) |
-| `arena_nurec/` | External Arena environment: registers the downloaded NuRec room as a background and drops `cube_goal_pose`'s Franka + cube into it |
+
+NuRec reconstruction and Arena smoke-test scripts live in [`sim/nurec/`](../sim/nurec/README.md).
 
 ## Download data and checkpoints
 
