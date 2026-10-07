@@ -13,6 +13,7 @@ The **Store** column of the [architecture diagram](../architecture.html), as a D
 | `/ca.crt` | Root certificate of the local CA | `caddy` |
 | port `8444` | S3 API | `versity/versitygw` |
 | port `8445` | FiftyOne App (dataset browser) | `voxel51/fiftyone`, `mongo` |
+| port `8446` | Rerun web viewer + episode recordings | `rerun-sdk` (built in `rerun/Dockerfile`) |
 
 The web UIs listen on **port 8443**. Two services get their **own port**: the S3 API (8444) because SigV4 signs the request path, so it can't sit behind a prefix, and FiftyOne (8445) because its App redirects every sub-path to `/`.
 
@@ -55,7 +56,7 @@ Everything is HTTPS. Caddy runs a local CA (`local_certs`) and issues a certific
 **From your laptop through the login node:** forward both ports, then use `localhost`.
 
 ```bash
-ssh -L 8443:C2-GB300-02-C03:8443 -L 8444:C2-GB300-02-C03:8444 -L 8445:C2-GB300-02-C03:8445 <login-node>
+ssh -L 8443:C2-GB300-02-C03:8443 -L 8444:C2-GB300-02-C03:8444 -L 8445:C2-GB300-02-C03:8445 -L 8446:C2-GB300-02-C03:8446 <login-node>
 # then open https://localhost:8443/
 ```
 
@@ -68,6 +69,7 @@ Host flywheel
     LocalForward 8443 C2-GB300-02-C03:8443
     LocalForward 8444 C2-GB300-02-C03:8444
     LocalForward 8445 C2-GB300-02-C03:8445
+    LocalForward 8446 C2-GB300-02-C03:8446
     ServerAliveInterval 30
     ExitOnForwardFailure yes
 ```
@@ -105,6 +107,31 @@ git -c http.sslCAInfo=flywheel-ca.crt clone https://<SERVICE_HOST>:8443/gitea/ad
 ```
 
 Reacting to new data: there is no event wiring yet. Workflows trigger on `push`, `schedule` (cron, e.g. poll the bucket) and `workflow_dispatch` (API or the Run button). The S3 gateway can post bucket events to a webhook (`--event-webhook-url`), so a small bridge that turns those into `workflow_dispatch` calls would make uploads trigger runs.
+
+## Episodes: one layout, two viewers
+
+Raw datasets arrive in any format (LeRobot v2/v3, ROS 2 mcap, tar archives…), and nothing can show "an episode" until something interprets the format. So every format gets a converter into **one canonical layout** in the processed bucket, and the viewers read only that:
+
+```
+processed/episodes/<dataset>/<...>/<episode_id>/
+    <camera>.mp4        one per camera, frames on a common clock
+    episode.json        dataset, episode_id, source, format, robot, task, tasks, fps, frames, duration_s, cameras{...}
+    signals.parquet     long format: t (s), group ("observation.state.left_arm", "hdas.feedback_arm_left.position"…), index, value
+```
+
+| Converter (in `fiftyone/`) | Workflow | Handles |
+|---|---|---|
+| `episodes_from_lerobot.py` | `episodes-lerobot` | LeRobot v2 (per-episode mp4s uploaded as is) and v3 (episodes cut out of the per-camera mp4s with ffmpeg); signals from the parquet rows |
+| `episodes_from_mcap.py` | `episodes-mcap` | ROS 2 bags: `CompressedImage` topics → mp4, JointState/IMU/Wrench topics → signals |
+| `episodes.py` | | the layout and S3 writers the converters share |
+
+Then `ingest-episodes` (one workflow, any dataset):
+1. `episode_rrd.py` builds a **Rerun** recording per episode (`processed/rerun/<dataset>/<episode_id>.rrd`): the camera videos as video assets and every signal group as scalar series on one timeline, so you scrub cameras and joints together.
+2. `ingest_episodes.py` loads the episodes into a **grouped FiftyOne dataset** `episodes/<dataset>`: one group per episode, one slice per camera, fields from `episode.json`, a few signal summaries, and `rerun_url`.
+
+**Rerun** runs as its own service on **port 8446** behind the admin login (it has no login of its own); the recordings are served from the same origin at `/data/<dataset>/<episode_id>.rrd`, so the browser's login covers both. Open a recording with `https://localhost:8446/?url=https://localhost:8446/data/<dataset>/<episode_id>.rrd`, which is exactly the `rerun_url` field on each FiftyOne sample. Rerun also opens most raw robotics formats natively (`rerun --save out.rrd <bag.mcap>` or a LeRobot directory) for one-off inspection of data that hasn't been converted yet.
+
+The earlier per-format ingests (`ingest-lerobot`, `convert-mcap`) still exist; the canonical path supersedes them.
 
 ## FiftyOne
 
@@ -152,7 +179,7 @@ One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywher
 | MLflow | admin user of the basic-auth app; further users created by the admin |
 | Grafana | admin user |
 | S3 gateway (API and `/s3/` UI) | root account: access key = user, secret key = password |
-| Prometheus, Loki, FiftyOne | HTTP basic auth at the proxy (`caddy/Caddyfile`); `ctl.sh` turns the password into the bcrypt hash Caddy wants |
+| Prometheus, Loki, FiftyOne, Rerun | HTTP basic auth at the proxy (`caddy/Caddyfile`); `ctl.sh` turns the password into the bcrypt hash Caddy wants |
 
 Caveat when **changing** the password: the S3 gateway and the proxy pick it up on the next `ctl.sh up`, but MLflow and Grafana only read it the first time they create their admin user. After editing `.env`, also run:
 

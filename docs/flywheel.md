@@ -56,6 +56,10 @@ The `admin/pipelines` repo holds the workflows (`.gitea/workflows/`) and the scr
 | `ingest-lerobot` | LeRobot v2/v3 roots in any bucket → FiftyOne dataset | v3: one sample per camera video with episodes as temporal detections and an **episodes** clips view; v2: one sample per episode video |
 | `convert-xpolicylab` | `processed/<galaxea task>/` → `processed/xpolicylab/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5` | Galaxea LeRobot v2.1 → XPolicyLab xspark v1.0 (Slurm CPU job) |
 | `train-xpolicylab` | xspark → MLflow run + registered model | Slurm GPU job, stage 4 |
+| `episodes-lerobot`, `episodes-mcap` | raw (LeRobot v2/v3, ROS 2 mcap) → `processed/episodes/<dataset>/<episode>/` | The **canonical episode layout**: per-camera mp4s, `episode.json`, `signals.parquet`. One converter per raw format; everything downstream reads only this |
+| `ingest-episodes` | canonical episodes → `processed/rerun/*.rrd` + FiftyOne `episodes/<dataset>` | A Rerun recording per episode (cameras and signals on one timeline) and a grouped FiftyOne dataset: one group per episode, one slice per camera, `rerun_url` field |
+
+**Viewing an episode:** FiftyOne (`:8445`) for the catalogue — filter by task, robot, duration, gripper range, play any camera; its `rerun_url` field opens the same episode in **Rerun** (`:8446`, admin login) with all cameras and every joint/IMU/wrench signal scrubbing together. Both read the canonical layout, so a new raw format needs one converter and nothing else.
 
 Triggers: `workflow_dispatch` (Actions tab or API) and `push` today. Reacting to uploads automatically is the one missing piece: the gateway can post bucket events to a webhook, and a small bridge turning those into `workflow_dispatch` calls would close it. Files `mv`'d into a bucket directory never raise events; a scheduled scan would catch those.
 

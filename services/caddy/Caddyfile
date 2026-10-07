@@ -77,6 +77,19 @@ https://{$SERVICE_HOST}:8445, https://localhost:8445 {
 	reverse_proxy fiftyone:5151
 }
 
+# Rerun web viewer, plus the episode recordings it opens (?url=https://<host>:8446/data/<dataset>/<episode>.rrd).
+# Same origin, so the browser's login covers both. Rerun has no login of its own.
+https://{$SERVICE_HOST}:8446, https://localhost:8446 {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+	}
+	handle_path /data/* {
+		root * /rerun
+		file_server
+	}
+	reverse_proxy rerun:9090
+}
+
 # Prometheus scrape endpoint; plain HTTP, reachable only on the compose network.
 http://:9100 {
 	metrics

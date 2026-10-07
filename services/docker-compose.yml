@@ -17,11 +17,13 @@ services:
       - "${CADDY_PORT:-8443}:8443"   # web UIs, path-routed: /mlflow, /grafana, /prometheus, /loki, /s3
       - "${S3_PORT:-8444}:8444"      # S3 API (SigV4 signs the path, so it can't live under a prefix)
       - "${FIFTYONE_PORT:-8445}:8445" # FiftyOne App (redirects sub-paths to /)
+      - "${RERUN_PORT:-8446}:8446"    # Rerun web viewer + episode recordings
     environment:
       SERVICE_HOST: ${SERVICE_HOST}
       CADDY_PORT: ${CADDY_PORT:-8443}
       S3_PORT: ${S3_PORT:-8444}
       FIFTYONE_PORT: ${FIFTYONE_PORT:-8445}
+      RERUN_PORT: ${RERUN_PORT:-8446}
       ADMIN_USER: ${ADMIN_USER}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}   # bcrypt; ctl.sh derives it from ADMIN_PASSWORD
     volumes:
@@ -29,6 +31,7 @@ services:
       - ./caddy/site:/srv:ro
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
+      - ${STATE_DIR}/versitygw/buckets/processed/rerun:/rerun:ro   # episode recordings served on :8446/data/
     depends_on: [mlflow, grafana, prometheus, loki, versitygw, gitea]
 
   versitygw:
@@ -201,3 +204,12 @@ services:
       - ${STATE_DIR}/fiftyone:/fiftyone
       - ${STATE_DIR}/versitygw/buckets:/buckets:ro
     depends_on: [mongo]
+
+  # Rerun web viewer for episode recordings (processed/rerun/<dataset>/<episode>.rrd,
+  # built by fiftyone/episode_rrd.py). No login of its own: Caddy fronts it on :8446.
+  rerun:
+    <<: *common
+    build: ./rerun
+    image: flywheel-rerun:0.38.1
+    environment:
+      HOME: /tmp
