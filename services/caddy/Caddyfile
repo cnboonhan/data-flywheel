@@ -1,0 +1,70 @@
+{
+	admin off
+	# Certificates come from Caddy's own CA. The root cert is written to
+	# /data/caddy/pki/authorities/local/root.crt; clients trust that file.
+	local_certs
+	auto_https disable_redirects
+	metrics
+}
+
+# Web UIs, one path per service. Nothing is stripped: each backend is
+# configured to serve from its prefix, so redirects and asset URLs stay right.
+# `localhost` is included so the cert also matches through an SSH tunnel.
+https://{$SERVICE_HOST}:8443, https://localhost:8443 {
+	log {
+		output stdout
+		format console
+	}
+
+	redir /mlflow /mlflow/
+	redir /grafana /grafana/
+	redir /prometheus /prometheus/
+	redir /s3 /s3/
+
+	handle /mlflow/* {
+		reverse_proxy mlflow:5000
+	}
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+	# Prometheus and Loki have no login of their own, so the proxy asks for the
+	# admin one. Grafana reaches them on the compose network and is unaffected.
+	handle /prometheus/* {
+		basic_auth {
+			{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+		}
+		reverse_proxy prometheus:9090
+	}
+	# Loki's own API already lives under /loki/ (e.g. /loki/api/v1/push).
+	handle /loki/* {
+		basic_auth {
+			{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+		}
+		reverse_proxy loki:3100
+	}
+	handle /s3/* {
+		reverse_proxy versitygw:7071
+	}
+	# The CA root, so clients can fetch it before they can verify anything.
+	handle /ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		file_server
+	}
+
+	handle {
+		root * /srv
+		templates
+		file_server
+	}
+}
+
+# S3 API. SigV4 signs the request path, so this gets its own port instead of a prefix.
+https://{$SERVICE_HOST}:8444, https://localhost:8444 {
+	reverse_proxy versitygw:7070
+}
+
+# Prometheus scrape endpoint; plain HTTP, reachable only on the compose network.
+http://:9100 {
+	metrics
+}

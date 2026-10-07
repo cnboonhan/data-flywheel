@@ -1,0 +1,118 @@
+# Store stack: Caddy, Versity S3 Gateway, MLflow, Prometheus, Loki, Grafana.
+# Every image is a multi-arch manifest (linux/arm64 + linux/amd64), so the same
+# file runs on the GB300 node and on an Intel box. See README.md.
+
+x-common: &common
+  restart: unless-stopped
+  user: "${SERVICE_UID}:${SERVICE_GID}"
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  caddy:
+    <<: *common
+    image: caddy:2.11
+    ports:
+      - "${CADDY_PORT:-8443}:8443"   # web UIs, path-routed: /mlflow, /grafana, /prometheus, /loki, /s3
+      - "${S3_PORT:-8444}:8444"      # S3 API (SigV4 signs the path, so it can't live under a prefix)
+    environment:
+      SERVICE_HOST: ${SERVICE_HOST}
+      CADDY_PORT: ${CADDY_PORT:-8443}
+      S3_PORT: ${S3_PORT:-8444}
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}   # bcrypt; ctl.sh derives it from ADMIN_PASSWORD
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/site:/srv:ro
+      - ${STATE_DIR}/caddy/data:/data
+      - ${STATE_DIR}/caddy/config:/config
+    depends_on: [mlflow, grafana, prometheus, loki, versitygw]
+
+  versitygw:
+    <<: *common
+    image: versity/versitygw:v1.8.0
+    command:
+      - --port=:7070
+      - --webui=:7071
+      - --webui-path-prefix=/s3
+      # The web UI runs in the browser and talks to the S3 API itself, so it
+      # needs the API URL as seen from the browser: direct, or via an SSH tunnel.
+      - --webui-gateways=https://localhost:${S3_PORT:-8444}
+      - --webui-gateways=https://${SERVICE_HOST}:${S3_PORT:-8444}
+      - --cors-allow-origin=*        # UI origin differs from the API origin (8443 vs 8444); auth is SigV4, not cookies
+      - --iam-dir=/state/iam
+      - --health=/health
+      - posix
+      - --sidecar=/state/meta        # /tier1 (WekaFS) has no xattrs; keep object metadata in a sidecar dir
+      - --disable-copy-file-range
+      - /state/buckets               # backend flags must precede the directory
+    environment:
+      ROOT_ACCESS_KEY_ID: ${ADMIN_USER}
+      ROOT_SECRET_ACCESS_KEY: ${ADMIN_PASSWORD}
+      VGW_REGION: ${S3_REGION:-us-east-1}
+      VGW_LOG_LEVEL: ${S3_LOG_LEVEL:-silent}   # "debug" logs every request/response with secrets masked
+    volumes:
+      - ${STATE_DIR}/versitygw:/state
+
+  mlflow:
+    <<: *common
+    build: ./mlflow
+    image: flywheel-mlflow:3.17.0
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --app-name=basic-auth
+      - --static-prefix=/mlflow
+      - --allowed-hosts=${SERVICE_HOST},${SERVICE_HOST}:${CADDY_PORT:-8443},localhost,localhost:${CADDY_PORT:-8443}
+      - --cors-allowed-origins=https://${SERVICE_HOST}:${CADDY_PORT:-8443},https://localhost:${CADDY_PORT:-8443}
+      - --backend-store-uri=sqlite:////state/mlflow.db
+      - --artifacts-destination=/state/artifacts
+      - --serve-artifacts
+    environment:
+      HOME: /state
+      MLFLOW_AUTH_CONFIG_PATH: /etc/mlflow/basic_auth.ini
+      MLFLOW_AUTH_ADMIN_USERNAME: ${ADMIN_USER}
+      MLFLOW_AUTH_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      MLFLOW_FLASK_SERVER_SECRET_KEY: ${MLFLOW_SECRET_KEY}   # signs CSRF tokens
+    volumes:
+      - ./mlflow/basic_auth.ini:/etc/mlflow/basic_auth.ini:ro
+      - ${STATE_DIR}/mlflow:/state
+
+  prometheus:
+    <<: *common
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-30d}
+      - --web.route-prefix=/prometheus
+      - --web.external-url=https://${SERVICE_HOST}:${CADDY_PORT:-8443}/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${STATE_DIR}/prometheus:/prometheus
+
+  loki:
+    <<: *common
+    image: grafana/loki:3.7.8
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - ${STATE_DIR}/loki:/loki
+
+  grafana:
+    <<: *common
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SERVER_ROOT_URL: https://${SERVICE_HOST}:${CADDY_PORT:-8443}/grafana
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: ${ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${STATE_DIR}/grafana:/var/lib/grafana
+    depends_on: [prometheus, loki]

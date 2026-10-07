@@ -6,3 +6,6 @@ checkpoints/*
 
 __pycache__/
 .DS_Store
+
+# Store stack secrets (see services/.env.example).
+services/.env
