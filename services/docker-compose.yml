@@ -71,14 +71,18 @@ services:
       - --allowed-hosts=${SERVICE_HOST},${SERVICE_HOST}:${CADDY_PORT:-8443},localhost,localhost:${CADDY_PORT:-8443}
       - --cors-allowed-origins=https://${SERVICE_HOST}:${CADDY_PORT:-8443},https://localhost:${CADDY_PORT:-8443}
       - --backend-store-uri=sqlite:////state/mlflow.db
-      - --artifacts-destination=/state/artifacts
-      - --serve-artifacts
+      - --artifacts-destination=s3://mlflow   # checkpoints and run artifacts live in the S3 gateway
+      - --serve-artifacts                     # clients upload through the server; no S3 creds needed
     environment:
       HOME: /state
       MLFLOW_AUTH_CONFIG_PATH: /etc/mlflow/basic_auth.ini
       MLFLOW_AUTH_ADMIN_USERNAME: ${ADMIN_USER}
       MLFLOW_AUTH_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       MLFLOW_FLASK_SERVER_SECRET_KEY: ${MLFLOW_SECRET_KEY}   # signs CSRF tokens
+      MLFLOW_S3_ENDPOINT_URL: http://versitygw:7070
+      AWS_ACCESS_KEY_ID: ${ADMIN_USER}
+      AWS_SECRET_ACCESS_KEY: ${ADMIN_PASSWORD}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
     volumes:
       - ./mlflow/basic_auth.ini:/etc/mlflow/basic_auth.ini:ro
       - ${STATE_DIR}/mlflow:/state

@@ -118,6 +118,28 @@ Ingest scripts live in `fiftyone/`, one per dataset format; the workflows in `gi
 - `fiftyone/unpack_archives.py` + `unpack-archives.yml`: extracts tar archives from raw into processed through the S3 gateway (reads from the mount, writes via S3, so the objects get ETags and events). Galaxea ships one LeRobot v2 dataset per task as a tar.gz; unpack them, then ingest from `processed`. A `.unpacked` marker makes re-runs skip finished archives.
 - `fiftyone/convert_mcap.py` + `fiftyone/ingest_videos.py` + `convert-mcap.yml`: h2rc (ROS 2 mcap bags). The first job decodes every `CompressedImage` camera topic of each episode and pipes the JPEG frames through ffmpeg (from the `imageio-ffmpeg` wheel) into H.264 mp4s at `processed/h2rc/<same path>/<camera>.mp4`, plus an `episode.json` with task, day, frame counts and fps. The second job ingests those as plain video samples (`task`, `day`, `episode`, `camera`, `fps`, `frames`). Inputs: an episode-directory glob and an optional limit; converted episodes are skipped on re-runs. About 10 s per episode.
 
+## XPolicyLab training (Slurm)
+
+Training data for XPolicyLab (`eval/system1/RoboDojo/XPolicyLab`) is its "xspark v1.0" HDF5: one file per episode under `PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5`. That tree lives in the processed bucket as `processed/xpolicylab/`, and `eval/system1/RoboDojo/data` is a symlink to it (ignored by git). Jobs run under Slurm on the `raus_manual` partition (GB300 nodes); Docker there has no GPU runtime, so training doesn't run in Actions containers.
+
+- `xpolicylab/convert_galaxea_xspark.py` + `slurm/convert-galaxea-xspark.sbatch`: Galaxea (LeRobot v2.1, unpacked in `processed/galaxea-open-world-r1lite/`) → xspark. State/action = 6 arm joints + 1 gripper per arm (14-D, same as XPolicyLab's `arx_x5`), EE poses reordered to `[x y z qw qx qy qz]`, the three cameras resized to 480x640 and stored as JPEGs stamped with XPolicyLab's `XPL-RGB1` marker (its `decode_image_bit` swaps channels on unmarked JPEGs). Verified against `XPolicyLab.utils.data_loader.load`. ~0.4 s per episode.
+- `xpolicylab/train_mlflow.py` + `slurm/train-xpolicylab.sbatch`: runs a policy's `process_data.sh` and then its training command exactly as `policy/<P>/train.sh` would, but through a wrapper that mirrors the per-epoch losses to **MLflow** (experiment `xpolicylab`, run `<policy>-<bench>-<task>-<env_cfg>-<action>-<seed>`), uploads the checkpoint directory as run artifacts, and registers it in the **model registry** as a version of `<policy>-<bench>-<task>`. MLflow's artifact store is the `mlflow` bucket on the S3 gateway (`--artifacts-destination s3://mlflow`, proxied, so clients need no S3 keys). XPolicyLab itself has no training dashboard: ACT computes epoch summaries and never prints them, DP writes `logs.json.txt` (its wandb calls are commented out). Supported: `ACT`, `DP`. DP's shipped task config has `agent_pos` commented out, so its own `train.sh` override fails; the Slurm script adds it with `+task.shape_meta.obs.agent_pos.*`.
+
+```bash
+cd /tier1/htx_boonhan/services/slurm-logs   # Slurm writes <job>-<id>.log here
+EXP="ALL,MLFLOW_TRACKING_URI=https://$SERVICE_HOST:8443/mlflow,MLFLOW_TRACKING_USERNAME=$ADMIN_USER,MLFLOW_TRACKING_PASSWORD=$ADMIN_PASSWORD,MLFLOW_TRACKING_SERVER_CERT_PATH=<ca.crt>"
+sbatch --export="$EXP,S3_ENDPOINT_URL=https://$SERVICE_HOST:8444,AWS_CA_BUNDLE=<ca.crt>,AWS_ACCESS_KEY_ID=$ADMIN_USER,AWS_SECRET_ACCESS_KEY=$ADMIN_PASSWORD" \
+  /tier1/htx_boonhan/services/pipelines/slurm/convert-galaxea-xspark.sbatch 'galaxea-open-world-r1lite/*' 0 arx_x5
+sbatch --export="$EXP" /tier1/htx_boonhan/services/pipelines/slurm/train-xpolicylab.sbatch ACT Galaxea Make_The_Bed_20250730_012 arx_x5 joint 0
+sbatch --export="$EXP" /tier1/htx_boonhan/services/pipelines/slurm/train-xpolicylab.sbatch DP  Galaxea Make_The_Bed_20250730_012 arx_x5 joint 0
+```
+
+The Slurm scripts find the Python next to them through `PIPELINES_ROOT`, a checkout of the Gitea `pipelines` repo at `/tier1/htx_boonhan/services/pipelines` (sbatch copies the script itself into the spool dir). `ctl.sh up` seeds `xpolicylab/*.py` and `slurm/*.sbatch` into that repo once; `git pull` the checkout after changing them there.
+
+Policy environments are uv venvs at `/tier1/htx_boonhan/services/envs/<policy, lowercase>` (`act`, `dp`): Python 3.10, torch from the `cu128` index (aarch64 + Blackwell; the policies' pinned `torch==2.4.1` has no CUDA build for this node), the policy's `install.sh` packages with numpy/numba pins relaxed, `pip install -e` of the policy and of XPolicyLab, plus `mlflow-skinny`.
+
+`env_cfg=arx_x5` is a stand-in: Galaxea's r1lite has the same 14-D layout, and a proper `r1lite` entry needs edits inside the XPolicyLab and RoboDojo submodules (`utils/robot/_robot_info.json`, `env_cfg/r1lite.yml`), i.e. a fork.
+
 ## Logins
 
 One admin login, `ADMIN_USER` / `ADMIN_PASSWORD` in `.env`, is applied everywhere by `docker-compose.yml`:

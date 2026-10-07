@@ -80,7 +80,7 @@ bootstrap_gitea() {
   fi
   # Seed files go in once; edit them in the pipelines repo afterwards.
   local f path
-  for f in gitea/examples/*.yml fiftyone/*.py; do
+  for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch; do
     case $f in
       gitea/examples/*) path=".gitea/workflows/$(basename "$f")" ;;
       *) path="$f" ;;
