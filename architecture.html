@@ -71,7 +71,7 @@
   <h1>Data Flywheel</h1>
 
   <figure>
-    <svg viewBox="0 0 1570 540" role="img" aria-label="Data Flywheel pipeline, left to right: Build, Store (Raw), Processed, Train, Evaluate, with a feedback loop from Evaluate back to Build and Processed.">
+    <svg viewBox="0 0 1570 566" role="img" aria-label="Data Flywheel pipeline, left to right: Build, Store (Raw), Processed, Train, Evaluate, with a feedback loop from Evaluate back to Build and Processed.">
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
@@ -192,10 +192,14 @@
       <path class="e" d="M400 312 V418 H192" marker-end="url(#arrow)"/>
       <text class="el" x="275" y="411" text-anchor="middle">Deploy</text>
 
+      <!-- Evaluate → Store: evaluation logs written back to storage (below the columns, gap where it passes the feedback branch) -->
+      <path class="e" d="M1420 460 V508 H791 M779 508 H420 V462" marker-end="url(#arrow)"/>
+      <text class="el" x="1275" y="501" text-anchor="middle">Eval Logs</text>
+
       <!-- Feedback loop: Evaluate → Build and Process -->
-      <path class="loop" d="M1465 460 V508 H105 V462" marker-end="url(#arrow)"/>
-      <path class="loop" d="M785 508 V462" marker-end="url(#arrow)"/>
-      <text class="looplabel" x="785" y="528" text-anchor="middle">Feedback Loop</text>
+      <path class="loop" d="M1465 460 V534 H105 V462" marker-end="url(#arrow)"/>
+      <path class="loop" d="M785 534 V462" marker-end="url(#arrow)"/>
+      <text class="looplabel" x="785" y="554" text-anchor="middle">Feedback Loop</text>
     </svg>
   </figure>
 </main>
