@@ -30,6 +30,8 @@ services/ctl.sh down
 
 `ctl.sh up` picks up changes to `docker-compose.yml` and `.env`. The config files are bind-mounted, so after editing `caddy/Caddyfile`, `prometheus/prometheus.yml` or `loki/loki.yml` run `ctl.sh restart <service>`.
 
+If a git operation deletes and recreates files under `services/` (switching to a branch without the directory, a rebase, `git stash`), the running containers keep the old, deleted inodes and start returning 404s or lose their config. Run `ctl.sh up --force-recreate` afterwards.
+
 ## Access
 
 Everything is HTTPS. Caddy runs a local CA (`local_certs`) and issues a certificate for `$SERVICE_HOST` and `localhost`.
