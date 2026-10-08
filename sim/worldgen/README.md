@@ -1,0 +1,65 @@
+# sim/worldgen
+
+Prototype of the world-generation loop from [`docs/worldgen.md`](../../docs/worldgen.md): a robot explores a space autonomously while recording a stereo bag, NuRec turns the bag into a sim-ready scene, and the scene comes back into IsaacLab-Arena. This is the **sim→sim** version: the robot is NVIDIA's Nova Carter driving inside the NuRec `nova_carter-wormhole` room (the sample scene from [`../nurec`](../nurec/README.md)), so the output can be compared against NVIDIA's own reconstruction of the same room from the same robot.
+
+```
+ Isaac Sim 6.1 (host, bundled ROS 2 Jazzy)          worldgen container (ROS 2 Jazzy, host network)
+ ┌──────────────────────────────────────┐            ┌──────────────────────────────────────────┐
+ │ NuRec room (splat + collision mesh)  │ /tf /clock │ slam_toolbox  → /map, map→odom           │
+ │ Nova Carter ROS asset:               │ /chassis/odom          │                               │
+ │   XT-32 RTX lidar → lidar_points  ───┼──────────▶ pointcloud_to_laserscan → /scan            │
+ │   front Hawk stereo → image_raw ×2   │            │ Nav2 (navigation_launch, Carter params)   │
+ │   odometry, TF, IMUs                 │ ◀──────────┼ explore_lite → goals → /cmd_vel           │
+ │   /cmd_vel → differential drive      │  /cmd_vel  │ ros2 bag record (mcap) → runs/<name>/bag  │
+ └──────────────────────────────────────┘            └──────────────────────────────────────────┘
+```
+
+Why Carter rather than the R1 Lite the proposal starts from: Isaac Sim ships Carter already wired for ROS 2 (sensors, odometry, TF, drive), NVIDIA's Nav2 parameters for it are in [`IsaacSim-ros_workspaces`](IsaacSim-ros_workspaces/) (submodule), and the NuRec sample room was captured by a Carter. The R1 becomes a second embodiment once the loop works.
+
+| Path | Purpose |
+|---|---|
+| `isaac.sh`, `isaac/carter_room.py` | Isaac Sim side: builds the stage (room, hidden ground plane, Carter referenced from NVIDIA's sample, `/clock` graph), enables the front stereo publishers, runs until Ctrl-C |
+| `nav.sh`, `compose.yml`, `docker/` | The ROS 2 Jazzy container: Nav2, slam_toolbox, `explore_lite` (built from source; no Jazzy apt package), rosbag2 mcap |
+| `ros/explore.launch.py` | SLAM + Nav2 + frontier exploration, all on sim time; `explore:=false` for SLAM + Nav2 only |
+| `ros/nav2_params.yaml` | NVIDIA's Carter Nav2 params minus map server/AMCL (SLAM provides the map), 2D sources on `/scan` |
+| `ros/slam_params.yaml`, `ros/explore_params.yaml` | slam_toolbox (async, mapping) and explore_lite settings |
+| `ros/record.sh` | Records the capture bag NuRec's stereo workflow needs |
+| `ros/fastdds.xml` | UDP-only Fast DDS profile so host and container discover each other |
+| `runs/` | Bags, maps, logs (gitignored) |
+
+## Run
+
+```bash
+bash sim/worldgen/nav.sh build                    # once; ~5 GB image
+bash sim/worldgen/isaac.sh                        # terminal 1: Isaac Sim, headless (add --gui to watch)
+bash sim/worldgen/nav.sh up explore               # terminal 2: SLAM + Nav2 + exploration
+bash sim/worldgen/nav.sh run --rm nav /worldgen/record.sh <name>   # terminal 3: bag → runs/<name>/bag
+bash sim/worldgen/nav.sh run --rm nav ros2 run nav2_map_server map_saver_cli -f /runs/<name>/map --ros-args -p use_sim_time:=true
+```
+
+`nav.sh` is `docker compose -f sim/worldgen/compose.yml` run as your user (so `runs/` stays yours). `nav.sh run --rm nav` gives a shell with ROS sourced for `ros2 topic list`, `tf2_echo`, etc. Isaac Sim takes about 90 s to come up (longer on the first start of the day).
+
+## How the pieces fit
+
+- **No ROS on the host.** Isaac Sim 6.1 bundles ROS 2 Jazzy (`isaacsim.ros2.core/jazzy`); `isaac.sh` sets `ROS_DISTRO`, `RMW_IMPLEMENTATION` and `LD_LIBRARY_PATH` to it. Without the library path the bridge logs "ROS2 Bridge startup failed" and publishes nothing. The bundled tree includes `rclpy`, which `carter_room.py --ros-check` uses to list the topics the sim process itself sees.
+- **DDS across the container boundary.** The container shares the host network and IPC namespace, and both sides load `ros/fastdds.xml` (UDP only, no shared memory). Verified in both directions with a ping/pong test.
+- **`ROS_DOMAIN_ID=42`** on both sides. This LAN also carries a real Galaxea R1 on domain 0 (its `/hdas/*` topics show up in a domain-0 `ros2 topic list`), so the sim keeps off it.
+- **Carter comes from the warehouse sample.** Isaac Sim 6.1 has no standalone Carter ROS asset; `carter_room.py` references `/World/Nova_Carter_ROS` out of `Isaac/Samples/ROS2/Scenario/carter_warehouse_navigation.usd`. It spawns at a pose from the room's capture trajectory (free space by construction; the room origin is under a table).
+- **Lidar sees the room.** The XT-32 RTX lidar returns ~43k points per sweep against the NuRec collision mesh; `pointcloud_to_laserscan` turns it into a 720-beam `/scan`. The sample's 2D RPLidar graphs publish nothing, so every 2D consumer points at `/scan`.
+- **Sim time everywhere.** The stage has a `/clock` graph; all ROS nodes run with `use_sim_time`.
+
+## Gotchas
+
+- **slam_toolbox is a lifecycle node in Jazzy.** Launched as a plain `Node` it stays unconfigured and silent: no `/map`, no `map→odom`, Nav2's costmaps wait forever. Include its `online_async_launch.py` (`autostart:=true`), which emits the configure/activate transitions.
+- **Scan geometry must divide exactly.** `(angle_max - angle_min) / angle_increment` has to be an integer or Karto rejects every scan ("contains N range readings, expected M"). The launch uses 720 beams of 0.5°.
+- **Speed.** Rendering two Hawk cameras over a 1M-Gaussian splat plus the RTX lidar runs the sim at roughly 0.4× real time on the RTX 5090 Laptop (odometry 24 Hz, lidar 3.7 Hz, images ~1 Hz with the 5 Hz tick rate). Everything is on sim time so the stack copes, but exploration takes correspondingly longer in wall time. Lowering the camera render resolution would help; the helper creates its render product at runtime, so it has to be resized after the first frame.
+- **Don't `pkill -f carter_room.py` from a script**: the pattern matches the calling shell. Use `pgrep -f "python.*[c]arter_room.py"`.
+- **Headless CUDA installers** (3DGRUT) and Kit both misbehave with a stale `DISPLAY`; `isaac.sh` runs fine with it set, the 3DGRUT install does not (see `../nurec`).
+
+## Status (2026-10-08)
+
+Verified end to end up to Nav2: Isaac Sim publishes on domain 42 and the container sees everything; the lidar hits the room; slam_toolbox (lifecycle-launched) builds `/map` and `map→odom`; Nav2 activates on the Carter params; `explore_lite` finds frontiers once the global costmap tracks unknown space and sends goals.
+
+**Open: the robot has not driven yet.** Nav2's planner rejected every goal ("Failed to create plan with tolerance 0.5"). A dump of the global costmap (`runs/explore1/cm.json`, rendered) showed why: stray scan points (floor-mesh noise, chair legs) inflated with NVIDIA's `footprint_padding: 0.25` turned the whole free corridor into overlapping lethal discs, leaving 86 free cells in the map. Applied, untested: padding 0.05, inflation radius 0.55, and the cloud→scan `min_height` raised to skip floor noise. Next run: `bash sim/worldgen/isaac.sh` + `bash sim/worldgen/nav.sh up explore`, then check `/cmd_vel` and odometry move; if planning still fails, look at `runs/<name>/map.pgm` for scatter and raise `min_height` further or add a median filter on `/scan`.
+
+Also fixed along the way: slam_toolbox lifecycle, scan beam count, delayed explore start, `initial_transform_timeout` and a delayed Nav2 start (map→odom arrives late at 0.4× real time), container running as the host user (`nav.sh`).
