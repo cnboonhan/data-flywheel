@@ -22,7 +22,8 @@
 # eval_mlflow.py logs success_rate/score to the checkpoint's MLflow run.
 set -euo pipefail
 policy=${1:?policy}; task=${2:?task}; ckpt=${3:?ckpt}; env_cfg=${4:-arx_x5_gpu}; action=${5:-joint}; seed=${6:-0}; eval_num=${7:-}
-PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
+# sbatch runs a spooled copy of this script, so the checkout comes from slurm.env (FLYWHEEL_ROOT).
+SERVICES_DIR=${FLYWHEEL_ROOT:-$HOME/workspaces/data-flywheel}/services
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
@@ -78,7 +79,7 @@ mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
 # GB300: Isaac Sim 5.1 delivers no Replicator camera frames while the simulation runs on the CPU
 # device (RoboDojo's default), so evaluate with the environment on cuda:0. An env_cfg ending in _gpu
 # is derived from its base config on the fly; the layout and checkpoint names stay those of the base.
-export PYTHONPATH="$PIPELINES_ROOT/slurm/robodojo-shim${PYTHONPATH:+:$PYTHONPATH}"   # CUDA tensors -> numpy in RoboDojo
+export PYTHONPATH="$SERVICES_DIR/slurm/robodojo-shim${PYTHONPATH:+:$PYTHONPATH}"   # CUDA tensors -> numpy in RoboDojo
 if [[ $env_cfg == *_gpu ]]; then
   base=${env_cfg%_gpu}
   if [[ ! -f $PROJECT_ROOT/env_cfg/$env_cfg.yml ]]; then
@@ -114,5 +115,5 @@ cd "$XPL/policy/$policy"
 bash eval.sh RoboDojo "$task" "$ckpt" "$env_cfg" "$action" "$seed" "$policy_gpu" "$gpu" "${policy,,}" robodojo
 
 source "$ENVS_DIR/act/bin/activate"   # any env with mlflow + pandas
-python "$PIPELINES_ROOT/xpolicylab/eval_mlflow.py" --policy "$policy" --bench RoboDojo --task "$task" --ckpt "$ckpt" \
+python "$SERVICES_DIR/xpolicylab/eval_mlflow.py" --policy "$policy" --bench RoboDojo --task "$task" --ckpt "$ckpt" \
   --env-cfg "$env_cfg" --action "$action" --seed "$seed" --result-root "$PROJECT_ROOT/eval_result" --since "$started"

@@ -98,11 +98,12 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,adapter,clean,validate,mix}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
-           slurm/conda-shim/bin/conda slurm/conda-shim/etc/profile.d/conda.sh slurm/robodojo-shim/sitecustomize.py; do
+  for f in gitea/{setup,ingest,adapter,clean,validate,mix}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
+           gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
       gitea/*/*.yml|gitea/*/*/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory
+      gitea/setup/conda-shim/*) path="${f#gitea/}" ;;                # copied into the envs by install-robodojo.sh
       gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
       gitea/adapter/*/*) path="${f#gitea/}" ;;                        # adapter/<source>/<script> the adapter workflows run
       *) path="$f" ;;
@@ -114,13 +115,12 @@ bootstrap_gitea() {
   done
 }
 
-# Let Actions jobs submit Slurm work: an SSH key for the runner, locked to the
-# slurm-submit forced command on SLURM_LOGIN_HOST, stored as repo secrets; and
-# the credentials Slurm jobs need, in a file only the submitting user reads.
-bootstrap_slurm() {
-  local dir="$STATE_DIR/act_runner/ssh" key api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
-  mkdir -p "$dir" "$STATE_DIR/slurm-logs"
-  # The checkout of the pipelines repo that slurm-submit updates and the jobs read (PIPELINES_ROOT).
+# What jobs need besides the services: a checkout of the pipelines repo to edit workflows in, the MLflow
+# token, and $STATE_DIR/slurm.env (credentials and paths, read by the setup-envs workflow and by Slurm jobs
+# you submit by hand, in a file only you can read).
+bootstrap_jobs() {
+  local api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  mkdir -p "$STATE_DIR/slurm-logs"
   local ca="$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt" repo="$STATE_DIR/pipelines"
   (umask 077; printf 'https://%s:%s@%s:%s\n' "$ADMIN_USER" "$ADMIN_PASSWORD" "$SERVICE_HOST" "$CADDY_PORT" > "$STATE_DIR/.pipelines-credentials")
   if [[ ! -d $repo/.git ]]; then
@@ -129,13 +129,6 @@ bootstrap_slurm() {
   fi
   git -C "$repo" config http.sslCAInfo "$ca"
   git -C "$repo" config credential.helper "store --file=$STATE_DIR/.pipelines-credentials"
-  [[ -f $dir/id_ed25519 ]] || ssh-keygen -q -t ed25519 -N "" -C "flywheel-actions-runner" -f "$dir/id_ed25519"
-  key=$(cut -d' ' -f1,2 "$dir/id_ed25519.pub")
-  local line="command=\"$here/slurm/slurm-submit\",restrict $key flywheel-actions-runner"
-  mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-  # One forced-command line for the runner; drop stale ones (an earlier key, or the repo at another path).
-  grep -v 'flywheel-actions-runner' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp || true
-  echo "$line" >> ~/.ssh/authorized_keys.tmp && mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
   local mltok; mltok=$(mlflow_token "$ADMIN_USER" "$ADMIN_PASSWORD") || { echo "warning: no MLflow token for jobs" >&2; mltok=; }
   # The same token for Actions jobs that talk to MLflow (download-models-hf): secret MLFLOW_TOKEN, variable MLFLOW_USERNAME.
   if [[ -n $mltok ]]; then
@@ -157,7 +150,7 @@ AWS_ACCESS_KEY_ID=$ADMIN_USER
 AWS_SECRET_ACCESS_KEY=$ADMIN_PASSWORD
 AWS_DEFAULT_REGION=${S3_REGION:-us-east-1}
 UV_CACHE_DIR=$STATE_DIR/uv-cache
-# Where this checkout and the shared state live, for the Slurm scripts (their defaults assume /tier1).
+# Where this checkout and the shared state live, for the Slurm jobs and setup-envs (their defaults assume /tier1).
 FLYWHEEL_ROOT=$(cd "$here/.." && pwd)
 PROJECT_ROOT=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
 ENVS_DIR=$STATE_DIR/envs
@@ -166,11 +159,6 @@ BUCKETS_DIR=$STATE_DIR/versitygw/buckets
 DATA_ROOT=$STATE_DIR/xpolicylab
 EOF
   )
-  for s in "SLURM_SSH_KEY=$(cat "$dir/id_ed25519")" "SLURM_SSH_HOST=$USER@$SLURM_LOGIN_HOST"; do
-    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
-      -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "${s#*=}")" \
-      "$api/repos/$ADMIN_USER/pipelines/actions/secrets/${s%%=*}" >/dev/null
-  done
 }
 
 # Keycloak's realm import only seeds a new realm; clients added to the template later
@@ -316,14 +304,13 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_grafana
   bootstrap_keycloak
   bootstrap_mlflow
-  [[ -n ${SLURM_LOGIN_HOST:-} ]] && bootstrap_slurm
+  bootstrap_jobs
   "${compose[@]}" up -d "${@:2}"
-  if [[ -n ${SLURM_LOGIN_HOST:-} ]]; then setup_envs; fi
+  setup_envs
   exit 0
 fi
 
 if [[ $1 == setup ]]; then
-  [[ -n ${SLURM_LOGIN_HOST:-} ]] || { echo "setup needs the Slurm bridge (SLURM_LOGIN_HOST in .env)" >&2; exit 1; }
   setup_envs force
   exit 0
 fi

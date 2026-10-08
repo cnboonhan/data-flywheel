@@ -22,7 +22,8 @@ policy=${1:?policy, e.g. ACT or DP}; bench=${2:?bench}; task=${3:?task}; env_cfg
 shift 6 || true
 extra=("$@")
 
-PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
+# sbatch runs a spooled copy of this script, so the checkout comes from slurm.env (FLYWHEEL_ROOT).
+SERVICES_DIR=${FLYWHEEL_ROOT:-$HOME/workspaces/data-flywheel}/services
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
@@ -72,7 +73,7 @@ case $policy in
   ACT) ckpt_dir="$XPL/policy/ACT/checkpoints/$setting-$seed" ;;
   DP)  ckpt_dir="$XPL/policy/DP/checkpoints/$setting-$seed" ;;   # robotworkspace.py saves there regardless of cwd
 esac
-wrap=(python "$PIPELINES_ROOT/xpolicylab/train_mlflow.py" --policy "$policy" --run "$run" --ckpt-dir "$ckpt_dir"
+wrap=(python "$SERVICES_DIR/xpolicylab/train_mlflow.py" --policy "$policy" --run "$run" --ckpt-dir "$ckpt_dir"
       --param "bench=$bench" --param "task=$task" --param "env_cfg=$env_cfg" --param "action=$action" --param "seed=$seed" --param "action_dim=$action_dim")
 
 case $policy in

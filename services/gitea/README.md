@@ -1,6 +1,6 @@
 # gitea
 
-Git hosting and Gitea Actions. `ctl.sh up` creates the admin user, the private repo `admin/pipelines` (workflows from the folders below, flattened into `.gitea/workflows/`; setup and adapter scripts into `setup/`, `adapter/`; scripts from `../fiftyone`, `../xpolicylab`, `../slurm`), its secrets (`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `SLURM_SSH_KEY`, `SLURM_SSH_HOST`, `MLFLOW_TOKEN`, optional `HF_TOKEN`) and variables (`RERUN_BASE`, `SERVICE_URL`, `MLFLOW_USERNAME`, `STATE_DIR`, `FLYWHEEL_ROOT`, `USER_LOCAL`, `RUN_UID`, `RUN_GID`), and registers the runner ([act_runner/](../act_runner/README.md)). Seeding only adds missing files; edit the repo afterwards.
+Git hosting and Gitea Actions. `ctl.sh up` creates the admin user, the private repo `admin/pipelines` (workflows from the folders below, flattened into `.gitea/workflows/`; setup and adapter scripts into `setup/`, `adapter/`), its secrets (`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `MLFLOW_TOKEN`, optional `HF_TOKEN` and `RERUN_RAW_TOKEN`) and variables (`RERUN_BASE`, `SERVICE_URL`, `MLFLOW_USERNAME`, `STATE_DIR`, `FLYWHEEL_ROOT`, `USER_LOCAL`, `RUN_UID`, `RUN_GID`), and registers the runner ([act_runner/](../act_runner/README.md)). Seeding only adds missing files; edit the repo afterwards.
 
 ```bash
 git -c http.sslCAInfo=flywheel-ca.crt clone https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/pipelines.git   # SSH is disabled

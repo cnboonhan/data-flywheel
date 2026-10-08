@@ -12,7 +12,7 @@
 set -euo pipefail
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
-PIPELINES_ROOT=${PIPELINES_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}   # the pipelines checkout this script runs from
+SETUP_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)   # this script's folder, which holds conda-shim/
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
 export PATH="$HOME/.local/bin:$PATH"
 export OMNI_KIT_ACCEPT_EULA=YES TERM=xterm-256color
@@ -78,7 +78,7 @@ uv pip install -q -e XPolicyLab --reinstall-package xpolicylab
 uv pip install -q imageio-ffmpeg
 mkdir -p "$ROBODOJO_DIR/bin" && ln -sf "$(ls "$ENVS_DIR"/robodojo/lib/python3.*/site-packages/imageio_ffmpeg/binaries/ffmpeg-* | head -1)" "$ROBODOJO_DIR/bin/ffmpeg"
 mkdir -p "$ENVS_DIR/conda-shim"
-cp -r "$PIPELINES_ROOT/slurm/conda-shim/." "$ENVS_DIR/conda-shim/"
+cp -r "$SETUP_DIR/conda-shim/." "$ENVS_DIR/conda-shim/"
 chmod +x "$ENVS_DIR/conda-shim/bin/conda"
 
 echo "[6/8] check"

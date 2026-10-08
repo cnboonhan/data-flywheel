@@ -1,18 +1,17 @@
 # slurm
 
-GPU work (conversion, training, evaluation) runs as Slurm jobs on the `raus_manual` partition; Gitea Actions submits them over SSH and streams the log (`follow.sh`).
+GPU work (training, evaluation) runs as Slurm jobs on the `raus_manual` partition, submitted by hand from a login node. Gitea doesn't submit Slurm jobs.
 
-**Bridge.** `ctl.sh up` creates a key at `$STATE_DIR/act_runner/ssh/`, adds it to `~/.ssh/authorized_keys` with the forced command `slurm-submit` (`restrict`: sbatch from the pipelines checkout at the run's commit, status, log, cancel; nothing else), stores it as the repo secrets `SLURM_SSH_KEY` / `SLURM_SSH_HOST` (`SLURM_LOGIN_HOST` in `.env`), and writes `$STATE_DIR/slurm.env`: MLflow and S3 credentials plus `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Jobs read `$PIPELINES_ROOT` = `$STATE_DIR/pipelines` (a checkout of `admin/pipelines`).
+**Credentials and paths.** `ctl.sh up` writes `$STATE_DIR/slurm.env`, readable only by you: MLflow and S3 credentials plus `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. The jobs run the scripts in this checkout: `services/xpolicylab/*_mlflow.py` and `robodojo-shim/`.
 
-**Environments** (RoboDojo eval env, ACT/DP policy envs) are built by the Gitea workflow `setup-envs` in a job container, not through Slurm ([gitea/](../gitea/README.md)): `ctl.sh up` dispatches it when one is missing or was built for another checkout, `ctl.sh setup` forces it.
-
-**By hand** (same scripts, same env):
+**Environments** (RoboDojo eval env, ACT/DP policy envs) are built by the Gitea workflow `setup-envs` in a job container, not through Slurm ([gitea/setup/](../gitea/setup/README.md)). `ctl.sh up` dispatches it when one is missing or was built for another checkout, and `ctl.sh setup` forces it.
 
 ```bash
-set -a; . $STATE_DIR/slurm.env; set +a; cd $STATE_DIR/slurm-logs; P=$STATE_DIR/pipelines/slurm
-sbatch --export=ALL $P/train-xpolicylab.sbatch ACT Galaxea Arrange_Fruits_20250819_011 arx_x5 joint 0 --num_epochs 30 --save_freq 30
-sbatch --export=ALL $P/evaluate-xpolicylab.sbatch ACT stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 arx_x5_gpu joint 0 5
-squeue -u $USER; tail -f $STATE_DIR/slurm-logs/<job>-<id>.log
+set -a; . /tier1/htx_boonhan/services/slurm.env; set +a
+cd /tier1/htx_boonhan/services/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
+sbatch --export=ALL $S/train-xpolicylab.sbatch ACT RoboDojo stack_bowls arx_x5 joint 0 --num_epochs 30 --save_freq 30
+sbatch --export=ALL $S/evaluate-xpolicylab.sbatch ACT stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 arx_x5_gpu joint 0 5
+squeue -u $USER; tail -f <job>-<id>.log; scancel <id>
 ```
 
 | Script | Notes |

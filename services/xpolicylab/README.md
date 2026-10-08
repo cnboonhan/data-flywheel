@@ -1,6 +1,6 @@
 # xpolicylab
 
-Python the Slurm jobs run ([slurm/](../slurm/README.md)); seeded into the `admin/pipelines` repo. Conversions into `processed/xpolicylab/` live in [gitea/adapter/](../gitea/README.md).
+Python the Slurm jobs run from this checkout ([slurm/](../slurm/README.md)). Conversions into `processed/xpolicylab/` live in [gitea/adapter/](../gitea/README.md).
 
 | Script | Does |
 |---|---|

@@ -12,7 +12,7 @@ The **Store** column of the [architecture diagram](../architecture.html): Docker
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
-| Slurm jobs: convert, train, evaluate | [slurm/](slurm/README.md), [xpolicylab/](xpolicylab/README.md) | via Gitea Actions |
+| Slurm jobs: train, evaluate | [slurm/](slurm/README.md), [xpolicylab/](xpolicylab/README.md) | `sbatch` by hand |
 
 ## Run
 
@@ -24,7 +24,7 @@ services/ctl.sh logs -f caddy
 services/ctl.sh restart <service>          # after editing a bind-mounted config (Caddyfile, loki.yml)
 services/ctl.sh up --build                 # after editing mlflow/Dockerfile or rerun/Dockerfile
 services/ctl.sh up --force-recreate        # after git deleted and recreated files under services/
-services/ctl.sh setup                      # rebuild the Slurm-side envs (Gitea workflow setup-envs); up does it when needed
+services/ctl.sh setup                      # rebuild the policy and RoboDojo envs (Gitea workflow setup-envs); up does it when needed
 services/ctl.sh down
 ```
 
