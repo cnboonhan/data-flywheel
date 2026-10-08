@@ -153,10 +153,11 @@ bootstrap_keycloak() {
   done
 }
 
-# MLflow (mlflow-oidc-auth): wait until the server answers.
+# MLflow (mlflow-oidc-auth): wait until the server answers. Inside the compose network MLflow serves at the
+# root; the /mlflow prefix only exists through Caddy (X-Forwarded-Prefix).
 bootstrap_mlflow() {
   for _ in $(seq 1 60); do
-    "${compose[@]}" exec -T gitea curl -fs -H "Host: $SERVICE_HOST" http://mlflow:5000/mlflow/health >/dev/null 2>&1 && return 0
+    "${compose[@]}" exec -T gitea curl -fs -H "Host: $SERVICE_HOST" http://mlflow:5000/health >/dev/null 2>&1 && return 0
     sleep 2
   done
   echo "warning: mlflow is not answering; access tokens can't be minted" >&2
@@ -170,7 +171,7 @@ mlflow_token() {
         -d "username=$name" -d "password=$pw" -d scope=openid http://keycloak:8080/auth/realms/flywheel/protocol/openid-connect/token \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])') || return 1
   "${compose[@]}" exec -T gitea curl -fs -X PATCH -H "Authorization: Bearer $tok" -H "Host: $SERVICE_HOST" -H 'Content-Type: application/json' \
-    -d "{\"expiration\":\"$(date -u -d '+365 days' +%Y-%m-%dT%H:%M:%SZ)\"}" http://mlflow:5000/mlflow/api/2.0/mlflow/users/access-token \
+    -d "{\"expiration\":\"$(date -u -d '+365 days' +%Y-%m-%dT%H:%M:%SZ)\"}" http://mlflow:5000/api/2.0/mlflow/users/access-token \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 }
 
@@ -249,6 +250,15 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   # Keycloak up, and the runner needs the token the bootstrap writes. No
   # --build: compose builds a missing image anyway, and with --build it
   # recreates the container even when the rebuilt image is identical.
+  # Caddy first: Gitea and oauth2-proxy bind-mount its CA certificate, and if that file doesn't exist yet
+  # (first start) dockerd creates a directory in its place, which then stops Caddy from writing the CA.
+  ca="$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt"
+  mkdir -p "$(dirname "$ca")"   # as us; a bind mount onto a missing path would make dockerd create the parents as root
+  if [[ ! -f $ca ]]; then
+    "${compose[@]}" up -d --no-deps caddy   # --no-deps: its dependents are the ones mounting the CA
+    for _ in $(seq 1 60); do [[ -f $ca ]] && break; sleep 1; done
+    [[ -f $ca ]] || { echo "caddy did not create its CA at $ca" >&2; exit 1; }
+  fi
   "${compose[@]}" up -d "${@:2}" $("${compose[@]}" config --services | grep -vx act_runner)
   bootstrap_gitea
   bootstrap_grafana
