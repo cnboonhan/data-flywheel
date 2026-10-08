@@ -21,6 +21,7 @@ env_cfg=${3:-r1lite}
 PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
 
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
+export PATH="$HOME/.local/bin:$PATH"   # uv; jobs submitted over the restricted ssh command inherit a minimal PATH
 cd /tier1/htx_boonhan/services
 exec uv run -q --python 3.12 --with h5py,pyarrow,pandas,numpy,opencv-python-headless,av,boto3 \
   python "$PIPELINES_ROOT/xpolicylab/convert_galaxea_xspark.py" \

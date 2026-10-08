@@ -35,7 +35,7 @@ jobs:
                   if m.name:
                       tar.extract(m, ".")
           EOF
-      - run: pip -q install rerun-sdk==0.38.1 pyarrow boto3 && rerun analytics disable
+      - run: pip -q install rerun-sdk==0.38.1 pyarrow pandas boto3 && rerun analytics disable
       - run: python fiftyone/episode_rrd.py --path "${{ inputs.dataset }}/**/episode.json"
 
   fiftyone:

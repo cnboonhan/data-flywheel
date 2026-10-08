@@ -10,7 +10,17 @@ sha=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
 key=$(mktemp); trap 'rm -f "$key"' EXIT
 printf '%s\n' "$SSH_KEY" > "$key"; chmod 600 "$key"
-remote() { ssh -i "$key" -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ServerAliveInterval=30 -o LogLevel=ERROR "$SSH_HOST" "$@"; }
+# A poll must not kill the run on a transient "no route to host": retry a few times.
+remote() {
+  local try rc out
+  for try in 1 2 3 4 5; do
+    out=$(ssh -i "$key" -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o LogLevel=ERROR "$SSH_HOST" "$@" 2>&1) && { printf '%s' "$out"; return 0; }
+    rc=$?
+    [[ $rc == 255 ]] || { printf '%s' "$out"; return $rc; }   # 255 = ssh itself failed; anything else is the remote command's answer
+    sleep $((try * 5))
+  done
+  printf '%s' "$out"; return 255
+}
 
 job=$(remote sbatch "$sha" "$script" "$@" 2>&1) || { echo "submit failed:"; echo "$job"; exit 1; }
 [[ $job =~ ^[0-9]+$ ]] || { echo "submit failed: $job"; exit 1; }

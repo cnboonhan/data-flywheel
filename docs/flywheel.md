@@ -1,135 +1,146 @@
 # The flywheel, end to end
 
-How a dataset travels from collection to a registered checkpoint on this stack, following the columns of the [architecture diagram](../architecture.html). Each stage names the service that owns it, where the data sits, and the command that moves it on. [`services/README.md`](../services/README.md) has the per-service details; this page is the path across them.
+A runbook for carrying one dataset through the whole loop of the [architecture diagram](../architecture.html): collect → store → process → verify → train → register. Every step below was executed exactly as written, from Gitea, on the Galaxea task `Arrange_Fruits_20250819_011`; the "Result" lines are from that run. [`services/README.md`](../services/README.md) has the per-service reference; this page is the path across them.
 
 ```
- Build            Store (raw)         Processed                 Train                      Evaluate
- ─────            ───────────         ─────────                 ─────                      ────────
- UMI / teleop /   s3://raw            s3://processed            Slurm GPU job              RoboDojo / RoboTwin sim,
- public datasets  (versitygw)   ──▶   unpack / convert   ──▶    XPolicyLab policy    ──▶   physical evals
-      │                │              (Gitea Actions)           train_mlflow.py                 │
-      │                │                   │                         │                          │
-      │                └── FiftyOne ◀──────┘                   MLflow: curves,              Eval logs ──▶ Store
-      │                    (browse)                            artifacts, registry               │
-      └──────────────────────────── feedback: what to collect / reprocess next ◀─────────────────┘
+ Build            Store (raw)        Processed                    Verify                 Train                 Evaluate
+ ─────            ───────────        ─────────                    ──────                 ─────                 ────────
+ UMI / teleop /   s3://raw      ──▶  s3://processed          ──▶  FiftyOne + Rerun  ──▶  Slurm GPU job   ──▶   RoboDojo / RoboTwin,
+ public datasets  (versitygw)        unpack / episodes / xspark   (one SSO login)        XPolicyLab + MLflow    physical (not wired)
+                                     (Gitea Actions)                                     curves, artifacts,
+                                                                                         model registry
+      └──────────────────────── feedback: what to collect or reprocess next ◀────────────────────────────────────────┘
 ```
 
-Everything except training runs as Docker Compose on the service node (`services/ctl.sh up`); training and heavy conversions run as Slurm jobs on the GB300 partition, because the node's Docker has no GPU runtime. All state is on `/tier1`, so the same bytes are visible to containers, Slurm jobs and your shell.
+Everything except training runs as Docker Compose on the service node (`services/ctl.sh up`); training and heavy conversions are Slurm jobs on the GB300 partition, submitted by Gitea Actions over SSH. All state is on `/tier1`, so containers, Slurm jobs and your shell see the same bytes.
 
-## 1. Build: data arrives
+## 0. Before you start
 
-Sources today: public datasets downloaded from Hugging Face (HiFi-UMI-2K, Galaxea Open-World, h2rc), later teleoperation and UMI recordings.
+- **Reach the stack.** Everything is `https://flywheel.<node IP>.sslip.io:8443` plus the `fiftyone.`, `rerun.` and `s3.` subdomains (one port). On the cluster network the names resolve by themselves; from a laptop, tunnel 8443 and map the four names to 127.0.0.1 in `/etc/hosts`, or route the node IP with `sshuttle` (services/README.md → Access). Trust `/ca.crt` once.
+- **Log in once.** Keycloak (`/auth`) signs you into Gitea, Grafana, FiftyOne, Rerun, Prometheus and Loki. MLflow and the S3 API use the account and keys that `services/ctl.sh user add <name> <email>` gives you.
+- **S3 credentials in your shell** for the `aws` commands below:
+  ```bash
+  export AWS_ACCESS_KEY_ID=<name> AWS_SECRET_ACCESS_KEY=<secret> AWS_DEFAULT_REGION=us-east-1
+  export AWS_CA_BUNDLE=flywheel-ca.crt
+  S3=https://s3.flywheel.<ip>.sslip.io:8443
+  ```
+- Workflows live in the Gitea repo **`admin/pipelines`** → Actions → pick a workflow → Run workflow, and fill in the inputs listed below. The same from a shell:
+  ```bash
+  curl -u <name>:<password> -H 'Content-Type: application/json' \
+    -d '{"ref":"main","inputs":{...}}' https://flywheel.<ip>.sslip.io:8443/gitea/api/v1/repos/admin/pipelines/actions/workflows/<workflow>.yml/dispatches
+  ```
 
-Three ways into the raw bucket, all ending as a directory under `/tier1/htx_boonhan/services/versitygw/buckets/raw/<dataset>/`:
+## 1. Collect: data lands in `raw`
+
+A dataset is a directory under `s3://raw/<dataset>/`, in whatever format it was collected in. Three ways in:
 
 | Way | Command | Notes |
 |---|---|---|
-| S3 upload | `aws --endpoint-url https://<host>:8444 s3 sync ./data s3://raw/<dataset>/` | Objects get ETags; bucket events fire |
-| Move on `/tier1` | `mv /tier1/.../download /tier1/htx_boonhan/services/versitygw/buckets/raw/<dataset>` | Instant rename, no copy; no ETag or event |
-| Download job | (planned) a workflow running `hf download --local-dir /buckets/raw/<dataset>` | Would need `/buckets/raw` writable in job containers |
+| S3 upload (laptop, robot, HF mirror) | `aws --endpoint-url $S3 s3 sync ./capture s3://raw/<dataset>/` | Objects get ETags and bucket events |
+| Already on `/tier1` | `mv <dir> /tier1/htx_boonhan/services/versitygw/buckets/raw/<dataset>` | Instant rename, no copy (how the 18 TB of public data went in) |
+| Download job | *(planned)* a workflow running `hf download --local-dir /buckets/raw/<dataset>` | needs `/buckets/raw` writable in job containers |
 
-The S3 gateway (Versity, `services/docker-compose.yml`) maps `s3://raw/x` to that directory and back, so S3 clients and filesystem readers see the same data.
-
-## 2. Store: raw, logged, registered
-
-The Store column is the Compose stack behind Caddy (`https://<host>:8443`, one admin login for everything):
-
-| Service | Role in the loop | Where |
-|---|---|---|
-| Versity S3 gateway | `raw`, `processed`, `mlflow` buckets | `:8444` API, `/s3/` UI |
-| Gitea + act_runner | pipelines repo (`admin/pipelines`) and the Actions runner that executes them | `/gitea/` |
-| MLflow | experiment tracking, run artifacts (checkpoints in `s3://mlflow`), model registry | `/mlflow/` |
-| FiftyOne + Mongo | browsing datasets as samples | `fiftyone.<host>` |
-| Prometheus, Loki, Grafana | metrics and logs of the stack | `/prometheus/`, `/loki/`, `/grafana/` |
-
-Datasets become *browsable* only once an ingest pipeline has turned them into FiftyOne samples; see stage 3.
-
-## 3. Processed: pipelines in Gitea Actions
-
-The `admin/pipelines` repo holds the workflows (`.gitea/workflows/`) and the scripts they run (`fiftyone/`, `xpolicylab/`, `slurm/`). `services/ctl.sh up` seeds it from `services/gitea/examples`, `services/fiftyone`, `services/xpolicylab` and `services/slurm` once; after that the repo's copies are what runs, edited and versioned there like any code. Jobs run as containers on the compose network with the buckets mounted read-only at `/buckets` and `S3_ENDPOINT_URL=http://versitygw:7070`, so they read from the mount (fast) and write through S3 (ETags, events).
-
-| Workflow | In → out | What it does |
-|---|---|---|
-| `process-raw` | `raw` → `processed/manifests/raw.json` | Lists the raw bucket; the smoke test, runs on every push |
-| `unpack-archives` | `raw/<ds>/*.tar.gz` → `processed/<ds>/<archive>/` | Streams tar members to S3 (Galaxea ships one LeRobot dataset per task archive) |
-| `convert-mcap` | `raw/h2rc/**/*.mcap` → `processed/h2rc/**/<camera>.mp4` + `episode.json`, then FiftyOne | Decodes ROS 2 `CompressedImage` topics through ffmpeg |
-| `ingest-lerobot` | LeRobot v2/v3 roots in any bucket → FiftyOne dataset | v3: one sample per camera video with episodes as temporal detections and an **episodes** clips view; v2: one sample per episode video |
-| `convert-xpolicylab` | `processed/<galaxea task>/` → `processed/xpolicylab/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5` | Galaxea LeRobot v2.1 → XPolicyLab xspark v1.0 (Slurm CPU job) |
-| `train-xpolicylab` | xspark → MLflow run + registered model | Slurm GPU job, stage 4 |
-| `episodes-lerobot`, `episodes-mcap` | raw (LeRobot v2/v3, ROS 2 mcap) → `processed/episodes/<dataset>/<episode>/` | The **canonical episode layout**: per-camera mp4s, `episode.json`, `signals.parquet`. One converter per raw format; everything downstream reads only this |
-| `ingest-episodes` | canonical episodes → `processed/rerun/*.rrd` + FiftyOne `episodes/<dataset>` | A Rerun recording per episode (cameras and signals on one timeline) and a grouped FiftyOne dataset: one group per episode, one slice per camera, `rerun_url` field |
-
-**Viewing an episode:** FiftyOne (`fiftyone.<host>`) for the catalogue — filter by task, robot, duration, gripper range, play any camera; its `rerun_url` field opens the same episode in **Rerun** (`rerun.<host>`, same SSO session) with all cameras and every joint/IMU/wrench signal scrubbing together. Both read the canonical layout, so a new raw format needs one converter and nothing else.
-
-Triggers: `workflow_dispatch` (Actions tab or API) and `push` today. Reacting to uploads automatically is the one missing piece: the gateway can post bucket events to a webhook, and a small bridge turning those into `workflow_dispatch` calls would close it. Files `mv`'d into a bucket directory never raise events; a scheduled scan would catch those.
-
-### Where each raw dataset stands
-
-| Dataset | Format in raw | Processed | Browsable | Trainable |
-|---|---|---|---|---|
-| HiFi-UMI-2K | LeRobot v3, 399 chunks | not needed | yes, `ingest-lerobot` (3 chunks ingested) | EE-space only; XPolicyLab's joint-space layout doesn't fit yet |
-| galaxea-open-world-r1lite | 227 tar.gz, LeRobot v2.1 inside | `unpack-archives` (1 of 227 done) | yes, `ingest-lerobot` from `processed` | **yes**: `convert-xpolicylab` → xspark; ACT and DP trained |
-| h2rc | 4 124 ROS 2 mcap bags | `convert-mcap` (2 done) | yes, per-camera mp4s | no recorded actions; would need derived targets |
-
-## 4. Train: Slurm jobs, tracked in MLflow
-
-XPolicyLab (`eval/system1/RoboDojo/XPolicyLab`) trains any of its ~35 trainable policies from one input format, its xspark HDF5 (`PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5`). `eval/system1/RoboDojo/data` is a symlink to `processed/xpolicylab`, so once a dataset is converted every policy's `process_data.sh`/`train.sh` sees it.
-
-`slurm/train-xpolicylab.sbatch <policy> <bench> <task> <env_cfg> <action> <seed> [extra]`:
-
-1. activates the policy's uv env (`/tier1/htx_boonhan/services/envs/<policy>`; torch from the cu128 index because the policies' pinned torch has no CUDA build for the aarch64 Blackwell node);
-2. runs the policy's own `process_data.sh` (ACT → per-episode HDF5 at 480x640; DP → zarr at 240x320);
-3. runs the policy's training command exactly as its `train.sh` would, but through `xpolicylab/train_mlflow.py`, which
-   - mirrors every epoch's losses to an MLflow run (experiment `xpolicylab`, run `<policy>-<bench>-<task>-<env_cfg>-<action>-<seed>`) by hooking the policy's own summary function, since XPolicyLab has no dashboard of its own;
-   - uploads the checkpoint directory as run artifacts (stored in `s3://mlflow` through the MLflow proxy);
-   - registers it as a new version of the model `<policy>-<bench>-<task>`.
-
-Submitting from the login node:
+**Example.** The Galaxea Open-World set was moved in as 227 per-task archives, `raw/galaxea-open-world-r1lite/lerobot/<task>.tar.gz`. A newly collected episode is uploaded instead; to exercise that path, push a marker and read the prefix back:
 
 ```bash
-cd /tier1/htx_boonhan/services/slurm-logs
-set -a; . /tier1/htx_boonhan/services/slurm.env; set +a        # MLflow + S3 credentials (written by ctl.sh)
-sbatch --export=ALL /tier1/htx_boonhan/services/pipelines/slurm/train-xpolicylab.sbatch ACT Galaxea Make_The_Bed_20250730_012 arx_x5 joint 0
+echo "collected $(date -u +%FT%TZ) on r1lite" > collection.log
+aws --endpoint-url $S3 s3 cp collection.log s3://raw/galaxea-open-world-r1lite/logs/collection.log
+aws --endpoint-url $S3 s3 ls s3://raw/galaxea-open-world-r1lite/
 ```
 
-Or from Gitea: the `train-xpolicylab` workflow does the same over SSH and streams the Slurm log into the Actions log (the bridge is enabled by `SLURM_LOGIN_HOST` in `.env`; `ctl.sh up` sets up the key and secrets).
+Result: `PRE lerobot/`, `PRE logs/`, `lerobot_info.json`, `README.md`, `demo.mp4`. The file is also visible in the S3 web UI (`https://s3.<host>:8443/ui/`, log in with the access key) and as a plain file under `buckets/raw/`.
 
-Results: **https://<SERVICE_HOST>:8443/mlflow/** → experiment `xpolicylab` for curves and parameters, **Models** for the registry. First runs on Galaxea `Make_The_Bed` (51 episodes): ACT 30 epochs in 71 s, val loss 87.8 → 1.7; DP 3 epochs, val loss 0.047; both registered as version 1.
+## 2. Process: `raw` → `processed` with Gitea Actions
 
-`env_cfg=arx_x5` is a stand-in label: Galaxea's r1lite has the same 14-D layout (6 joints + 1 gripper per arm). A proper `r1lite` entry means editing `utils/robot/_robot_info.json` and adding `env_cfg/r1lite.yml` inside the submodules, i.e. a fork.
+Pipelines are code in `admin/pipelines` (`.gitea/workflows/*.yml` plus `fiftyone/*.py`, `xpolicylab/*.py`, `slurm/*`). Jobs run as containers on the compose network with the buckets mounted read-only at `/buckets` and `S3_ENDPOINT_URL=http://versitygw:7070`, so they read from the mount and write through S3. `services/ctl.sh up` seeds the repo from `services/` once; after that the repo's copies are what runs.
+
+### 2a. Unpack the task archive
+
+Workflow **`unpack-archives`**, inputs `archives = galaxea-open-world-r1lite/lerobot/Arrange_Fruits_20250819_011.tar.gz`, `dest = galaxea-open-world-r1lite`.
+
+Result: `processed/galaxea-open-world-r1lite/Arrange_Fruits_20250819_011/` with `data/`, `meta/`, `videos/` (575 files) and a `.unpacked` marker so re-runs skip it. 88 s including the job's own setup.
+
+### 2b. Canonical episodes
+
+Every raw format gets one converter into the layout both viewers read:
+
+```
+processed/episodes/<dataset>/<subset>/<episode_id>/
+    <camera>.mp4        one per camera, frames on a common clock
+    episode.json        dataset, episode_id, source, format, robot, task, tasks, fps, frames, duration_s, cameras
+    signals.parquet     long format: t, group ("observation.state.left_arm" …), index, value
+```
+
+Workflow **`episodes-lerobot`** (LeRobot v2 and v3; `episodes-mcap` does ROS 2 bags), inputs `dataset = galaxea-open-world-r1lite`, `path = galaxea-open-world-r1lite/Arrange_Fruits_*`, `bucket = processed`, `limit = 0`.
+
+Result: `processed/episodes/galaxea-open-world-r1lite/Arrange_Fruits_20250819_011/episode_000000 … 000113`: 114 episodes, 4 cameras each, 22 signal groups. 87 s.
+
+## 3. Verify: look at what was collected
+
+Workflow **`ingest-episodes`**, input `dataset = galaxea-open-world-r1lite`. Two jobs:
+
+1. `episode_rrd.py` writes one **Rerun** recording per episode to `processed/rerun/<dataset>/<episode_id>.rrd` (camera videos as video assets, every signal group as a scalar series, one timeline).
+2. `ingest_episodes.py` loads the episodes into the grouped **FiftyOne** dataset `episodes/galaxea-open-world-r1lite`: one group per episode, one slice per camera, fields from `episode.json`, signal summaries, and `rerun_url`.
+
+Result: 114 recordings written, 456 videos added (114 episodes × 4 cameras), 116 groups in the dataset (two from an earlier `Make_The_Bed` test). 77 s.
+
+Then, in the browser:
+
+- **FiftyOne** `https://fiftyone.<host>:8443/` → dataset `episodes/galaxea-open-world-r1lite`. Each tile is an episode; the slice selector switches camera. Filter by `task`, `duration_s`, `left_gripper_range`; play any clip.
+- **Rerun**: a sample's `rerun_url` opens `https://rerun.<host>:8443/?url=…/data/<dataset>/<episode_id>.rrd`: all cameras and every joint/gripper signal scrubbing together (the recording is served on the same SSO session; checked: `206` partial content). Rerun also opens raw mcap or LeRobot directories directly (`rerun --save out.rrd <path>`) for data that hasn't been converted yet.
+
+What to check here, because training inherits it: episode count matches the collection log, every episode has all cameras, durations are plausible, gripper signals actually move, task strings are right.
+
+## 4. Train: XPolicyLab under Slurm, tracked in MLflow
+
+XPolicyLab (`eval/system1/RoboDojo/XPolicyLab`) trains ~35 policies from one input format, its xspark HDF5 (`PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5`). That tree is `processed/xpolicylab/`, and `eval/system1/RoboDojo/data` is a symlink to it. Training runs as Slurm GPU jobs (the node's Docker has no GPU runtime); Gitea submits them over SSH with a key locked to `services/slurm/slurm-submit` and streams the Slurm log into the Actions log.
+
+### 4a. Training format
+
+Workflow **`convert-xpolicylab`** (a Slurm CPU job), inputs `subsets = galaxea-open-world-r1lite/Arrange_Fruits_*`, `limit = 0`, `env_cfg = arx_x5`.
+
+Galaxea LeRobot v2.1 → xspark: 6 arm joints + 1 gripper per arm (14-D, the same layout as XPolicyLab's `arx_x5`), EE poses reordered to `[x y z qw qx qy qz]`, the three cameras at 480×640 as JPEGs stamped with XPolicyLab's `XPL-RGB1` marker. Verified against `XPolicyLab.utils.data_loader.load`.
+
+Result: `processed/xpolicylab/Galaxea/Arrange_Fruits_20250819_011/arx_x5/data/episode_0000000.hdf5 … 0000113`, 114 files of ~130 MB (110 064 frames), Slurm job `COMPLETED` in 16 min, log streamed into the Actions run.
+
+### 4b. Train
+
+Workflow **`train-xpolicylab`**, inputs `policy = ACT`, `bench = Galaxea`, `task = Arrange_Fruits_20250819_011`, `env_cfg = arx_x5`, `action = joint`, `seed = 0`, `extra = --num_epochs 30 --save_freq 30` (drop `extra` for the real 6000-epoch run; `policy = DP` with `training.num_epochs=…` for diffusion policy).
+
+The Slurm script runs the policy's own `process_data.sh`, then its training command exactly as `policy/<P>/train.sh` would, through `xpolicylab/train_mlflow.py`, which hooks the policy's epoch summary (XPolicyLab prints no metrics itself), mirrors every epoch to MLflow, uploads the checkpoint directory as run artifacts (stored in `s3://mlflow`) and registers it as a model version.
+
+Result: Slurm job `COMPLETED` in 10 min 47 s (most of it the policy's `process_data` decoding 330k JPEG frames; the 30 epochs take about a minute). MLflow run `ACT-Galaxea-Arrange_Fruits_20250819_011-arx_x5-joint-0`: 30 epochs of `train/loss`, `train/l1`, `train/kl`, `val/loss` (86.1 → 0.754); artifacts `policy_epoch_30_seed_0.ckpt` and `policy_last.ckpt` (336 MB each) plus `dataset_stats.pkl`; registered model **`ACT-Galaxea-Arrange_Fruits_20250819_011` version 1**.
+
+### 4c. Look at the results
+
+`https://<host>:8443/mlflow/` → experiment **xpolicylab**: curves, parameters (bench/task/env_cfg/seed/action_dim), the exact command, the Slurm job id. **Models** → the registered model, each version linked to its run and checkpoints. Compare runs across policies or seeds by selecting them.
+
+Caveats: `env_cfg=arx_x5` is a stand-in label (Galaxea's r1lite has the same 14-D layout; a proper `r1lite` entry needs edits inside the XPolicyLab/RoboDojo submodules, i.e. a fork); the policies' pinned `torch==2.4.1` has no CUDA build for this aarch64 Blackwell node, so the envs use the cu128 index.
 
 ## 5. Evaluate and feed back
 
-Not wired yet. The pieces that exist: RoboDojo and RoboTwin evaluators (`eval/system1/`), IsaacLab-Arena environments (`eval/system2/`), and XPolicyLab's `eval.sh`, which serves a checkpoint as a policy server for the simulator. Galaxea's r1lite has no simulator here, so its evaluation is physical. The intended loop: an `evaluate` workflow pulls a registered model version from MLflow, runs the benchmark as a Slurm job, writes scores back to the run and eval logs to the Store, and the results decide what to collect or reprocess next.
+Not wired yet. The pieces: RoboDojo and RoboTwin evaluators (`eval/system1/`), IsaacLab-Arena (`eval/system2/`), and XPolicyLab's `eval.sh`, which serves a checkpoint to the simulator. Galaxea's r1lite has no simulator here, so its evaluation is physical. The intended loop: an `evaluate` workflow pulls a registered model version, runs the benchmark as a Slurm job, writes scores to the MLflow run and eval logs to the Store, and those numbers decide what to collect or reprocess next (the feedback edge in the diagram).
 
-## Worked example: Galaxea, start to finish
+## The same loop for other data
 
-```bash
-# 1. raw: the HF download was moved into the bucket directory (18 TB total, no copy)
-mv /tier1/htx_boonhan/datasets/galaxea-open-world-r1lite /tier1/htx_boonhan/services/versitygw/buckets/raw/
+| Raw format | Collect | Process → episodes | Train |
+|---|---|---|---|
+| LeRobot v2 (Galaxea) | archive or directory into `raw` | `unpack-archives` (if archived) → `episodes-lerobot` | `convert-xpolicylab` → `train-xpolicylab` |
+| LeRobot v3 (HiFi-UMI-2K) | directory into `raw` | `episodes-lerobot` (cuts episodes out of the per-camera videos) | EE-space data; XPolicyLab's joint-space layout doesn't fit yet |
+| ROS 2 mcap (h2rc) | bag directories into `raw` | `episodes-mcap` | no recorded actions in the bags; would need derived targets |
+| anything else | into `raw` | write one `episodes_from_<format>.py` (see `fiftyone/episodes.py`) | one `convert_<format>_xspark.py` |
 
-# 2. processed: unpack one task archive through the S3 gateway, then make it browsable
-#    (Gitea → Actions → unpack-archives: archives=galaxea-open-world-r1lite/lerobot/Make_The_Bed_*.tar.gz)
-#    (Gitea → Actions → ingest-lerobot: name=galaxea-open-world-r1lite bucket=processed path=galaxea-open-world-r1lite/*)
-#    → FiftyOne https://fiftyone.<host>:8443, dataset galaxea-open-world-r1lite, 204 episode videos
-
-# 3. training format: xspark HDF5 (Slurm CPU job, ~0.4 s/episode)
-#    (Gitea → Actions → convert-xpolicylab: subsets=galaxea-open-world-r1lite/Make_The_Bed_*)
-#    → processed/xpolicylab/Galaxea/Make_The_Bed_20250730_012/arx_x5/data/episode_0000000.hdf5 …
-
-# 4. train two policies (Slurm GPU jobs)
-#    (Gitea → Actions → train-xpolicylab: policy=ACT …; policy=DP …)
-#    → MLflow runs with curves, checkpoints in s3://mlflow, models ACT-Galaxea-… and DP-Galaxea-… v1
-```
+Adding a format is one converter; FiftyOne, Rerun and the training path need nothing new.
 
 ## Operations cheat-sheet
 
 | Need | Where |
 |---|---|
 | Start / stop / update the stack | `services/ctl.sh up` / `down` (runs compose on the service node over ssh) |
-| Logins | Keycloak single sign-on (`/auth`); `services/ctl.sh user add <name> <email>` creates a person in Keycloak, MLflow and the S3 gateway; the admin login is `ADMIN_USER` / `ADMIN_PASSWORD` in `services/.env` |
-| Reach it from a laptop | ssh tunnel on 8443 plus `/etc/hosts` entries for `flywheel.<ip>.sslip.io` and its `fiftyone.`, `rerun.`, `s3.` subdomains → `https://flywheel.<ip>.sslip.io:8443/`; trust `/ca.crt` once |
+| Add a person | `services/ctl.sh user add <name> <email>` → Keycloak (SSO), MLflow account, S3 key |
+| Reach it from a laptop | tunnel 8443 + `/etc/hosts` for the four names, or `sshuttle -r <login> <node ip>/32`; trust `/ca.crt` once |
 | State on disk | `/tier1/htx_boonhan/services/<service>/`; buckets under `versitygw/buckets/` |
-| Pipelines code | Gitea `admin/pipelines`; checkout for Slurm at `/tier1/htx_boonhan/services/pipelines` |
-| Slurm logs | `/tier1/htx_boonhan/services/slurm-logs/<job>-<id>.log` |
+| Pipelines code | Gitea `admin/pipelines`; Slurm's checkout at `/tier1/htx_boonhan/services/pipelines` |
+| Slurm logs | `/tier1/htx_boonhan/services/slurm-logs/<job>-<id>.log` (also streamed into the Actions log) |
 | Policy envs | `/tier1/htx_boonhan/services/envs/{act,dp}` (uv venvs) |
+| Secrets | `services/.env` (gitignored); Slurm jobs read `/tier1/htx_boonhan/services/slurm.env` |
