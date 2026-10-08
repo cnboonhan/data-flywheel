@@ -1,11 +1,14 @@
 #!/usr/bin/env python
-"""Convert Galaxea Open-World (LeRobot v2.1, r1lite) episodes into XPolicyLab
-"xspark v1.0" HDF5 files, one per episode, for process_data.sh/train.sh.
+"""Galaxea Open-World (LeRobot v2.1, r1lite) -> XPolicyLab "xspark v1.0" HDF5, incrementally.
 
-Input:  <root>/<subset>/            one unpacked Galaxea task dataset
-                                     (data/chunk-*/episode_*.parquet, videos/, meta/)
-Output: s3://<bucket>/<dest>/<bench>/<subset>/<env_cfg>/data/episode_%07d.hdf5
-        (XPolicyLab wants PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/data/)
+Input:  <raw-dir>/<task>.tar.gz     one Galaxea task archive (data/chunk-*/episode_*.parquet, videos/, meta/)
+Output: s3://processed/xpolicylab/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5
+        + manifest.json next to data/: the source archive (size, mtime) and source episode -> output index.
+
+Incremental: an archive that is unchanged and fully converted is skipped without unpacking. Otherwise it is
+unpacked to scratch, and only episodes missing from the manifest are converted, appended after the highest
+output index (XPolicyLab wants contiguous numbering from 0, so existing files never move). The manifest is
+written after every episode, so an interrupted run resumes. --limit caps the episodes per task.
 
 Layout written (what ACT, DP and the LeRobot converters read):
   data_format_version, instructions (JSON list), subtasks, additional_info/frequency
@@ -21,9 +24,11 @@ Needs: h5py pyarrow pandas numpy opencv-python-headless av boto3
 """
 
 import argparse
-import glob
+import fnmatch
 import json
 import os
+import shutil
+import tarfile
 import tempfile
 
 import av
@@ -131,42 +136,69 @@ def convert_episode(subset_dir, info, ep, task_of, out_path):
     return T
 
 
+def load_manifest(s3, bucket, key):
+    try:
+        return json.loads(s3.get_object(Bucket=bucket, Key=key)["Body"].read())
+    except s3.exceptions.NoSuchKey:
+        return None
+    except Exception as e:  # noqa: BLE001  (gateway answers 404 as a generic ClientError)
+        if getattr(e, "response", {}).get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            return None
+        raise
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--subsets", required=True, help="glob of unpacked Galaxea task datasets under --root, e.g. 'galaxea-open-world-r1lite/Make_The_Bed_*'")
-    ap.add_argument("--root", default="/buckets/processed")
-    ap.add_argument("--bench", default="Galaxea", help="XPolicyLab bench_name")
-    ap.add_argument("--env-cfg", default="r1lite", help="XPolicyLab env_cfg_type (robot)")
+    ap.add_argument("--tasks", required=True, help="glob of task names (archive names without .tar.gz), e.g. 'Arrange_Fruits_*' or '*'")
+    ap.add_argument("--raw-dir", required=True, help="directory holding the <task>.tar.gz archives (the raw bucket on disk)")
+    ap.add_argument("--scratch", default=tempfile.gettempdir(), help="where an archive is unpacked while it converts")
+    ap.add_argument("--bench", default="galaxeaOpenWorldDataset", help="XPolicyLab bench_name; also the folder under xpolicylab/")
+    ap.add_argument("--env-cfg", default="arx_x5", help="XPolicyLab env_cfg_type (robot); arx_x5 has the same 14-D layout as r1lite")
     ap.add_argument("--dest", default="xpolicylab", help="prefix in the output bucket")
     ap.add_argument("--bucket", default="processed")
-    ap.add_argument("--limit", type=int, default=0, help="episodes per subset (0 = all)")
-    ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--limit", type=int, default=0, help="max episodes per task in the output (0 = all)")
     args = ap.parse_args()
 
     s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"])
-    subsets = sorted(d for d in glob.glob(f"{args.root}/{args.subsets}") if os.path.exists(f"{d}/meta/info.json"))
-    print(f"{len(subsets)} Galaxea subsets match {args.subsets}")
-    for subset_dir in subsets:
-        name = os.path.basename(subset_dir.rstrip("/"))
-        info = json.load(open(f"{subset_dir}/meta/info.json"))
-        task_of = {t["task_index"]: t["task"] for t in map(json.loads, open(f"{subset_dir}/meta/tasks.jsonl"))}
-        episodes = [json.loads(l) for l in open(f"{subset_dir}/meta/episodes.jsonl") if l.strip()]
-        episodes.sort(key=lambda e: e["episode_index"])
-        if args.limit:
-            episodes = episodes[: args.limit]
-        prefix = f"{args.dest}/{args.bench}/{name}/{args.env_cfg}/data"
-        done = {o["Key"] for p in s3.get_paginator("list_objects_v2").paginate(Bucket=args.bucket, Prefix=prefix + "/") for o in p.get("Contents", [])}
-        frames = 0
-        # xspark episodes must be numbered contiguously from 0, so use the position,
-        # not Galaxea's episode_index (which is contiguous too, but don't rely on it).
-        for i, ep in enumerate(episodes):
-            key = f"{prefix}/episode_{i:07d}.hdf5"
-            if key in done and not args.overwrite:
-                continue
-            with tempfile.NamedTemporaryFile(suffix=".hdf5") as tmp:
-                frames += convert_episode(subset_dir, info, ep, task_of, tmp.name)
-                s3.upload_file(tmp.name, args.bucket, key)
-        print(f"{name}: {len(episodes)} episodes -> s3://{args.bucket}/{prefix} ({frames} new frames)")
+    archives = sorted(f for f in os.listdir(args.raw_dir) if f.endswith(".tar.gz") and fnmatch.fnmatch(f[: -len(".tar.gz")], args.tasks))
+    print(f"{len(archives)} Galaxea task archives match {args.tasks}", flush=True)
+    for archive in archives:
+        task = archive[: -len(".tar.gz")]
+        path = os.path.join(args.raw_dir, archive)
+        st = os.stat(path)
+        source = {"archive": archive, "size": st.st_size, "mtime": int(st.st_mtime)}
+        prefix = f"{args.dest}/{args.bench}/{task}/{args.env_cfg}"
+        mkey = f"{prefix}/manifest.json"
+        man = load_manifest(s3, args.bucket, mkey) or {"source": None, "episodes": {}, "complete": False}
+        if man["source"] == source and (man["complete"] or (args.limit and len(man["episodes"]) >= args.limit)):
+            print(f"{task}: unchanged, {len(man['episodes'])} episodes already converted", flush=True)
+            continue
+        work = tempfile.mkdtemp(prefix=f"galaxea-{task}-", dir=args.scratch)
+        try:
+            with tarfile.open(path) as tar:
+                tar.extractall(work, filter="data")
+            subset_dir = os.path.join(work, task) if os.path.isdir(os.path.join(work, task)) else work
+            info = json.load(open(f"{subset_dir}/meta/info.json"))
+            task_of = {t["task_index"]: t["task"] for t in map(json.loads, open(f"{subset_dir}/meta/tasks.jsonl"))}
+            episodes = sorted((json.loads(l) for l in open(f"{subset_dir}/meta/episodes.jsonl") if l.strip()), key=lambda e: e["episode_index"])
+            todo = [e for e in episodes if str(e["episode_index"]) not in man["episodes"]]
+            room = (args.limit - len(man["episodes"])) if args.limit else len(todo)
+            todo = todo[: max(room, 0)]
+            frames, nxt = 0, (max(man["episodes"].values()) + 1) if man["episodes"] else 0
+            for ep in todo:
+                key = f"{prefix}/data/episode_{nxt:07d}.hdf5"
+                with tempfile.NamedTemporaryFile(suffix=".hdf5", dir=args.scratch) as tmp:
+                    frames += convert_episode(subset_dir, info, ep, task_of, tmp.name)
+                    s3.upload_file(tmp.name, args.bucket, key)
+                man["episodes"][str(ep["episode_index"])] = nxt
+                man["source"], nxt = source, nxt + 1
+                s3.put_object(Bucket=args.bucket, Key=mkey, Body=json.dumps(man, indent=1).encode())
+            man["source"] = source
+            man["complete"] = len(man["episodes"]) >= len(episodes)
+            s3.put_object(Bucket=args.bucket, Key=mkey, Body=json.dumps(man, indent=1).encode())
+            print(f"{task}: +{len(todo)} episodes ({frames} frames), {len(man['episodes'])}/{len(episodes)} in s3://{args.bucket}/{prefix}/data", flush=True)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == "__main__":

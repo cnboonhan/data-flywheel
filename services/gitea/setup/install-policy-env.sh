@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=install-policy-env
-#SBATCH --partition=raus_manual
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --time=02:00:00
-#SBATCH --output=%x-%j.log
 #
 # Build (or re-point) the uv env an XPolicyLab policy trains and serves in: ENVS_DIR/<policy, lowercase>.
-#   sbatch install-policy-env.sbatch ACT | DP | demo_policy
+# Run by the Gitea workflow setup-envs in a job container on the service node (dispatched by `ctl.sh up` /
+# `ctl.sh setup`). By hand, on any node:
+#   set -a; . $STATE_DIR/slurm.env; set +a; bash install-policy-env.sh ACT | DP | demo_policy
 # Follows policy/<P>/install.sh, with the versions that work on this aarch64 Blackwell node: torch from
 # the cu128 index (the policies pin torch==2.4.1, which has no CUDA build here), numpy/numba pins relaxed.
 # Editable installs point at PROJECT_ROOT, so re-run this after moving the repo. Idempotent.
@@ -41,4 +37,5 @@ esac
 uv pip install -q -e "$XPL" mlflow-skinny --reinstall-package xpolicylab
 python -c "import XPolicyLab, sys; print('XPolicyLab from', XPolicyLab.__file__); sys.exit(0 if XPolicyLab.__file__.startswith('$XPL/') else 1)"
 [[ $policy == demo_policy ]] || python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+echo "$PROJECT_ROOT" > "$env/.flywheel-setup"   # ctl.sh up compares this with the checkout
 echo "$policy env ready"

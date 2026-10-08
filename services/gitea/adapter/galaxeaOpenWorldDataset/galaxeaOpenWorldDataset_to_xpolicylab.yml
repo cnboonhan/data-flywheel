@@ -1,0 +1,51 @@
+# Adapter: Galaxea Open-World Dataset (Hugging Face OpenGalaxea/Galaxea-Open-World-Dataset,
+# raw/open_datasets/galaxea-open-world-r1lite/lerobot/<task>.tar.gz)
+# -> XPolicyLab xspark in s3://processed/xpolicylab/galaxeaOpenWorldDataset/<task>/<env_cfg>/data/, in the runner (CPU only):
+# archives read from the read-only /buckets mount, unpacked to the container's scratch, results written through the
+# gateway. One task takes ~15 min; a run stops at the 12 h runner timeout, and re-dispatching continues from there.
+# Incremental: re-running converts only new or changed archives and only episodes not yet in each task's manifest.json.
+name: galaxeaOpenWorldDataset_to_xpolicylab
+concurrency:
+  group: galaxeaOpenWorldDataset_to_xpolicylab
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      tasks:
+        description: "Glob of task names (archive names without .tar.gz); '*' = all 227. Converted, unchanged tasks are skipped"
+        default: "*"
+      limit:
+        description: "Max episodes per task in the output (0 = all)"
+        default: "0"
+      env_cfg:
+        description: "XPolicyLab env_cfg_type the data is filed under"
+        default: "arx_x5"
+
+jobs:
+  convert:
+    runs-on: python
+    timeout-minutes: 720
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+    steps:
+      - name: checkout
+        env:
+          URL: ${{ github.api_url }}/repos/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
+          TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import io, os, tarfile, urllib.request
+          req = urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})
+          with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(req).read())) as tar:
+              top = tar.getnames()[0].split("/")[0]
+              for m in tar.getmembers():
+                  m.name = m.name[len(top) + 1:]
+                  if m.name:
+                      tar.extract(m, ".")
+          PY
+      - run: pip -q install h5py pyarrow pandas numpy opencv-python-headless av boto3
+      - run: |
+          mkdir -p /tmp/scratch
+          python adapter/galaxeaOpenWorldDataset/galaxeaOpenWorldDataset_to_xpolicylab.py --raw-dir /buckets/raw/open_datasets/galaxea-open-world-r1lite/lerobot \
+            --scratch /tmp/scratch --tasks "${{ inputs.tasks }}" --limit "${{ inputs.limit }}" --env-cfg "${{ inputs.env_cfg }}"

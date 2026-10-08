@@ -24,6 +24,7 @@ services/ctl.sh logs -f caddy
 services/ctl.sh restart <service>          # after editing a bind-mounted config (Caddyfile, loki.yml)
 services/ctl.sh up --build                 # after editing mlflow/Dockerfile or rerun/Dockerfile
 services/ctl.sh up --force-recreate        # after git deleted and recreated files under services/
+services/ctl.sh setup                      # rebuild the Slurm-side envs (Gitea workflow setup-envs); up does it when needed
 services/ctl.sh down
 ```
 

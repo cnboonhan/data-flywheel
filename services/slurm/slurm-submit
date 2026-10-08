@@ -25,10 +25,11 @@ case $cmd in
     sha=${1:?sha}; script=${2:?script}; shift 2
     [[ $sha =~ ^[0-9a-f]{7,40}$ && $script =~ ^[A-Za-z0-9._-]+\.sbatch$ ]] || { echo "bad sha or script name" >&2; exit 2; }
     git -C "$PIPELINES_ROOT" fetch -q origin && git -C "$PIPELINES_ROOT" checkout -q "$sha"
-    [[ -f $PIPELINES_ROOT/slurm/$script ]] || { echo "no such script: slurm/$script" >&2; exit 2; }
+    script=slurm/$script
+    [[ -f $PIPELINES_ROOT/$script ]] || { echo "no such script: $script" >&2; exit 2; }
     set -a; [[ -f $ENV_FILE ]] && source "$ENV_FILE"; set +a
     cd "$LOG_DIR"
-    sbatch --parsable --export=ALL,PIPELINES_ROOT="$PIPELINES_ROOT" "$PIPELINES_ROOT/slurm/$script" "$@"
+    sbatch --parsable --export=ALL,PIPELINES_ROOT="$PIPELINES_ROOT" "$PIPELINES_ROOT/$script" "$@"
     ;;
   status)
     jobid "$1"

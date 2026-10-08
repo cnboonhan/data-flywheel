@@ -3,6 +3,7 @@
 #
 #   services/ctl.sh up        start (or update) the stack
 #   services/ctl.sh down      stop it
+#   services/ctl.sh setup     (re)build the Slurm-side environments (Gitea workflow setup-envs)
 #   services/ctl.sh ps|logs|pull|config|<any compose args>
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
@@ -85,16 +86,19 @@ bootstrap_gitea() {
   # Seed files go in once; edit them in the pipelines repo afterwards.
   local f path
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
-  for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT"; do
+  for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
+           "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID"; do
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{ingest,clean,validate,mix}/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
+  for f in gitea/{setup,ingest,adapter,clean,validate,mix}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
            slurm/conda-shim/bin/conda slurm/conda-shim/etc/profile.d/conda.sh slurm/robodojo-shim/sitecustomize.py; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
-      gitea/*/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory
+      gitea/*/*.yml|gitea/*/*/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory
+      gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
+      gitea/adapter/*/*) path="${f#gitea/}" ;;                        # adapter/<source>/<script> the adapter workflows run
       *) path="$f" ;;
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
@@ -200,6 +204,23 @@ mlflow_token() {
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 }
 
+# Environments (RoboDojo eval env, policy envs) are built by the Gitea workflow setup-envs, which runs
+# gitea/setup/*.sh in a job container on this node. `up` dispatches it when an env is missing
+# or was built for another checkout (each installer writes the checkout path to <env>/.flywheel-setup);
+# `ctl.sh setup` dispatches it unconditionally. Follow the run in Gitea > Actions.
+setup_envs() {
+  local force=${1:-} project api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD" e stale=()
+  project=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
+  for e in robodojo act dp demo_policy; do
+    [[ $(cat "$STATE_DIR/envs/$e/.flywheel-setup" 2>/dev/null) == "$project" ]] || stale+=("$e")
+  done
+  if [[ -z $force && ${#stale[@]} == 0 ]]; then echo "setup: environments are current for $project"; return 0; fi
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d '{"ref":"main"}' \
+    "$api/repos/$ADMIN_USER/pipelines/actions/workflows/setup-envs.yml/dispatches" >/dev/null \
+    && echo "setup: dispatched setup-envs (${force:+forced; }missing or stale: ${stale[*]:-none}); follow it at https://$SERVICE_HOST:$CADDY_PORT/gitea/$ADMIN_USER/pipelines/actions" \
+    || echo "warning: could not dispatch setup-envs" >&2
+}
+
 # Add a person to every service under one username:
 #   ctl.sh user add <name> <email> [password]
 # Keycloak (SSO: Gitea, Grafana, MLflow, FiftyOne, Rerun, Loki), an MLflow
@@ -263,7 +284,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Keycloak imports the realm (clients, groups, the admin user) on first start.
@@ -290,7 +311,15 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_keycloak
   bootstrap_mlflow
   [[ -n ${SLURM_LOGIN_HOST:-} ]] && bootstrap_slurm
-  exec "${compose[@]}" up -d "${@:2}"
+  "${compose[@]}" up -d "${@:2}"
+  if [[ -n ${SLURM_LOGIN_HOST:-} ]]; then setup_envs; fi
+  exit 0
+fi
+
+if [[ $1 == setup ]]; then
+  [[ -n ${SLURM_LOGIN_HOST:-} ]] || { echo "setup needs the Slurm bridge (SLURM_LOGIN_HOST in .env)" >&2; exit 1; }
+  setup_envs force
+  exit 0
 fi
 
 exec "${compose[@]}" "$@"

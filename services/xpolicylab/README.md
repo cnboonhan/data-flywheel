@@ -1,11 +1,9 @@
 # xpolicylab
 
-Python the Slurm jobs run ([slurm/](../slurm/README.md)); seeded into the `admin/pipelines` repo.
+Python the Slurm jobs run ([slurm/](../slurm/README.md)); seeded into the `admin/pipelines` repo. Conversions into `processed/xpolicylab/` live in [gitea/adapter/](../gitea/README.md).
 
 | Script | Does |
 |---|---|
-| `convert_galaxea_xspark.py` | Galaxea LeRobot v2.1 → xspark v1.0 HDF5 (14-D `arx_x5` layout, JPEG frames with the `XPL-RGB1` marker) into `processed/xpolicylab/<bench>/<task>/<env_cfg>/data/` |
-| `promote_xspark.py` | xspark episodes already in `raw` (RoboDojo) → the same tree, server-side S3 copy |
 | `train_mlflow.py` | wraps a policy's training command: per-epoch losses to MLflow (experiment `xpolicylab`, run `<policy>-<bench>-<task>-<env_cfg>-<action>-<seed>`), checkpoints as artifacts, registered model `<policy>-<bench>-<task>` |
 | `eval_mlflow.py` | RoboDojo `_result.json` → `eval/success_rate`, `eval/score`, `eval/episodes` and the videos on the training run; tags the model version |
 

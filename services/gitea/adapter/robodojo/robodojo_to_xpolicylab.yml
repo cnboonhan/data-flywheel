@@ -1,0 +1,61 @@
+# Adapter: RoboDojo (raw/open_datasets/robodojo/<task>/<env_cfg>/data/episode_*.hdf5, already xspark)
+# -> s3://processed/xpolicylab/RoboDojo/<task>/<env_cfg>/data/episode_%07d.hdf5, by server-side S3 copy (no Slurm).
+# Incremental: each task keeps manifest.json (source key -> output index); re-runs copy only new source episodes,
+# appended after the highest index so XPolicyLab's contiguous numbering never shifts.
+name: robodojo_to_xpolicylab
+concurrency:
+  group: robodojo_to_xpolicylab
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      tasks:
+        description: "Glob of RoboDojo task names; '*' = all downloaded. Already copied episodes are skipped"
+        default: "*"
+      env_cfg:
+        default: "arx_x5"
+      limit:
+        description: "Max episodes per task in the output (0 = all)"
+        default: "0"
+
+jobs:
+  copy:
+    runs-on: python
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+      TASKS: ${{ inputs.tasks }}
+      ENV_CFG: ${{ inputs.env_cfg }}
+      LIMIT: ${{ inputs.limit }}
+    steps:
+      - run: pip -q install boto3
+      - run: |
+          python - <<'PY'
+          import fnmatch, json, os
+          import boto3
+          s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"])
+          SRC, DST = "open_datasets/robodojo/", "xpolicylab/RoboDojo/"
+          env_cfg, limit = os.environ["ENV_CFG"], int(os.environ["LIMIT"] or 0)
+          def keys(bucket, prefix, delim=None):
+              kw = {"Bucket": bucket, "Prefix": prefix, **({"Delimiter": delim} if delim else {})}
+              for page in s3.get_paginator("list_objects_v2").paginate(**kw):
+                  yield from (p["Prefix"] for p in page.get("CommonPrefixes", [])) if delim else (o["Key"] for o in page.get("Contents", []))
+          tasks = sorted(p[len(SRC):-1] for p in keys("raw", SRC, "/") if fnmatch.fnmatch(p[len(SRC):-1], os.environ["TASKS"]))
+          print(f"{len(tasks)} RoboDojo tasks match {os.environ['TASKS']}", flush=True)
+          for task in tasks:
+              src = sorted(k for k in keys("raw", f"{SRC}{task}/{env_cfg}/data/") if k.endswith(".hdf5"))
+              mkey = f"{DST}{task}/{env_cfg}/manifest.json"
+              try:
+                  man = json.loads(s3.get_object(Bucket="processed", Key=mkey)["Body"].read())
+              except Exception:
+                  man = {"episodes": {}}
+              todo = [k for k in src if k not in man["episodes"]]
+              if limit:
+                  todo = todo[: max(limit - len(man["episodes"]), 0)]
+              nxt = max(man["episodes"].values()) + 1 if man["episodes"] else 0
+              for k in todo:
+                  s3.copy({"Bucket": "raw", "Key": k}, "processed", f"{DST}{task}/{env_cfg}/data/episode_{nxt:07d}.hdf5")
+                  man["episodes"][k], nxt = nxt, nxt + 1
+                  s3.put_object(Bucket="processed", Key=mkey, Body=json.dumps(man, indent=1).encode())
+              print(f"{task}: +{len(todo)} episodes, {len(man['episodes'])} of {len(src)} source episodes in s3://processed/{DST}{task}/{env_cfg}/data", flush=True)
+          PY

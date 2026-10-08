@@ -33,3 +33,8 @@ container:
   options: -v /tier1/htx_boonhan/services/versitygw/buckets:/buckets:ro
   valid_volumes:
     - /tier1/htx_boonhan/services/versitygw/buckets
+    # setup-envs mounts the state dir, the checkout and ~/.local at their host paths (repo variables STATE_DIR,
+    # FLYWHEEL_ROOT, USER_LOCAL); keep these in step with .env and the checkout location.
+    - /tier1/htx_boonhan/services
+    - /home/htx_boonhan/workspaces/data-flywheel
+    - /home/htx_boonhan/.local
