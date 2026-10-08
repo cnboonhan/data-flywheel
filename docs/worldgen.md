@@ -33,7 +33,7 @@ The prototype uses NVIDIA's **Nova Carter** instead of an R1 Lite, for three rea
 | Step | State |
 |---|---|
 | 1 Robot in sim | Carter referenced out of Isaac Sim's warehouse sample into the NuRec room, spawned on the room's capture trajectory; `/clock`, odometry, TF, XT-32 point cloud (~43k pts/sweep against the room's collision mesh) and the front stereo pair verified from the container |
-| 2 Nav stack | slam_toolbox builds `/map` (lifecycle-launched), Nav2 up on NVIDIA's Carter params with map server/AMCL removed, `pointcloud_to_laserscan` provides `/scan`, `explore_lite` built from source. Exploration itself is being debugged: first runs produced a map from a standing robot; the global costmap now tracks unknown space so frontiers exist |
+| 2 Nav stack | Working: slam_toolbox + Nav2 (NVIDIA's Carter params, retuned) + our own frontier explorer (explore_lite gave up after one empty search). A 30-minute autonomous run reached 3 frontier goals and mapped the room's corridor, top room and alcoves; recovery failures still leave part of the room unexplored |
 | Bag | `record.sh` records `/tf`, odometry, lidar and the front stereo pair (+`camera_info`) as mcap, the inputs NuRec's stereo workflow lists |
 | 3–4 | Not run on a sim bag yet; the NuRec stereo workflow needs the Isaac ROS 4.0 container |
 

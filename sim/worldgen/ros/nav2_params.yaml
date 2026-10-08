@@ -2,9 +2,13 @@
 # carter_navigation_params.yaml (IsaacSim-ros_workspaces, Isaac Sim 6.1) with the map server and AMCL
 # removed: slam_toolbox publishes /map and the map->odom transform. Regenerate after bumping the submodule.
 # 2D sources point at /scan (derived from the XT-32 cloud); the sample's RPLidar topics are not published.
+# initial_transform_timeout is effectively unbounded: it is measured on sim time, and a node that starts its timer
+# before its first /clock sees time jump from 0 to the current sim time and times out at once. wait_for_tf.py gates
+# Nav2 startup on the transforms instead.
 # global_costmap tracks unknown space (default false would turn unknown into free and leave explore_lite no frontiers).
 # Inflation tightened (padding 0.05, radius 0.55): with NVIDIA's 0.25 m padding every stray scan point became a 0.5 m lethal disc
 # and the costmap had no free cells left (see sim/worldgen/README.md, Status).
+# 3D-lidar obstacles start 0.10 m above the floor (was -0.4): scanned-floor bumps boxed the robot in and blocked recoveries.
 bt_navigator:
   ros__parameters:
     use_sim_time: true
@@ -216,14 +220,14 @@ local_costmap:
           marking: true
           clearing: false
           obstacle_range: 3.0
-          min_obstacle_height: -0.4
+          min_obstacle_height: 0.1
           max_obstacle_height: 1.5
           expected_update_rate: 0.0
           observation_persistence: 0.0
           inf_is_valid: false
           filter: voxel
           clear_after_reading: true
-      initial_transform_timeout: 120.0
+      initial_transform_timeout: 1000000.0
 global_costmap:
   global_costmap:
     ros__parameters:
@@ -264,7 +268,7 @@ global_costmap:
       always_send_full_costmap: true
       track_unknown_space: true
       unknown_cost_value: 255
-      initial_transform_timeout: 120.0
+      initial_transform_timeout: 1000000.0
   global_costmap_client:
     ros__parameters:
       use_sim_time: true

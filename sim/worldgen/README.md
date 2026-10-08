@@ -58,8 +58,14 @@ bash sim/worldgen/nav.sh run --rm nav ros2 run nav2_map_server map_saver_cli -f 
 
 ## Status (2026-10-08)
 
-Verified end to end up to Nav2: Isaac Sim publishes on domain 42 and the container sees everything; the lidar hits the room; slam_toolbox (lifecycle-launched) builds `/map` and `map→odom`; Nav2 activates on the Carter params; `explore_lite` finds frontiers once the global costmap tracks unknown space and sends goals.
+**Autonomous exploration works.** From a fresh spawn, 30 minutes of frontier exploration (`runs/explore8`) reached 3 frontier goals, drove ~13 m and produced a closed SLAM map of the room: outer corridor (~27 × 17 m), the long room along the top and the row of alcoves, at 5 cm. Nav2 came up cleanly; 9 of 12 goals failed and were blacklisted, mostly when recoveries stopped on "Collision Ahead", and the run ended after 40 empty frontier searches with the unexplored right half beyond a doorway the explorer could not reach.
 
-**Open: the robot has not driven yet.** Nav2's planner rejected every goal ("Failed to create plan with tolerance 0.5"). A dump of the global costmap (`runs/explore1/cm.json`, rendered) showed why: stray scan points (floor-mesh noise, chair legs) inflated with NVIDIA's `footprint_padding: 0.25` turned the whole free corridor into overlapping lethal discs, leaving 86 free cells in the map. Applied, untested: padding 0.05, inflation radius 0.55, and the cloud→scan `min_height` raised to skip floor noise. Next run: `bash sim/worldgen/isaac.sh` + `bash sim/worldgen/nav.sh up explore`, then check `/cmd_vel` and odometry move; if planning still fails, look at `runs/<name>/map.pgm` for scatter and raise `min_height` further or add a median filter on `/scan`.
+What it took, in order of discovery:
+- slam_toolbox via its lifecycle-aware launch; 720-beam `/scan`.
+- **Our own `ros/frontier_explorer.py` instead of explore_lite**, which quit after one empty search while the costmap had hundreds of reachable frontier cells. It flood-fills from the robot through non-lethal cells, clusters frontier cells, sends Nav2 to the best cluster and blacklists failures.
+- Global costmap tracks unknown space (otherwise no frontiers exist).
+- Inflation tightened (padding 0.05, radius 0.55): NVIDIA's 0.25 m padding turned every stray scan point into a lethal disc.
+- 3D-lidar obstacles start 0.10 m above the floor and the cloud→scan min height skips floor noise; scanned-floor bumps otherwise box the robot in.
+- Nav2 starts only after `ros/wait_for_tf.py` sees odom→base_link and map→odom, with `initial_transform_timeout` effectively unbounded: it is measured on sim time, and a node that starts its timer before its first `/clock` sees time jump from 0 to the current sim time and aborts the bringup.
 
-Also fixed along the way: slam_toolbox lifecycle, scan beam count, delayed explore start, `initial_transform_timeout` and a delayed Nav2 start (map→odom arrives late at 0.4× real time), container running as the host user (`nav.sh`).
+Next: record a bag during exploration (`record.sh`) and run NuRec's stereo workflow on it; compare this SLAM map with NVIDIA's `occupancy_map.png` for the same room; reduce recovery failures (collision_monitor/behavior settings) so exploration reaches the right half.

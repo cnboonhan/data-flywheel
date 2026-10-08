@@ -1,5 +1,5 @@
 """Autonomous exploration for a Nova Carter driven by Isaac Sim: slam_toolbox builds the map, Nav2 moves the
-robot, explore_lite picks frontiers. No map server / AMCL: the map comes from SLAM.
+robot, frontier_explorer.py picks frontiers. No map server / AMCL: the map comes from SLAM.
 
     ros2 launch /worldgen/explore.launch.py              # inside the worldgen container
     ros2 launch /worldgen/explore.launch.py explore:=false   # SLAM + Nav2 only (send goals by hand)
@@ -9,7 +9,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, RegisterEventHandler, TimerAction
+from launch.event_handlers import OnProcessExit
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -23,10 +24,15 @@ def generate_launch_description():
     explore = LaunchConfiguration("explore")
     nav2_params = LaunchConfiguration("nav2_params")
 
+    wait_tf = ExecuteProcess(
+        cmd=["python3", os.path.join(HERE, "wait_for_tf.py"), "odom:base_link", "map:odom"],
+        name="wait_for_tf", output="screen",
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="True"),
-        DeclareLaunchArgument("explore", default_value="True", description="Start explore_lite"),
-        DeclareLaunchArgument("explore_delay", default_value="90.0", description="Seconds (wall) before explore_lite starts"),
+        DeclareLaunchArgument("explore", default_value="True", description="Start the frontier explorer"),
+        DeclareLaunchArgument("explore_delay", default_value="90.0", description="Seconds (wall) before exploration starts"),
         DeclareLaunchArgument("nav2_params", default_value=os.path.join(HERE, "nav2_params.yaml")),
 
         # Carter's 3D lidar -> 2D scan for SLAM (same node and settings as NVIDIA's carter_navigation launch).
@@ -51,23 +57,21 @@ def generate_launch_description():
             launch_arguments={"use_sim_time": use_sim_time, "autostart": "true",
                               "slam_params_file": os.path.join(HERE, "slam_params.yaml")}.items(),
         ),
-        # Nav2 after SLAM has had time to publish map->odom; its costmaps abort activation if the transform is late.
-        TimerAction(
-            period=20.0,
-            actions=[IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(get_package_share_directory("nav2_bringup"), "launch", "navigation_launch.py")),
-                launch_arguments={"use_sim_time": use_sim_time, "params_file": nav2_params, "autostart": "True"}.items(),
-            )],
-        ),
-        # Started right after Nav2 activates, explore_lite sees an unpopulated costmap, reports "No frontiers
-        # found" and quits for good. Give SLAM and the costmaps time to fill in first (wall-clock seconds).
+        # Nav2 only once odom->base_link (sim) and map->odom (SLAM) resolve: its costmaps abort the entire bringup
+        # if a transform is missing at activation, and how long that takes varies run to run.
+        wait_tf,
+        RegisterEventHandler(OnProcessExit(target_action=wait_tf, on_exit=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(get_package_share_directory("nav2_bringup"), "launch", "navigation_launch.py")),
+            launch_arguments={"use_sim_time": use_sim_time, "params_file": nav2_params, "autostart": "True"}.items(),
+        )])),
+        # Frontier exploration (our own node; explore_lite gave up after one empty search). Start once SLAM and
+        # the costmaps have filled in (wall-clock seconds).
         TimerAction(
             period=LaunchConfiguration("explore_delay"),
-            actions=[Node(
-                package="explore_lite", executable="explore", name="explore_node", output="screen",
-                condition=IfCondition(explore),
-                parameters=[os.path.join(HERE, "explore_params.yaml"), {"use_sim_time": use_sim_time}],
+            actions=[ExecuteProcess(
+                cmd=["python3", os.path.join(HERE, "frontier_explorer.py"), "--ros-args", "-p", "use_sim_time:=true"],
+                name="frontier_explorer", output="screen", condition=IfCondition(explore),
             )],
         ),
     ])
