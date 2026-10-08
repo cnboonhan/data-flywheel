@@ -73,8 +73,11 @@ constraints=$(mktemp); printf '%s\n' "${pins[@]}" "stable-baselines3<2.8" > "$co
 uv pip install -q "${pins[@]}"
 uv pip uninstall -q python-discovery 2>/dev/null || true
 
-echo "[5/6] XPolicyLab (client side) + conda shim"
+echo "[5/6] XPolicyLab (client side) + conda shim + ffmpeg"
 uv pip install -q -e XPolicyLab
+# The nodes have no ffmpeg; RoboDojo's eval client pipes camera frames through one. imageio-ffmpeg ships a static build.
+uv pip install -q imageio-ffmpeg
+mkdir -p "$ROBODOJO_DIR/bin" && ln -sf "$(ls "$ENVS_DIR"/robodojo/lib/python3.*/site-packages/imageio_ffmpeg/binaries/ffmpeg-* | head -1)" "$ROBODOJO_DIR/bin/ffmpeg"
 mkdir -p "$ENVS_DIR/conda-shim"
 cp -r "$PIPELINES_ROOT/slurm/conda-shim/." "$ENVS_DIR/conda-shim/"
 chmod +x "$ENVS_DIR/conda-shim/bin/conda"

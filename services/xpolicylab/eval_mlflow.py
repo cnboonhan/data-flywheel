@@ -36,17 +36,27 @@ def main():
     metrics = {"eval/success_rate": float(r.get("success_rate", 0)), "eval/score": float(r.get("score", 0)), "eval/episodes": float(r.get("eval_time", 0))}
     print(f"{path}: {metrics}")
 
-    mlflow.set_experiment(args.experiment)
-    run_name = f"{args.policy}-{args.bench}-{args.ckpt}-{args.env_cfg}-{args.action}-{args.seed}"
-    runs = mlflow.search_runs(experiment_names=[args.experiment], filter_string=f"tags.mlflow.runName = '{run_name}'", max_results=1, order_by=["start_time DESC"])
-    run_id = runs.iloc[0]["run_id"] if len(runs) else None
+    exp = mlflow.set_experiment(args.experiment)
+    client = mlflow.MlflowClient()
+    # The training run is named <policy>-<ckpt dir>, the ckpt dir <bench>-<task>-<env_cfg>-<action>-<seed>
+    # (XPolicyLab train.sh). `ckpt` is either that directory name or, for hub checkpoints, a bare name.
+    # A *_gpu env_cfg evaluates a checkpoint trained under the base config.
+    base_env = args.env_cfg[:-4] if args.env_cfg.endswith("_gpu") else args.env_cfg
+    candidates = [f"{args.policy}-{args.ckpt}", f"{args.policy}-{args.bench}-{args.ckpt}-{base_env}-{args.action}-{args.seed}"]
+    run_id, run_name = None, candidates[-1]
+    for run_name in candidates:
+        runs = client.search_runs([exp.experiment_id], filter_string=f"tags.mlflow.runName = '{run_name}'", max_results=1, order_by=["start_time DESC"])
+        if runs:
+            run_id = runs[0].info.run_id
+            break
+    run_name = f"{args.policy}-{args.ckpt}-{args.env_cfg}" if run_id is None else run_name
     with mlflow.start_run(run_id=run_id, run_name=None if run_id else f"eval-{run_name}") as run:
         mlflow.log_metrics(metrics)
         mlflow.set_tags({"eval_task": args.task, "eval_result": path, "eval_env": "RoboDojo"})
+        mlflow.log_artifacts(os.path.dirname(path), artifact_path=f"eval/{args.task}")   # _result.json and the episode videos
         print("logged to run", run.info.run_id, "(training run)" if run_id else "(new eval run)")
 
-    client = mlflow.MlflowClient()
-    name = f"{args.policy}-{args.bench}-{args.ckpt}"
+    name = f"{args.policy}-{args.bench}-{args.task}"   # train_mlflow.py registers <policy>-<bench>-<task>
     for mv in client.search_model_versions(f"name = '{name}'"):
         if run_id and mv.run_id == run_id:
             client.set_model_version_tag(name, mv.version, f"eval_{args.task}_success_rate", f"{metrics['eval/success_rate']:.3f}")

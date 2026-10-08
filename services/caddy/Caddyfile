@@ -71,9 +71,11 @@ https://{$SERVICE_HOST}:8443 {
 		reverse_proxy grafana:3000
 	}
 	# MLflow keeps its own accounts: API clients (training jobs) authenticate
-	# with basic auth, which browser SSO can't replace. ctl.sh mirrors users.
+	# with Keycloak through the mlflow-oidc-auth plugin; API clients use access tokens.
 	handle /mlflow/* {
-		reverse_proxy mlflow:5000
+		reverse_proxy mlflow:5000 {
+			header_up X-Forwarded-Prefix /mlflow
+		}
 	}
 
 	# No login of their own: SSO at the proxy.
@@ -118,6 +120,10 @@ https://rerun.{$SERVICE_HOST}:8443 {
 # so no prefix and no SSO here: clients hold access keys, which ctl.sh issues
 # per user; the UI logs in with those keys.
 https://s3.{$SERVICE_HOST}:8443 {
+	handle /ui/* {
+		import sso
+		reverse_proxy versitygw:7070
+	}
 	reverse_proxy versitygw:7070
 }
 

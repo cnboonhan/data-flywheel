@@ -51,14 +51,14 @@ services:
   mlflow:
     <<: *common
     build: ./mlflow
-    image: flywheel-mlflow:3.17.0
+    image: flywheel-mlflow:3.17.0-oidc
     command:
       - mlflow
       - server
       - --host=0.0.0.0
       - --port=5000
-      - --app-name=basic-auth
-      - --static-prefix=/mlflow
+      - --app-name=oidc-auth                 # mlflow-oidc-auth: Keycloak login, access tokens, permissions; the /mlflow prefix
+                                             # comes from Caddy's X-Forwarded-Prefix (TRUSTED_PROXIES), not --static-prefix
       - --allowed-hosts=${SERVICE_HOST},${SERVICE_HOST}:${CADDY_PORT:-8443}
       - --cors-allowed-origins=https://${SERVICE_HOST}:${CADDY_PORT:-8443}
       - --backend-store-uri=sqlite:////state/mlflow.db
@@ -66,16 +66,31 @@ services:
       - --serve-artifacts                     # clients upload through the server; no S3 creds needed
     environment:
       HOME: /state
-      MLFLOW_AUTH_CONFIG_PATH: /etc/mlflow/basic_auth.ini
-      MLFLOW_AUTH_ADMIN_USERNAME: ${ADMIN_USER}
-      MLFLOW_AUTH_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Discovery over the compose network (no TLS): Keycloak advertises the public issuer and
+      # authorization URL, and internal token/userinfo/jwks URLs (KC_HOSTNAME_BACKCHANNEL_DYNAMIC).
+      OIDC_DISCOVERY_URL: http://keycloak:8080/auth/realms/flywheel/.well-known/openid-configuration
+      OIDC_ISSUER: https://${SERVICE_HOST}:${CADDY_PORT:-8443}/auth/realms/flywheel
+      OIDC_CLIENT_ID: mlflow
+      OIDC_CLIENT_SECRET: ${KC_MLFLOW_SECRET}
+      OIDC_AUDIENCE: mlflow
+      OIDC_REDIRECT_URI: https://${SERVICE_HOST}:${CADDY_PORT:-8443}/mlflow/callback
+      OIDC_PROVIDER_DISPLAY_NAME: Sign in with Keycloak
+      OIDC_USERNAME_FIELD: preferred_username   # same usernames as everywhere else (not the email)
+      OIDC_GROUPS_ATTRIBUTE: groups
+      OIDC_GROUP_NAME: users,admins             # Keycloak groups allowed in
+      OIDC_ADMIN_GROUP_NAME: admins
+      OIDC_PROVISION_ON_BEARER_AUTH: "true"     # ctl.sh mints access tokens with a Keycloak token
+      DEFAULT_MLFLOW_PERMISSION: EDIT           # everyone can log to any experiment; MANAGE stays with owners/admins
+      OIDC_USERS_DB_URI: sqlite:////state/oidc_auth.db
+      SECRET_KEY: ${MLFLOW_SECRET_KEY}
+      SESSION_COOKIE_SECURE: "true"
+      TRUSTED_PROXIES: 172.16.0.0/12            # caddy, on the compose network
       MLFLOW_FLASK_SERVER_SECRET_KEY: ${MLFLOW_SECRET_KEY}   # signs CSRF tokens
       MLFLOW_S3_ENDPOINT_URL: http://versitygw:7070
       AWS_ACCESS_KEY_ID: ${ADMIN_USER}
       AWS_SECRET_ACCESS_KEY: ${ADMIN_PASSWORD}
       AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
     volumes:
-      - ./mlflow/basic_auth.ini:/etc/mlflow/basic_auth.ini:ro
       - ${STATE_DIR}/mlflow:/state
 
   prometheus:
@@ -121,6 +136,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(groups[*], 'admins') && 'Admin' || 'Editor'"
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      # Match the SSO admin to the built-in Grafana admin by email (ctl.sh sets both to the same address).
+      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"
       GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "false"
     volumes:

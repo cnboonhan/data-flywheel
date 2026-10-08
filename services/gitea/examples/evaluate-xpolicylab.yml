@@ -10,10 +10,11 @@ on:
         description: "RoboDojo task, e.g. stack_bowls"
         default: "stack_bowls"
       ckpt:
-        description: "ckpt_name the checkpoint was trained under (XPolicyLab: policy/<P>/checkpoints/RoboDojo-<ckpt>-<env_cfg>-<action>-<seed>)"
-        default: "stack_bowls"
+        description: "Checkpoint directory under policy/<P>/checkpoints/: a trained one is <bench>-<task>-<env_cfg>-<action>-<seed> (e.g. RoboDojo-stack_bowls-arx_x5-joint-0); hub checkpoints are the bare task name"
+        default: "RoboDojo-stack_bowls-arx_x5-joint-0"
       env_cfg:
-        default: "arx_x5"
+        description: "RoboDojo env config; *_gpu runs the simulation on the GPU (required on the GB300 nodes)"
+        default: "arx_x5_gpu"
       action:
         default: "joint"
       seed:

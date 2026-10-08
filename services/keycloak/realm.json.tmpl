@@ -62,6 +62,24 @@
       ]
     },
     {
+      "clientId": "mlflow",
+      "name": "Grafana",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${KC_MLFLOW_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["https://${SERVICE_HOST}:${CADDY_PORT}/mlflow/callback"],
+      "webOrigins": ["https://${SERVICE_HOST}:${CADDY_PORT}"],
+      "protocolMappers": [
+        {"name": "audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+         "config": {"included.client.audience": "mlflow", "id.token.claim": "true", "access.token.claim": "true"}},
+        {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
+         "config": {"claim.name": "groups", "full.path": "false", "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"}}
+      ]
+    },
+    {
       "clientId": "oauth2-proxy",
       "name": "Proxy login for FiftyOne, Rerun, Prometheus, Loki",
       "enabled": true,
