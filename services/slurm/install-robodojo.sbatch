@@ -58,7 +58,8 @@ echo "[3/6] IsaacLab"
 # non-zero after printing an LD_PRELOAD notice; RoboDojo would re-pin 2.7/cu128 on x86. On
 # aarch64 keep IsaacLab's choice: the driver (580) supports CUDA 13 and the cu128 aarch64
 # wheels don't come with torchaudio.
-if ! python -c "import isaaclab" 2>/dev/null; then
+# Editable installs must point at this checkout (re-run after moving the repo): skip only if they already do.
+if ! python -c "import isaaclab, sys; sys.exit(0 if isaaclab.__file__.startswith('$PROJECT_ROOT/') else 1)" 2>/dev/null; then
   (cd third_party/IsaacLab && ./isaaclab.sh --install none) || echo "isaaclab.sh exited non-zero; checking the install below"
 fi
 [[ $(uname -m) == aarch64 ]] || uv pip install -q "${torch_stack[@]}"
@@ -69,12 +70,13 @@ echo "[4/6] curobo"
 uv pip install -q scikit-build-core cmake ninja setuptools wheel   # build deps for --no-build-isolation (xatlas needs scikit-build-core)
 cu=$(python -c "import torch; print('cu13' if torch.version.cuda.startswith('13') else 'cu12')")
 constraints=$(mktemp); printf '%s\n' "${pins[@]}" "stable-baselines3<2.8" > "$constraints"
-(cd third_party/curobo && uv pip install -q -e ".[$cu]" --no-build-isolation --constraint "$constraints")
+reinstall=(); python -c "import curobo, sys; sys.exit(0 if curobo.__file__.startswith('$PROJECT_ROOT/') else 1)" 2>/dev/null || reinstall=(--reinstall-package nvidia-curobo)
+(cd third_party/curobo && uv pip install -q -e ".[$cu]" --no-build-isolation --constraint "$constraints" "${reinstall[@]}")
 uv pip install -q "${pins[@]}"
 uv pip uninstall -q python-discovery 2>/dev/null || true
 
 echo "[5/6] XPolicyLab (client side) + conda shim + ffmpeg"
-uv pip install -q -e XPolicyLab
+uv pip install -q -e XPolicyLab --reinstall-package xpolicylab
 # The nodes have no ffmpeg; RoboDojo's eval client pipes camera frames through one. imageio-ffmpeg ships a static build.
 uv pip install -q imageio-ffmpeg
 mkdir -p "$ROBODOJO_DIR/bin" && ln -sf "$(ls "$ENVS_DIR"/robodojo/lib/python3.*/site-packages/imageio_ffmpeg/binaries/ffmpeg-* | head -1)" "$ROBODOJO_DIR/bin/ffmpeg"
@@ -86,8 +88,11 @@ echo "[6/6] check"
 # On aarch64 Isaac Sim's libs need libgomp preloaded (isaaclab.sh prints this; the eval job exports it too).
 [[ $(uname -m) == aarch64 ]] && export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}/lib/aarch64-linux-gnu/libgomp.so.1"
 export LD_LIBRARY_PATH="$ROBODOJO_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-python - <<'EOF'
+python - <<EOF
 import torch, isaacsim, isaaclab, curobo, XPolicyLab
 print("torch", torch.__version__, "cuda build", torch.version.cuda, "| isaacsim ok | isaaclab", getattr(isaaclab, "__version__", "?"), "| curobo ok")
+for m in (isaaclab, curobo, XPolicyLab):
+    assert m.__file__.startswith("$PROJECT_ROOT/"), f"{m.__name__} is installed from {m.__file__}, not from $PROJECT_ROOT"
+print("editable installs point at $PROJECT_ROOT")
 EOF
 echo "robodojo env ready at $ENVS_DIR/robodojo"

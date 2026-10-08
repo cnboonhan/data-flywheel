@@ -29,16 +29,16 @@ case $policy in
   ACT)
     uv pip install -q "${torch[@]}"
     uv pip install -q pyquaternion pyyaml rospkg pexpect opencv-python-headless matplotlib einops packaging h5py ipython numpy
-    uv pip install -q -e "$XPL/policy/ACT/detr" ;;
+    uv pip install -q -e "$XPL/policy/ACT/detr" --reinstall-package detr ;;
   DP)
     uv pip install -q "${torch[@]}"
     uv pip install -q zarr==2.12.0 wandb ipdb gpustat omegaconf hydra-core==1.2.0 dill==0.3.5.1 einops==0.4.1 diffusers==0.11.1 numba \
       moviepy imageio av matplotlib termcolor sympy h5py opencv-python-headless "numpy<2" huggingface_hub==0.25.2 pandas
-    uv pip install -q -e "$XPL/policy/DP" ;;
+    uv pip install -q -e "$XPL/policy/DP" --reinstall-package diffusion-policy ;;
   demo_policy) ;;
   *) echo "no recipe for $policy" >&2; exit 2 ;;
 esac
-uv pip install -q -e "$XPL" mlflow-skinny
-python -c "import XPolicyLab; print('XPolicyLab ok from', XPolicyLab.__file__)"
+uv pip install -q -e "$XPL" mlflow-skinny --reinstall-package xpolicylab
+python -c "import XPolicyLab, sys; print('XPolicyLab from', XPolicyLab.__file__); sys.exit(0 if XPolicyLab.__file__.startswith('$XPL/') else 1)"
 [[ $policy == demo_policy ]] || python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 echo "$policy env ready"
