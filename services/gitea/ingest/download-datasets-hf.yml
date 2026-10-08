@@ -1,0 +1,114 @@
+# Download a public Hugging Face dataset (or a subset) into s3://raw/open_datasets/<dest>/, through the S3 gateway.
+# Models: download-models-hf.yml (registers them in MLflow). Known datasets (repo, include, dest):
+#   OpenGalaxea/Galaxea-Open-World-Dataset  *  galaxea-open-world-r1lite
+#   simple-world-lab/HiFi-UMI-2K            *  HiFi-UMI-2K
+#   nvidia/PhysicalAI-Robotics-NuRec        nova_carter-wormhole/*.usdz,nova_carter-wormhole/occupancy_map.*,nova_carter-wormhole/training_trajectory*  nurec-nova_carter-wormhole   (gated)
+#   nvidia/PhysicalAI-Robotics-NuRec        zh_lounge/*  nurec-zh_lounge   (gated)
+# Gated repos need the repo secret HF_TOKEN (a Hugging Face token whose account accepted the terms).
+name: download-datasets-hf
+concurrency:
+  group: download-datasets-hf-${{ inputs.dest }}
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Hugging Face repo id"
+        default: "simple-world-lab/HiFi-UMI-2K"
+      include:
+        description: "Comma-separated globs inside the repo"
+        default: "*"
+      dest:
+        description: "Folder under raw/open_datasets/ (empty = repo name)"
+        default: ""
+      limit:
+        description: "Max files (0 = all)"
+        default: "0"
+
+jobs:
+  download:
+    runs-on: python
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - run: pip -q install "huggingface_hub[hf_transfer]" boto3
+      - run: |
+          cat > download_hf.py <<'PY'
+          #!/usr/bin/env python
+          """Download a Hugging Face repo (or part of it) straight into the S3 gateway, file by file.
+
+              python download_hf.py --repo simple-world-lab/HiFi-UMI-2K --repo-type dataset --include '*' --prefix open_datasets --dest HiFi-UMI-2K
+              python download_hf.py --repo nvidia/PhysicalAI-Robotics-NuRec --repo-type dataset \
+                  --include 'nova_carter-wormhole/*.usdz,nova_carter-wormhole/occupancy_map.*' --prefix open_datasets --dest nurec-nova_carter-wormhole
+
+          Each file is fetched to a temp dir and uploaded to s3://<bucket>/<prefix>/<dest>/<path in repo>, then deleted, so disk use
+          stays at one file. Files already present with the same size are skipped (re-runs resume). Gated repos need
+          HF_TOKEN. S3 credentials: S3_ENDPOINT_URL and AWS_* from the environment.
+
+          Needs: pip install "huggingface_hub[hf_transfer]" boto3
+          """
+
+          import argparse
+          import os
+          import shutil
+          import tempfile
+          import time
+          from fnmatch import fnmatch
+
+          import boto3
+          from huggingface_hub import HfApi, hf_hub_download
+
+
+          def main():
+              ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+              ap.add_argument("--repo", required=True, help="Hugging Face repo id")
+              ap.add_argument("--repo-type", default="dataset", choices=["dataset", "model"])
+              ap.add_argument("--revision", default=None)
+              ap.add_argument("--include", default="*", help="comma-separated globs of paths inside the repo")
+              ap.add_argument("--dest", default=None, help="prefix in the bucket (default: repo name)")
+              ap.add_argument("--bucket", default="raw")
+              ap.add_argument("--prefix", default="open_datasets", help="grouping folder in the bucket: open_datasets or internal_datasets")
+              ap.add_argument("--limit", type=int, default=0, help="max files (0 = all)")
+              args = ap.parse_args()
+
+              os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+              dest = "/".join(p for p in (args.prefix.strip("/"), (args.dest or args.repo.split("/")[-1]).strip("/")) if p)
+              globs = [g.strip() for g in args.include.split(",") if g.strip()]
+              api = HfApi()
+              files = [f for f in api.list_repo_tree(args.repo, repo_type=args.repo_type, revision=args.revision, recursive=True)
+                       if getattr(f, "size", None) is not None and any(fnmatch(f.path, g) for g in globs)]
+              if args.limit:
+                  files = files[: args.limit]
+              total = sum(f.size for f in files)
+              print(f"{args.repo} ({args.repo_type}): {len(files)} files, {total / 1e9:.2f} GB -> s3://{args.bucket}/{dest}/", flush=True)
+
+              s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"])
+              have = {}
+              for page in s3.get_paginator("list_objects_v2").paginate(Bucket=args.bucket, Prefix=dest + "/"):
+                  for o in page.get("Contents", []):
+                      have[o["Key"]] = o["Size"]
+
+              done = skipped = 0
+              started = time.time()
+              with tempfile.TemporaryDirectory() as tmp:
+                  for f in files:
+                      key = f"{dest}/{f.path}"
+                      if have.get(key) == f.size:
+                          skipped += 1
+                          continue
+                      local = hf_hub_download(args.repo, f.path, repo_type=args.repo_type, revision=args.revision, local_dir=tmp)
+                      s3.upload_file(local, args.bucket, key)
+                      os.remove(local)
+                      shutil.rmtree(os.path.join(tmp, ".cache"), ignore_errors=True)
+                      done += 1
+                      if done % 20 == 0:
+                          print(f"  {done} uploaded, {skipped} skipped, {time.time() - started:.0f} s", flush=True)
+              print(f"done: {done} uploaded, {skipped} already there, {time.time() - started:.0f} s", flush=True)
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+          python download_hf.py --repo "${{ inputs.repo }}" --repo-type dataset --include "${{ inputs.include }}" --prefix open_datasets --dest "${{ inputs.dest }}" --bucket raw --limit "${{ inputs.limit }}"

@@ -90,7 +90,7 @@ def v2_samples(root, info, have, dataset):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", required=True, help="FiftyOne dataset name, e.g. HiFi-UMI-2K")
-    ap.add_argument("--path", required=True, help="glob under --root matching LeRobot roots, e.g. 'HiFi-UMI-2K/chunk-000*/part-*' or 'galaxea-open-world-r1lite/*'")
+    ap.add_argument("--path", required=True, help="glob under --root matching LeRobot roots, e.g. 'open_datasets/HiFi-UMI-2K/chunk-000*/part-*' or 'galaxea-open-world-r1lite/*'")
     ap.add_argument("--root", default="/buckets/raw", help="bucket directory (default: /buckets/raw)")
     args = ap.parse_args()
 

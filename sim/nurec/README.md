@@ -30,11 +30,11 @@ Variants: `particle_spg-runtime.usdz` applies PPISP (learned camera ISP) through
 
 ## Use a NuRec scene in Arena
 
-1. **Download.** The dataset is gated: accept the terms on Hugging Face, `hf auth login`, then `bash scripts/download.sh` (the entry pulls one scene, ~3.7 GB, and skips the 18 GB raw images).
+1. **Download.** The dataset is gated: accept the terms on Hugging Face, `hf auth login`, run the Gitea workflow `download-datasets-hf` for `nurec-nova_carter-wormhole` (its header has the inputs; gated, so set the repo secret `HF_TOKEN`), then copy it next to Isaac Sim: `aws --endpoint-url https://s3.$SERVICE_HOST:$CADDY_PORT s3 sync s3://raw/open_datasets/nurec-nova_carter-wormhole datasets/nurec-nova_carter-wormhole` (~3.7 GB; set `FLYWHEEL_DATA` to keep it elsewhere).
 2. **Register it as a background.** `arena_nurec/nurec_wormhole_env.py` subclasses `LibraryBackground` with `usd_path` pointing at the USDZ and `object_min_z` for the drop check, and defines an environment (`cube_goal_pose`'s Franka + cube) that uses it. Arena loads the module through its `--external_environment_class_path` hook, so the submodule is not modified.
 3. **Run.** `bash sim/nurec/arena_smoke_test.sh` runs 60 zero-action steps headless and writes per-camera videos to `eval/system2/IsaacLab-Arena/outputs/<timestamp>/`. Add `--viz kit` for a GUI and fly the viewport camera to walk through the scene.
 
-To add your own scene: copy the background class, point `usd_path` at your USDZ, and add a `scripts/download.sh` entry if it is hosted. For the LLM environment generator (`sim/isaaclab_arena/envgen.sh`), the background then appears in the `BACKGROUNDS` catalog under its registered name.
+To add your own scene: copy the background class, point `usd_path` at your USDZ, and add it to the list in `services/gitea/ingest/download-datasets-hf.yml` if it is hosted. For the LLM environment generator (`sim/isaaclab_arena/envgen.sh`), the background then appears in the `BACKGROUNDS` catalog under its registered name.
 
 ## Reconstruct a scene with 3DGRUT
 
@@ -55,7 +55,7 @@ bash sim/nurec/train.sh <colmap_dir> <name> [hydra overrides...]     # 3DGUT + M
 bash sim/nurec/train.sh datasets/nurec-zh_lounge/zh_lounge/colmap zh_lounge
 ```
 
-Runs land in `sim/nurec/runs/<name>/` (gitignored). The `zh_lounge` entry in `scripts/download.sh` is the test case: NVIDIA's 374 photos + COLMAP poses of an office lounge, plus their own reconstruction in `usd/` to compare against.
+Runs land in `sim/nurec/runs/<name>/` (gitignored). The `nurec-zh_lounge` entry in the `download-datasets-hf` workflow is the test case (sync it the same way): NVIDIA's 374 photos + COLMAP poses of an office lounge, plus their own reconstruction in `usd/` to compare against.
 
 **Results (2026-10-07, RTX 5090 Laptop, `zh_lounge`, 47 held-out views, 1M Gaussians = the MCMC cap):**
 

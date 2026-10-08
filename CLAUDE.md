@@ -4,8 +4,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 
 ## Layout
 
-- `datasets/`, `checkpoints/`: Hugging Face downloads. Gitignored except `.gitkeep`.
-- `scripts/download.sh`: the repo lists (`DATASETS=(...)`, `CHECKPOINTS=(...)`). `scripts/hf_download.py` is the downloader.
+- Data and weights live in the S3 gateway (`services/`), not in the checkout. Gitea workflows fetch from Hugging Face: `services/gitea/ingest/download-datasets-hf.yml` into `raw/open_datasets/`, `download-models-hf.yml` into the MLflow model registry (self-contained workflows; each header lists the known repos).
 - `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
 - `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy (`envgen.sh`, `cliproxy/` import hook).
@@ -15,7 +14,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 
 ## Rules
 
-- **Never commit large files** (data, weights, assets, videos). To add a dataset or checkpoint, add an entry to `scripts/download.sh`. Don't download data unless asked; use `--dry-run` to check gating and size.
+- **Never commit large files** (data, weights, assets, videos). To add a dataset or model, add it to the list in `services/gitea/ingest/download-datasets-hf.yml` or `download-models-hf.yml` and run that workflow. Don't download data unless asked.
 - **Treat submodules as upstream code.** Don't commit inside them, because their remotes are third-party. Changes belong on a fork; ask first. data-flywheel only records each submodule's commit.
 - **Keep nested submodules pinned.** The RoboDojo and RoboTwin installers move XPolicyLab to its latest commit. After running them, run `git submodule update` inside that benchmark.
 - **IsaacLab-Arena `uv.lock`:** upstream's lock is stale, and it's regenerated locally with `git update-index --skip-worktree uv.lock`. Use `uv sync --frozen --extra dev` so uv doesn't rewrite it. See the README before pulling Arena.

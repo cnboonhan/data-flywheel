@@ -7,7 +7,7 @@ ETags and bucket events. An archive is skipped when its marker object
 `<dest>/<archive name>/.unpacked` already exists.
 
 Example: Galaxea ships one LeRobot v2 dataset per task as
-raw/galaxea-open-world-r1lite/lerobot/<task>.tar.gz; this writes
+raw/open_datasets/galaxea-open-world-r1lite/lerobot/<task>.tar.gz; this writes
 processed/galaxea-open-world-r1lite/<task>/...
 """
 
@@ -54,7 +54,7 @@ def unpack(s3, bucket, dest, archive):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--archives", required=True, help="glob of archives under /buckets/raw, e.g. 'galaxea-open-world-r1lite/lerobot/*.tar.gz'")
+    ap.add_argument("--archives", required=True, help="glob of archives under /buckets/raw, e.g. 'open_datasets/galaxea-open-world-r1lite/lerobot/*.tar.gz'")
     ap.add_argument("--dest", required=True, help="prefix in the processed bucket, e.g. galaxea-open-world-r1lite")
     ap.add_argument("--bucket", default="processed")
     ap.add_argument("--root", default="/buckets/raw")

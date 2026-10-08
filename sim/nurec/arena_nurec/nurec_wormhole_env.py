@@ -2,7 +2,7 @@
 
 Loaded by policy_runner through `--external_environment_class_path` (see sim/nurec/arena_smoke_test.sh), so the
 Arena submodule stays untouched. The scene is the `nova_carter-wormhole` conference room from
-nvidia/PhysicalAI-Robotics-NuRec (download with scripts/download.sh): a Gaussian splat
+nvidia/PhysicalAI-Robotics-NuRec (download-datasets-hf workflow into the raw bucket, then synced to $FLYWHEEL_DATA): a Gaussian splat
 (`ParticleField3DGaussianSplat`) with an aligned collision mesh already carrying `PhysicsMeshCollisionAPI`.
 The floor is at z = 0 and the capture trajectory starts at the origin, so rendering is best near it.
 """
@@ -24,7 +24,7 @@ from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena_environments.cube_goal_pose_environment import CubeGoalPoseEnvironment, CubeGoalPoseEnvironmentCfg
 
 ROOT = Path(__file__).resolve().parents[3]
-SCENE_DIR = ROOT / "datasets" / "nurec-nova_carter-wormhole" / "nova_carter-wormhole"
+SCENE_DIR = Path(os.environ.get("FLYWHEEL_DATA", ROOT / "datasets")) / "nurec-nova_carter-wormhole" / "nova_carter-wormhole"
 
 
 def _latest_export(run_glob: str) -> str:

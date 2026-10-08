@@ -1,8 +1,6 @@
-# Downloaded data and weights stay out of git (see scripts/download.sh).
-datasets/*
-checkpoints/*
-!.gitkeep
-!README.md
+# Local scratch copies of data or weights (the real ones live in the S3 gateway: workflow download-hf).
+datasets/
+checkpoints/
 
 __pycache__/
 .DS_Store

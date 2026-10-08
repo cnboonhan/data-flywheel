@@ -3,7 +3,7 @@
 convert_*_xspark.py produced) into the canonical episode layout.
 
 --path is a glob under --root matching directories that hold episode_*.hdf5
-(e.g. 'robodojo/stack_bowls/arx_x5/data'). Each file becomes
+(e.g. 'open_datasets/robodojo/stack_bowls/arx_x5/data'). Each file becomes
 processed/episodes/<dataset>/<dir name>/episode_<n>/ with one mp4 per
 vision/<cam>/colors (JPEG frames piped through ffmpeg), signals from every
 state/ and action/ array, and the instruction as task.
@@ -92,7 +92,7 @@ def convert(client, dataset, name, path, idx, tmp):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset", required=True, help="name under processed/episodes/, e.g. robodojo")
-    ap.add_argument("--path", required=True, help="glob under --root of directories holding episode_*.hdf5, e.g. 'robodojo/stack_bowls/arx_x5/data'")
+    ap.add_argument("--path", required=True, help="glob under --root of directories holding episode_*.hdf5, e.g. 'open_datasets/robodojo/stack_bowls/arx_x5/data'")
     ap.add_argument("--root", default="/buckets/raw")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
@@ -103,8 +103,8 @@ def main():
     with ep.tmpdir() as tmp:
         for d in dirs:
             files = sorted(glob.glob(f"{d}/episode_*.hdf5"))[: args.limit or None]
-            # robodojo/stack_bowls/arx_x5/data -> stack_bowls/arx_x5
-            name = "/".join(os.path.relpath(d, f"{args.root}/{args.dataset}").split("/")[:-1]) or os.path.basename(d)
+            # open_datasets/robodojo/stack_bowls/arx_x5/data -> stack_bowls/arx_x5
+            name = "/".join(os.path.relpath(d, ep.dataset_dir(d, args.root, args.dataset)).split("/")[:-1]) or os.path.basename(d)
             done = sum(convert(client, args.dataset, name, p, i, tmp) for i, p in enumerate(files))
             print(f"{name}: {done} new of {len(files)} episodes -> s3://processed/episodes/{args.dataset}/{name}/")
 

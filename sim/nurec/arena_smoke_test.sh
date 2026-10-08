@@ -4,12 +4,13 @@
 #   bash sim/nurec/arena_smoke_test.sh                     # 60 zero-action steps (one 3 s episode + reset), headless
 #   bash sim/nurec/arena_smoke_test.sh --num_steps 100     # extra policy_runner args
 #   bash sim/nurec/arena_smoke_test.sh -- --background nurec_zh_lounge_ours   # args after -- go to the env (e.g. our own splat)
-# Download the scene first with scripts/download.sh (nvidia/PhysicalAI-Robotics-NuRec is gated).
+# Get the scene first: run the download-datasets-hf workflow for nurec-nova_carter-wormhole (gated: HF_TOKEN secret), then
+#   aws --endpoint-url https://s3.$SERVICE_HOST:$CADDY_PORT s3 sync s3://raw/open_datasets/nurec-nova_carter-wormhole "${FLYWHEEL_DATA:-datasets}/nurec-nova_carter-wormhole"
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARENA="${ROOT}/eval/system2/IsaacLab-Arena"
-SCENE="${ROOT}/datasets/nurec-nova_carter-wormhole/nova_carter-wormhole/particle_sh_optimized.usdz"
-[ -f "${SCENE}" ] || { echo "NuRec scene not found at ${SCENE}; run: bash scripts/download.sh" >&2; exit 1; }
+SCENE="${FLYWHEEL_DATA:-${ROOT}/datasets}/nurec-nova_carter-wormhole/nova_carter-wormhole/particle_sh_optimized.usdz"
+[ -f "${SCENE}" ] || { echo "NuRec scene not found at ${SCENE}; sync it from s3://raw/open_datasets/nurec-nova_carter-wormhole (see the header of this script)" >&2; exit 1; }
 
 cd "${ARENA}"
 export PYTHONPATH="${ROOT}/sim/nurec${PYTHONPATH:+:${PYTHONPATH}}"

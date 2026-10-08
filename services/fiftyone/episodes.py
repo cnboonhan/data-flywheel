@@ -80,3 +80,13 @@ def flatten(prefix, value):
 
 def tmpdir():
     return tempfile.TemporaryDirectory()
+
+
+def dataset_dir(path, root, dataset):
+    """Directory of `dataset` inside a matched raw path, e.g. /buckets/raw/internal_datasets/h2rc for
+    /buckets/raw/internal_datasets/h2rc/launch_demo/...; episode IDs are relative to it, so they don't
+    change when a dataset moves under a grouping folder. Falls back to <root>/<dataset>."""
+    parts = os.path.relpath(path, root).split("/")
+    if dataset in parts:
+        return os.path.join(root, *parts[: parts.index(dataset) + 1])
+    return os.path.join(root, dataset)

@@ -1,0 +1,118 @@
+# Download a model from the Hugging Face hub and register it in the MLflow model registry
+# (artifacts in the mlflow bucket, experiment hf-models, version tagged with the hub commit).
+# Known models (repo, repo_type, include, name):
+#   nvidia/Cosmos-Reason2-2B                model    *                           cosmos-reason2-2b   (gated)
+#   OpenWAM/OpenWAM-Alpha-Sim-RoboDojo      model    *                           openwam-sim-robodojo
+#   OpenWAM/OpenWAM-Alpha-Sim-RoboTwin-Full model    *                           openwam-sim-robotwin-full
+#   RoboDojo-Benchmark/RoboDojo             dataset  ckpt/RoboDojo/GR00T_N17/*   robodojo-gr00t_n17
+# Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
+name: download-models-hf
+concurrency:
+  group: download-models-hf-${{ inputs.name }}
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Hugging Face repo id"
+        default: "OpenWAM/OpenWAM-Alpha-Sim-RoboDojo"
+      repo_type:
+        description: "model, or dataset for checkpoints that live in dataset repos"
+        default: "model"
+      include:
+        description: "Comma-separated globs inside the repo (empty = everything)"
+        default: ""
+      name:
+        description: "Registered model name in MLflow (empty = repo name)"
+        default: ""
+
+jobs:
+  register:
+    runs-on: python
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_TRACKING_USERNAME: ${{ vars.MLFLOW_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TOKEN }}
+      MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD: "false"
+      GIT_PYTHON_REFRESH: quiet   # job containers have no git; MLflow only uses it for run tags
+    steps:
+      - run: pip -q install "huggingface_hub[hf_transfer]" "mlflow-skinny==3.17.0"
+      - run: |
+          cat > register_hf_model.py <<'PY'
+          #!/usr/bin/env python
+          """Download a model from the Hugging Face hub and register it in the MLflow model registry.
+
+              python register_hf_model.py --repo nvidia/Cosmos-Reason2-2B
+              python register_hf_model.py --repo RoboDojo-Benchmark/RoboDojo --repo-type dataset \
+                  --include 'ckpt/RoboDojo/GR00T_N17/*' --name robodojo-gr00t_n17
+
+          The snapshot (optionally filtered by --include globs) becomes the artifacts of a run in experiment
+          `hf-models` (stored in the mlflow bucket), and a new version of registered model --name pointing at them,
+          tagged with the hub repo and the exact commit. Re-running for an unchanged commit registers nothing.
+          Needs MLFLOW_TRACKING_URI/USERNAME/PASSWORD; gated repos need HF_TOKEN.
+
+          Needs: pip install "huggingface_hub[hf_transfer]" mlflow-skinny
+          """
+
+          import argparse
+          import os
+          import tempfile
+
+          import mlflow
+          from huggingface_hub import HfApi, snapshot_download
+
+
+          def main():
+              ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+              ap.add_argument("--repo", required=True, help="Hugging Face repo id")
+              ap.add_argument("--repo-type", default="model", choices=["model", "dataset"], help="some checkpoints live in dataset repos")
+              ap.add_argument("--revision", default=None)
+              ap.add_argument("--include", default="", help="comma-separated globs inside the repo (empty = everything)")
+              ap.add_argument("--name", default="", help="registered model name (default: repo name)")
+              ap.add_argument("--experiment", default="hf-models")
+              args = ap.parse_args()
+
+              os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+              name = args.name or args.repo.split("/")[-1]
+              patterns = [g.strip() for g in args.include.split(",") if g.strip()] or None
+              sha = HfApi().repo_info(args.repo, repo_type=args.repo_type, revision=args.revision).sha
+              print(f"{args.repo} ({args.repo_type}) @ {sha} -> registered model {name}", flush=True)
+
+              client = mlflow.MlflowClient()
+              try:
+                  for mv in client.search_model_versions(f"name = '{name}'"):
+                      if mv.tags.get("hf_sha") == sha and mv.tags.get("hf_include", "") == args.include:
+                          print(f"already registered as {name} v{mv.version}; nothing to do")
+                          return
+              except mlflow.exceptions.MlflowException:
+                  pass
+
+              mlflow.set_experiment(args.experiment)
+              with tempfile.TemporaryDirectory() as tmp:
+                  path = snapshot_download(args.repo, repo_type=args.repo_type, revision=sha, allow_patterns=patterns, local_dir=tmp)
+                  size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(path) for f in fs if ".cache" not in d)
+                  print(f"downloaded {size / 1e9:.2f} GB", flush=True)
+                  with mlflow.start_run(run_name=f"{name}@{sha[:8]}") as run:
+                      mlflow.log_params({"hf_repo": args.repo, "hf_repo_type": args.repo_type, "hf_sha": sha, "hf_include": args.include or "*"})
+                      for entry in os.listdir(path):
+                          if entry == ".cache":
+                              continue
+                          full = os.path.join(path, entry)
+                          if os.path.isdir(full):
+                              mlflow.log_artifacts(full, artifact_path=f"model/{entry}")
+                          else:
+                              mlflow.log_artifact(full, artifact_path="model")
+                      try:
+                          client.get_registered_model(name)
+                      except mlflow.exceptions.MlflowException:
+                          client.create_registered_model(name, tags={"source": "huggingface"}, description=f"https://huggingface.co/{args.repo}")
+                      mv = client.create_model_version(name, f"{run.info.artifact_uri}/model", run_id=run.info.run_id,
+                                                       tags={"hf_repo": args.repo, "hf_sha": sha, "hf_include": args.include})
+              print(f"registered {name} version {mv.version} (run {run.info.run_id})")
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+          python register_hf_model.py --repo "${{ inputs.repo }}" --repo-type "${{ inputs.repo_type }}" --include "${{ inputs.include }}" --name "${{ inputs.name }}"

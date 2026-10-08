@@ -4,7 +4,6 @@
 	# /data/caddy/pki/authorities/local/root.crt; clients trust that file.
 	local_certs
 	auto_https disable_redirects
-	metrics
 }
 
 # Everything is on one port. Apps that can serve under a path are path-routed
@@ -45,7 +44,6 @@ https://{$SERVICE_HOST}:8443 {
 
 	redir /mlflow /mlflow/
 	redir /grafana /grafana/
-	redir /prometheus /prometheus/
 	redir /gitea /gitea/
 	redir /auth /auth/
 	redir /s3 https://s3.{$SERVICE_HOST}:{$CADDY_PORT}/ui/
@@ -78,11 +76,19 @@ https://{$SERVICE_HOST}:8443 {
 		}
 	}
 
-	# No login of their own: SSO at the proxy.
-	handle /prometheus/* {
-		import sso
-		reverse_proxy prometheus:9090
+	# Log push from outside (robots, laptops, nodes): a bearer token instead of the SSO login.
+	# Only POST /loki/api/v1/push; an empty LOKI_PUSH_TOKEN never matches. Queries stay behind SSO.
+	@loki_push {
+		method POST
+		path /loki/api/v1/push
+		expression `{env.LOKI_PUSH_TOKEN} != "" && {http.request.header.Authorization} == "Bearer " + {env.LOKI_PUSH_TOKEN}`
 	}
+	handle @loki_push {
+		request_header -Authorization
+		reverse_proxy loki:3100
+	}
+
+	# No login of their own: SSO at the proxy.
 	handle /loki/* {
 		import sso
 		reverse_proxy loki:3100
@@ -108,12 +114,20 @@ https://fiftyone.{$SERVICE_HOST}:8443 {
 
 # Rerun web viewer plus the episode recordings it opens (?url=https://rerun.<host>:8443/data/<dataset>/<episode>.rrd).
 https://rerun.{$SERVICE_HOST}:8443 {
-	import sso
-	handle_path /data/* {
-		root * /rerun
-		file_server
+	# route keeps the written order: Caddy otherwise runs handle_path/file_server before the
+	# imported SSO check, which left /data/ readable without a login.
+	handle /data/* {
+		route {
+			import sso
+			uri strip_prefix /data
+			root * /rerun
+			file_server
+		}
 	}
-	reverse_proxy rerun:9090
+	handle {
+		import sso
+		reverse_proxy rerun:9090
+	}
 }
 
 # S3 API and the gateway's web UI (under /ui). SigV4 signs the request path,
@@ -127,7 +141,3 @@ https://s3.{$SERVICE_HOST}:8443 {
 	reverse_proxy versitygw:7070
 }
 
-# Prometheus scrape endpoint; plain HTTP, reachable only on the compose network.
-http://:9100 {
-	metrics
-}

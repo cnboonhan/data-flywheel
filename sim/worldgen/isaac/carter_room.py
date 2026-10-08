@@ -11,12 +11,14 @@ subscribe to /cmd_vel. A clock graph publishes /clock so the container runs on s
 
 import argparse
 import math
+import os
 import signal
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_ROOM = ROOT / "datasets" / "nurec-nova_carter-wormhole" / "nova_carter-wormhole"
+# Local copy of the scene: download-datasets-hf workflow into s3://raw/open_datasets/nurec-nova_carter-wormhole, then aws s3 sync it here.
+DEFAULT_ROOM = Path(os.environ.get("FLYWHEEL_DATA", ROOT / "datasets")) / "nurec-nova_carter-wormhole" / "nova_carter-wormhole"
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("--room", default=str(DEFAULT_ROOM / "particle_sh_optimized.usdz"), help="NuRec scene USD(Z)")

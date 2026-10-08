@@ -91,7 +91,7 @@ processed/scenes/<scene>/map/                      SLAM map (pgm/yaml)
 processed/scenes/<scene>/nurec/                    splat USDZ, collision mesh, occupancy map
 processed/scenes/<scene>/arena/                    registered background + environments
 ```
-`episodes-mcap` already converts R1 bags for FiftyOne/Rerun, so captures are browsable like any other data.
+The mcap episode converter (`services/fiftyone/episodes_from_mcap.py`) already handles R1 bags, so captures become browsable in FiftyOne/Rerun once the validate-stage workflows are rebuilt.
 
 ## Open questions
 - Does Galaxea's own R1 Isaac Lab tutorial provide a mobile-base USD? That would replace most of step 1.

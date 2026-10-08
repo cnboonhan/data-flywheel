@@ -9,7 +9,7 @@
 # Fetch parts of the RoboDojo Hugging Face dataset (RoboDojo-Benchmark/RoboDojo).
 #   sbatch download-robodojo.sbatch assets                 -> $ROBODOJO_DIR/Assets (sim assets)
 #   sbatch download-robodojo.sbatch ckpt GR00T_N17         -> $ROBODOJO_DIR/ckpt/GR00T_N17 (pretrained checkpoints)
-#   sbatch download-robodojo.sbatch data stack_bowls       -> s3://raw/robodojo/stack_bowls (xspark episodes, via the S3 gateway)
+#   sbatch download-robodojo.sbatch data stack_bowls       -> s3://raw/open_datasets/robodojo/stack_bowls (xspark episodes, via the S3 gateway)
 # RoboDojo's own scripts use git-lfs, which the cluster lacks; this uses the
 # hub client with hf_transfer. Needs HF_TOKEN for gated files and, for data,
 # S3_ENDPOINT_URL / AWS_* (from slurm.env).
@@ -37,6 +37,6 @@ case $what in
   data)
     tmp=$ROBODOJO_DIR/download/$name; mkdir -p "$tmp"
     hf download "${repo[@]}" --include "data/RoboDojo/${name:?task}/**" --local-dir "$tmp"
-    uv run -q --python 3.12 --with awscli aws --endpoint-url "$S3_ENDPOINT_URL" s3 sync "$tmp/data/RoboDojo/$name" "s3://raw/robodojo/$name" --no-progress | tail -2
+    uv run -q --python 3.12 --with awscli aws --endpoint-url "$S3_ENDPOINT_URL" s3 sync "$tmp/data/RoboDojo/$name" "s3://raw/open_datasets/robodojo/$name" --no-progress | tail -2
     rm -rf "$tmp" ;;
 esac

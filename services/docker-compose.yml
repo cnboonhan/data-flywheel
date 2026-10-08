@@ -1,4 +1,4 @@
-# Store stack: Caddy, Versity S3 Gateway, MLflow, Prometheus, Loki, Grafana.
+# Store stack: Caddy, Versity S3 Gateway, MLflow, Loki, Grafana.
 # Every image is a multi-arch manifest (linux/arm64 + linux/amd64), so the same
 # file runs on the GB300 node and on an Intel box. See README.md.
 
@@ -18,13 +18,14 @@ services:
     environment:
       SERVICE_HOST: ${SERVICE_HOST}
       CADDY_PORT: ${CADDY_PORT:-8443}
+      LOKI_PUSH_TOKEN: ${LOKI_PUSH_TOKEN:-}   # bearer token for POST /loki/api/v1/push from outside
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
       - ${STATE_DIR}/versitygw/buckets/processed/rerun:/rerun:ro   # episode recordings served on rerun.<host>/data/
-    depends_on: [mlflow, grafana, prometheus, loki, versitygw, gitea, keycloak, oauth2-proxy]
+    depends_on: [mlflow, grafana, loki, versitygw, gitea, keycloak, oauth2-proxy]
 
   versitygw:
     <<: *common
@@ -59,7 +60,7 @@ services:
       - --port=5000
       - --app-name=oidc-auth                 # mlflow-oidc-auth: Keycloak login, access tokens, permissions; the /mlflow prefix
                                              # comes from Caddy's X-Forwarded-Prefix (TRUSTED_PROXIES), not --static-prefix
-      - --allowed-hosts=${SERVICE_HOST},${SERVICE_HOST}:${CADDY_PORT:-8443}
+      - --allowed-hosts=${SERVICE_HOST},${SERVICE_HOST}:${CADDY_PORT:-8443},mlflow,mlflow:5000   # mlflow:5000 = Actions jobs on the compose network
       - --cors-allowed-origins=https://${SERVICE_HOST}:${CADDY_PORT:-8443}
       - --backend-store-uri=sqlite:////state/mlflow.db
       - --artifacts-destination=s3://mlflow   # checkpoints and run artifacts live in the S3 gateway
@@ -92,19 +93,6 @@ services:
       AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
     volumes:
       - ${STATE_DIR}/mlflow:/state
-
-  prometheus:
-    <<: *common
-    image: prom/prometheus:v3.15.0
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=${PROM_RETENTION:-30d}
-      - --web.route-prefix=/prometheus
-      - --web.external-url=https://${SERVICE_HOST}:${CADDY_PORT:-8443}/prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ${STATE_DIR}/prometheus:/prometheus
 
   loki:
     <<: *common
@@ -143,7 +131,7 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ${STATE_DIR}/grafana:/var/lib/grafana
-    depends_on: [prometheus, loki]
+    depends_on: [loki]
 
   gitea:
     <<: *common
@@ -167,7 +155,6 @@ services:
       GITEA__repository__DEFAULT_PRIVATE: private
       GITEA__repository__ENABLE_PUSH_CREATE_USER: "true"
       GITEA__webhook__ALLOWED_HOST_LIST: private,loopback
-      GITEA__metrics__ENABLED: "true"
       GITEA__log__MODE: console
       GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
       GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"

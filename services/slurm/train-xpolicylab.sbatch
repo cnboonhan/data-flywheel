@@ -38,6 +38,10 @@ link_out() {   # link_out <path in checkout> <path on /tier1>
   mkdir -p "$2"
   if [[ -d $1 ]]; then cp -a "$1/." "$2/" && rm -rf "${1:?}"; fi
   ln -s "$2" "$1"
+  # keep the link out of the submodule's status (not every upstream .gitignore covers a link in place of the dir)
+  local repo; repo=$(git -C "$(dirname "$1")" rev-parse --show-toplevel 2>/dev/null) || return 0
+  local rel=${1#"$repo"/} ex; ex=$(git -C "$repo" rev-parse --git-path info/exclude)
+  grep -qx "/$rel" "$ex" 2>/dev/null || echo "/$rel" >> "$ex"
 }
 link_out "$PROJECT_ROOT/eval_result" "$ROBODOJO_DIR/eval_result"
 for p in ACT DP; do

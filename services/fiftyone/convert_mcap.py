@@ -2,7 +2,7 @@
 """Convert the camera topics of ROS 2 mcap bags into mp4s in the processed bucket.
 
 For every episode directory under --path (a directory holding one or more
-.mcap files, e.g. h2rc/launch_demo/21Aug/press_button_down/<episode>/), each
+.mcap files, e.g. internal_datasets/h2rc/launch_demo/21Aug/press_button_down/<episode>/), each
 CompressedImage topic is decoded and piped as JPEG frames into ffmpeg, which
 writes H.264 mp4. Results go to s3://processed/<episode path relative to
 --root>/<camera>.mp4 plus episode.json (task, day, topics, frame counts, fps,
@@ -93,7 +93,7 @@ def convert_episode(s3, bucket, dest, root, episode_dir):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--path", required=True, help="glob of episode directories under --root, e.g. 'h2rc/launch_demo/*/*/*'")
+    ap.add_argument("--path", required=True, help="glob of episode directories under --root, e.g. 'internal_datasets/h2rc/launch_demo/*/*/*'")
     ap.add_argument("--dest", default="", help="extra prefix in the processed bucket (the path relative to --root is kept)")
     ap.add_argument("--bucket", default="processed")
     ap.add_argument("--root", default="/buckets/raw")

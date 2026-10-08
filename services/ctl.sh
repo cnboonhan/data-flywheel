@@ -76,6 +76,12 @@ bootstrap_gitea() {
         -d "{\"data\":\"${s#*:}\"}" "$api/repos/$ADMIN_USER/pipelines/actions/secrets/${s%%:*}" >/dev/null
     done
   fi
+  # Optional Hugging Face token for gated repos (download-datasets-hf, download-models-hf): HF_TOKEN in .env, synced on every up.
+  if [[ -n ${HF_TOKEN:-} ]]; then
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+      -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$HF_TOKEN")" \
+      "$api/repos/$ADMIN_USER/pipelines/actions/secrets/HF_TOKEN" >/dev/null
+  fi
   # Seed files go in once; edit them in the pipelines repo afterwards.
   local f path
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
@@ -84,10 +90,11 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
+  for f in gitea/{ingest,clean,validate,mix}/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
            slurm/conda-shim/bin/conda slurm/conda-shim/etc/profile.d/conda.sh slurm/robodojo-shim/sitecustomize.py; do
+    [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
-      gitea/examples/*) path=".gitea/workflows/$(basename "$f")" ;;
+      gitea/*/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory
       *) path="$f" ;;
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
@@ -120,6 +127,14 @@ bootstrap_slurm() {
   grep -v 'flywheel-actions-runner' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp || true
   echo "$line" >> ~/.ssh/authorized_keys.tmp && mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
   local mltok; mltok=$(mlflow_token "$ADMIN_USER" "$ADMIN_PASSWORD") || { echo "warning: no MLflow token for jobs" >&2; mltok=; }
+  # The same token for Actions jobs that talk to MLflow (download-models-hf): secret MLFLOW_TOKEN, variable MLFLOW_USERNAME.
+  if [[ -n $mltok ]]; then
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+      -d "{\"data\":\"$mltok\"}" "$api/repos/$ADMIN_USER/pipelines/actions/secrets/MLFLOW_TOKEN" >/dev/null
+    body="{\"value\":\"$ADMIN_USER\"}"
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/MLFLOW_USERNAME" >/dev/null 2>&1 \
+      || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/MLFLOW_USERNAME" >/dev/null
+  fi
   (umask 077; cat > "$STATE_DIR/slurm.env" <<EOF
 MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
 MLFLOW_TRACKING_USERNAME=$ADMIN_USER
@@ -187,7 +202,7 @@ mlflow_token() {
 
 # Add a person to every service under one username:
 #   ctl.sh user add <name> <email> [password]
-# Keycloak (SSO: Gitea, Grafana, MLflow, FiftyOne, Rerun, Prometheus, Loki), an MLflow
+# Keycloak (SSO: Gitea, Grafana, MLflow, FiftyOne, Rerun, Loki), an MLflow
 # access token for API clients (printed once) and the S3 gateway (an access key
 # pair, printed once). Password defaults to a random one, printed.
 # Grafana creates its own local admin (email admin@localhost). Give it the SSO admin's
@@ -248,7 +263,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Keycloak imports the realm (clients, groups, the admin user) on first start.

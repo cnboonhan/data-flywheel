@@ -3,7 +3,7 @@
 the XPolicyLab training tree, processed/xpolicylab/<bench>/<task>/<env_cfg>/data/,
 by server-side S3 copy. Raw stays untouched; training reads the copy.
 
-    python promote_xspark.py --src robodojo/stack_bowls/arx_x5/data --bench RoboDojo --task stack_bowls --env-cfg arx_x5
+    python promote_xspark.py --src open_datasets/robodojo/stack_bowls/arx_x5/data --bench RoboDojo --task stack_bowls --env-cfg arx_x5
 """
 
 import argparse

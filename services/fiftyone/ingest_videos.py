@@ -18,7 +18,7 @@ import fiftyone as fo
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", required=True, help="FiftyOne dataset name, e.g. h2rc")
-    ap.add_argument("--path", required=True, help="glob under --root, e.g. 'h2rc/**/*.mp4'")
+    ap.add_argument("--path", required=True, help="glob under --root, e.g. 'h2rc/**/*.mp4' under the processed bucket")
     ap.add_argument("--root", default="/buckets/processed")
     args = ap.parse_args()
 

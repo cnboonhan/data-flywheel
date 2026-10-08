@@ -113,7 +113,7 @@ def convert_episode(client, dataset, root, episode_dir, tmp):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset", default="h2rc")
-    ap.add_argument("--path", required=True, help="glob of episode directories under --root, e.g. 'h2rc/launch_demo/*/*/*'")
+    ap.add_argument("--path", required=True, help="glob of episode directories under --root, e.g. 'internal_datasets/h2rc/launch_demo/*/*/*'")
     ap.add_argument("--root", default="/buckets/raw")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
@@ -123,9 +123,8 @@ def main():
     if args.limit:
         dirs = dirs[: args.limit]
     print(f"{len(dirs)} episodes match {args.path}")
-    root = f"{args.root}/{args.dataset}"
     with ep.tmpdir() as tmp:
-        done = sum(convert_episode(client, args.dataset, root, d, tmp) for d in dirs)
+        done = sum(convert_episode(client, args.dataset, ep.dataset_dir(d, args.root, args.dataset), d, tmp) for d in dirs)
     print(f"{done} new episodes -> s3://processed/episodes/{args.dataset}/")
 
 
