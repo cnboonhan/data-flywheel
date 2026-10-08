@@ -26,6 +26,9 @@ PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
 PROJECT_ROOT=${PROJECT_ROOT:-/tier1/htx_boonhan/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 XPL=$PROJECT_ROOT/XPolicyLab
+BUCKETS_DIR=${BUCKETS_DIR:-/tier1/htx_boonhan/services/versitygw/buckets}
+# XPolicyLab reads its xspark tree as PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/; that tree is processed/xpolicylab.
+[[ -e $PROJECT_ROOT/data ]] || ln -s "$BUCKETS_DIR/processed/xpolicylab" "$PROJECT_ROOT/data"
 run="$policy-$bench-$task-$env_cfg-$action-$seed"
 setting="$bench-$task-$env_cfg-$action"
 

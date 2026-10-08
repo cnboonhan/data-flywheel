@@ -84,7 +84,8 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh; do
+  for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
+           slurm/conda-shim/bin/conda slurm/conda-shim/etc/profile.d/conda.sh slurm/robodojo-shim/sitecustomize.py; do
     case $f in
       gitea/examples/*) path=".gitea/workflows/$(basename "$f")" ;;
       *) path="$f" ;;
@@ -106,7 +107,9 @@ bootstrap_slurm() {
   key=$(cut -d' ' -f1,2 "$dir/id_ed25519.pub")
   local line="command=\"$here/slurm/slurm-submit\",restrict $key flywheel-actions-runner"
   mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-  grep -qF "$key" ~/.ssh/authorized_keys || echo "$line" >> ~/.ssh/authorized_keys
+  # One forced-command line for the runner; drop stale ones (an earlier key, or the repo at another path).
+  grep -v 'flywheel-actions-runner' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp || true
+  echo "$line" >> ~/.ssh/authorized_keys.tmp && mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
   local mltok; mltok=$(mlflow_token "$ADMIN_USER" "$ADMIN_PASSWORD") || { echo "warning: no MLflow token for jobs" >&2; mltok=; }
   (umask 077; cat > "$STATE_DIR/slurm.env" <<EOF
 MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
@@ -120,6 +123,12 @@ AWS_ACCESS_KEY_ID=$ADMIN_USER
 AWS_SECRET_ACCESS_KEY=$ADMIN_PASSWORD
 AWS_DEFAULT_REGION=${S3_REGION:-us-east-1}
 UV_CACHE_DIR=$STATE_DIR/uv-cache
+# Where this checkout and the shared state live, for the Slurm scripts (their defaults assume /tier1).
+FLYWHEEL_ROOT=$(cd "$here/.." && pwd)
+PROJECT_ROOT=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
+ENVS_DIR=$STATE_DIR/envs
+ROBODOJO_DIR=$STATE_DIR/robodojo
+BUCKETS_DIR=$STATE_DIR/versitygw/buckets
 EOF
   )
   for s in "SLURM_SSH_KEY=$(cat "$dir/id_ed25519")" "SLURM_SSH_HOST=$USER@$SLURM_LOGIN_HOST"; do
