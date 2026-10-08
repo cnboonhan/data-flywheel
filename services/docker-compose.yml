@@ -19,12 +19,14 @@ services:
       SERVICE_HOST: ${SERVICE_HOST}
       CADDY_PORT: ${CADDY_PORT:-8443}
       LOKI_PUSH_TOKEN: ${LOKI_PUSH_TOKEN:-}   # bearer token for POST /loki/api/v1/push from outside
+      RERUN_RAW_TOKEN: ${RERUN_RAW_TOKEN:-}   # path token for raw bags in Rerun links
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
       - ${STATE_DIR}/versitygw/buckets/processed/rerun:/rerun:ro   # episode recordings served on rerun.<host>/data/
+      - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro   # raw files Rerun imports by URL, served on rerun.<host>/raw/
     depends_on: [mlflow, grafana, loki, versitygw, gitea, keycloak, oauth2-proxy]
 
   versitygw:

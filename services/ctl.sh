@@ -83,6 +83,12 @@ bootstrap_gitea() {
       -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$HF_TOKEN")" \
       "$api/repos/$ADMIN_USER/pipelines/actions/secrets/HF_TOKEN" >/dev/null
   fi
+  # Path token for raw bags in Rerun links (sync-fiftyone-raw): RERUN_RAW_TOKEN in .env, synced on every up.
+  if [[ -n ${RERUN_RAW_TOKEN:-} ]]; then
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+      -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$RERUN_RAW_TOKEN")" \
+      "$api/repos/$ADMIN_USER/pipelines/actions/secrets/RERUN_RAW_TOKEN" >/dev/null
+  fi
   # Seed files go in once; edit them in the pipelines repo afterwards.
   local f path
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).

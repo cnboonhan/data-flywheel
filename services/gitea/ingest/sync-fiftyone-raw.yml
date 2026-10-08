@@ -26,6 +26,8 @@ jobs:
       FIFTYONE_DATABASE_URI: mongodb://mongo:27017
       FIFTYONE_DO_NOT_TRACK: "true"
       VFF_MULTIMODAL: "1"   # LeRobot episode references and MCAP samples; the App has it too
+      RERUN_BASE: ${{ vars.RERUN_BASE }}   # https://rerun.<SERVICE_HOST>:<port>, for rerun_url on MCAP samples
+      RERUN_RAW_TOKEN: ${{ secrets.RERUN_RAW_TOKEN }}   # path token Caddy accepts for bags; Rerun's fetch sends no login cookie
     steps:
       - run: |
           cat > sync_raw.py <<'PY'
@@ -40,7 +42,7 @@ jobs:
                                                 into the root's videos and parquet
             xspark    */data/episode_*.hdf5     one group per episode, a slice per
                                                 preview_video/<episode>_<camera>.mp4
-            mcap      *.mcap, *.bag             one sample per bag (FiftyOne's MCAP viewer)
+            mcap      *.mcap, *.bag             one sample per bag (FiftyOne's MCAP viewer), rerun_url opens it in Rerun
             archive   *.tar, *.tar.gz, *.zip    one sample per archive (catalog only)
 
           Incremental: each sample carries raw_unit (the file or root it came from,
@@ -54,6 +56,7 @@ jobs:
           import re
           import sys
           import traceback
+          import urllib.parse
 
           import fiftyone as fo
           import fiftyone.types as fot
@@ -249,8 +252,15 @@ jobs:
               skipped = sorted({os.path.splitext(p)[1] or os.path.basename(p) for p in walk(top)} - {".json", ".parquet", ".mp4", ".hdf5", ".yaml", ".md", ".gz", ".mcap", ".bag", ".tar", ".tgz", ".zip"})
               print(f"{name} [{layout.name}]: {len(on_disk)} units on disk, {len(have)} in FiftyOne; "
                     f"-{len(stale)} +{len(new)}" + (f" (other file types: {', '.join(skipped[:8])})" if skipped else ""), flush=True)
-              if dry_run or not (stale or new):
+              if dry_run:
                   return
+              if stale or new:
+                  ds = apply(ds, name, layout, top, stale, new)
+              if layout.name == "mcap" and ds is not None:
+                  link_rerun(ds, top)
+
+
+          def apply(ds, name, layout, top, stale, new):
               if ds is None:
                   ds = fo.Dataset(name, persistent=True)
                   ds.info["raw_layout"] = layout.name
@@ -260,6 +270,23 @@ jobs:
               layout.add(ds, top, new)
               if layout.name == "xspark":
                   all_samples(ds).exists("metadata", False).compute_metadata(progress=False)
+              return ds
+
+
+          def link_rerun(ds, top):
+              """rerun_url on each bag: Rerun's web viewer fetches the raw file from rerun.<host>/raw/<token>/ and
+              imports it itself. Its fetch sends no login cookie, hence the path token (RERUN_RAW_TOKEN), which Caddy
+              accepts for bags only. Set from raw_unit every run, so a new base or token repoints every link."""
+              base = os.environ.get("RERUN_BASE", "").rstrip("/")
+              token = os.environ.get("RERUN_RAW_TOKEN", "")
+              if not (base and token):
+                  return
+              rel = os.path.relpath(top, os.path.dirname(os.path.dirname(top)))
+              ids, units, urls = ds.values(["id", "raw_unit", "rerun_url"]) if ds.has_field("rerun_url") else (*ds.values(["id", "raw_unit"]), None)
+              want = [f"{base}/?url={base}/raw/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(u)}" for u in units]
+              if urls != want:
+                  ds.set_values("rerun_url", dict(zip(ids, want)), key_field="id")
+                  print(f"  rerun_url set on {len(ids)} samples", flush=True)
 
 
           def main():

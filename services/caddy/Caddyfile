@@ -112,7 +112,8 @@ https://fiftyone.{$SERVICE_HOST}:8443 {
 	reverse_proxy fiftyone:5151
 }
 
-# Rerun web viewer plus the episode recordings it opens (?url=https://rerun.<host>:8443/data/<dataset>/<episode>.rrd).
+# Rerun web viewer plus what it opens: recordings (?url=https://rerun.<host>:8443/data/<dataset>/<episode>.rrd)
+# and raw files it imports itself, e.g. MCAP bags (?url=https://rerun.<host>:8443/raw/<token>/<group>/<dataset>/<path>.mcap).
 https://rerun.{$SERVICE_HOST}:8443 {
 	# route keeps the written order: Caddy otherwise runs handle_path/file_server before the
 	# imported SSO check, which left /data/ readable without a login.
@@ -121,6 +122,25 @@ https://rerun.{$SERVICE_HOST}:8443 {
 			import sso
 			uri strip_prefix /data
 			root * /rerun
+			file_server
+		}
+	}
+	# Rerun's viewer fetches files without cookies, so links carry a path token instead:
+	# /raw/<RERUN_RAW_TOKEN>/<path>, bags only (.mcap, .bag); an empty token never matches.
+	@raw_token {
+		path *.mcap *.bag
+		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/raw/" + {env.RERUN_RAW_TOKEN} + "/")`
+	}
+	handle @raw_token {
+		uri path_regexp ^/raw/[^/]+ ""
+		root * /raw
+		file_server
+	}
+	handle /raw/* {
+		route {
+			import sso
+			uri strip_prefix /raw
+			root * /raw
 			file_server
 		}
 	}
