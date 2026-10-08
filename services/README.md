@@ -185,6 +185,8 @@ sbatch --export="$EXP" /tier1/htx_boonhan/services/pipelines/slurm/evaluate-xpol
 
 Pushing to `admin/pipelines` while runs are in progress cancels them (Gitea cancels in-flight runs on a ref that moved, for every workflow), so land pipeline changes between runs.
 
+The checkout holds code and configuration only. The jobs keep everything bulky on `/tier1`: XPolicyLab's decoded-frame caches, checkpoints and DP's zarr data under `$STATE_DIR/xpolicylab/<policy>/`, RoboDojo's evaluation results under `$STATE_DIR/robodojo/eval_result`, and the xspark tree in the `processed` bucket; the corresponding paths in the checkout are symlinks the scripts create (the upstream `.gitignore`s cover them).
+
 The Slurm scripts find the Python next to them through `PIPELINES_ROOT`, a checkout of the Gitea `pipelines` repo at `/tier1/htx_boonhan/services/pipelines` (sbatch copies the script itself into the spool dir). `ctl.sh up` seeds `xpolicylab/*.py` and `slurm/*.sbatch` into that repo once; `git pull` the checkout after changing them there.
 
 Policy environments are uv venvs at `/tier1/htx_boonhan/services/envs/<policy, lowercase>` (`act`, `dp`): Python 3.10, torch from the `cu128` index (aarch64 + Blackwell; the policies' pinned `torch==2.4.1` has no CUDA build for this node), the policy's `install.sh` packages with numpy/numba pins relaxed, `pip install -e` of the policy and of XPolicyLab, plus `mlflow-skinny`.

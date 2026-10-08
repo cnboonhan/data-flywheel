@@ -30,6 +30,22 @@ ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
 XPL=$PROJECT_ROOT/XPolicyLab
 BUCKETS_DIR=${BUCKETS_DIR:-/tier1/htx_boonhan/services/versitygw/buckets}
 # XPolicyLab reads its xspark tree as PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/; that tree is processed/xpolicylab.
+# Bulky, regenerable outputs stay out of the checkout (it may live on a slow filesystem such as the NFS home):
+# the policies' decoded-frame caches, checkpoints and DP's zarr data go under $STATE_DIR/xpolicylab/<policy>/,
+# evaluation results under $ROBODOJO_DIR/eval_result; the checkout gets symlinks (all gitignored upstream).
+DATA_ROOT=${DATA_ROOT:-/tier1/htx_boonhan/services/xpolicylab}
+link_out() {   # link_out <path in checkout> <path on /tier1>
+  [[ -L $1 ]] && return 0
+  mkdir -p "$2"
+  if [[ -d $1 ]]; then cp -a "$1/." "$2/" && rm -rf "${1:?}"; fi
+  ln -s "$2" "$1"
+}
+link_out "$PROJECT_ROOT/eval_result" "$ROBODOJO_DIR/eval_result"
+for p in ACT DP; do
+  link_out "$XPL/policy/$p/processed_data" "$DATA_ROOT/$p/processed_data"
+  link_out "$XPL/policy/$p/checkpoints" "$DATA_ROOT/$p/checkpoints"
+done
+link_out "$XPL/policy/DP/data" "$DATA_ROOT/DP/data"
 if [[ ! -e $PROJECT_ROOT/data ]]; then
   ln -s "$BUCKETS_DIR/processed/xpolicylab" "$PROJECT_ROOT/data"
   ex=$(git -C "$PROJECT_ROOT" rev-parse --git-path info/exclude 2>/dev/null) && { grep -qx /data "$ex" 2>/dev/null || echo /data >> "$ex"; }   # keep the submodule clean

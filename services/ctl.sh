@@ -138,6 +138,7 @@ PROJECT_ROOT=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
 ENVS_DIR=$STATE_DIR/envs
 ROBODOJO_DIR=$STATE_DIR/robodojo
 BUCKETS_DIR=$STATE_DIR/versitygw/buckets
+DATA_ROOT=$STATE_DIR/xpolicylab
 EOF
   )
   for s in "SLURM_SSH_KEY=$(cat "$dir/id_ed25519")" "SLURM_SSH_HOST=$USER@$SLURM_LOGIN_HOST"; do
