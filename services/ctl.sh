@@ -247,7 +247,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow prometheus loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Keycloak imports the realm (clients, groups, the admin user) on first start.

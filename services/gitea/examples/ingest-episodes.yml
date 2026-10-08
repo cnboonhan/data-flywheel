@@ -3,9 +3,12 @@
 # per camera. Run after episodes-lerobot / episodes-mcap.
 name: ingest-episodes
 # Gitea cancels an in-progress run of the same workflow and ref when a new one
-# starts; keying the group by dataset lets different datasets run in parallel.
+# starts. Keying the group by dataset was meant to let datasets run in parallel,
+# but the expression is not evaluated for the group (verified 2026-10-08: a
+# robodojo ingest cancelled a running galaxea one), so runs must queue instead.
 concurrency:
   group: ingest-episodes-${{ inputs.dataset }}
+  cancel-in-progress: false
 on:
   workflow_dispatch:
     inputs:

@@ -16,6 +16,23 @@ Everything except training runs as Docker Compose on the service node (`services
 
 ## 0. Before you start
 
+### Fresh install (what a clean redeploy takes)
+
+Done from zero on 2026-10-08 (containers and service state wiped, raw bucket, policy envs, RoboDojo assets and caches kept), with the checkout in `$HOME` and the state on `/tier1`:
+
+1. **Clone and configure.** `git clone --recurse-submodules https://github.com/cnboonhan/data-flywheel.git ~/workspaces/data-flywheel`; set `remote.origin.pushurl` to the port-443 SSH URL (CLAUDE.md). IsaacLab-Arena's nested submodules use SSH URLs that the cluster can't reach; fetch them with `git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive eval/system2/IsaacLab-Arena` (not needed for this loop). Copy `services/.env` (or fill in `services/.env.example`).
+2. **Bring the stack up.** `services/ctl.sh up`. On a clean state it starts Caddy alone first and waits for its CA, then everything else, then provisions: Gitea admin, runner token, Keycloak OpenID source, the `pipelines` repo with workflows, scripts and shims, secrets and variables; Grafana's admin email; Keycloak's `mlflow` client; the MLflow job token; the Slurm bridge (runner key, one forced-command line in `~/.ssh/authorized_keys`, `$STATE_DIR/slurm.env` with the credentials and the paths of this checkout, `$STATE_DIR/pipelines` checkout). About 5 minutes; run it a second time if MLflow was still migrating when the token was minted (it says so).
+3. **Trust the CA** on the machines that will talk to the stack: `https://<host>:8443/ca.crt`.
+4. **Environments and assets** (Slurm jobs, inputs from `$STATE_DIR/slurm.env`; `set -a; . /tier1/htx_boonhan/services/slurm.env; set +a; cd /tier1/htx_boonhan/services/slurm-logs`):
+   - `sbatch --export=ALL /tier1/htx_boonhan/services/pipelines/slurm/install-robodojo.sbatch` (Isaac Sim 5.1, Isaac Lab, curobo, XPolicyLab, ffmpeg, conda shim; ~1 h on a cold cache),
+   - `sbatch --export=ALL .../install-policy-env.sbatch ACT`, the same for `DP` and `demo_policy`,
+   - `sbatch --export=ALL .../download-robodojo.sbatch assets`, `... ckpt ACT`, `... data stack_bowls` (39 GB, 32 GB and the task's episodes from the RoboDojo hub).
+   All editable installs point at `PROJECT_ROOT` from `slurm.env`; after moving the checkout, run the installers again and they re-point.
+5. **Run the loop below** from Gitea. Every step was re-run after the wipe; the "Result" lines were reproduced.
+
+What the fresh run caught: dockerd creating a directory where Caddy's CA file would be (fixed by starting Caddy first), the pipelines checkout not being recreated (now part of `ctl.sh up`), the MLflow token minted before the plugin had migrated its database (rerun `up`), and the installers skipping editable installs that pointed at the old checkout (now path-aware).
+
+
 - **Reach the stack.** Everything is `https://flywheel.<node IP>.sslip.io:8443` plus the `fiftyone.`, `rerun.` and `s3.` subdomains (one port). On the cluster network the names resolve by themselves; from a laptop, tunnel 8443 and map the four names to 127.0.0.1 in `/etc/hosts`, or route the node IP with `sshuttle` (services/README.md → Access). Trust `/ca.crt` once.
 - **Log in once.** Keycloak (`/auth`) signs you into Gitea, Grafana, FiftyOne, Rerun, Prometheus and Loki. MLflow and the S3 API use the account and keys that `services/ctl.sh user add <name> <email>` gives you.
 - **S3 credentials in your shell** for the `aws` commands below:
