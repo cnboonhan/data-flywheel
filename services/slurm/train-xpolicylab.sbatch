@@ -28,7 +28,10 @@ ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 XPL=$PROJECT_ROOT/XPolicyLab
 BUCKETS_DIR=${BUCKETS_DIR:-/tier1/htx_boonhan/services/versitygw/buckets}
 # XPolicyLab reads its xspark tree as PROJECT_ROOT/data/<bench>/<task>/<env_cfg>/; that tree is processed/xpolicylab.
-[[ -e $PROJECT_ROOT/data ]] || ln -s "$BUCKETS_DIR/processed/xpolicylab" "$PROJECT_ROOT/data"
+if [[ ! -e $PROJECT_ROOT/data ]]; then
+  ln -s "$BUCKETS_DIR/processed/xpolicylab" "$PROJECT_ROOT/data"
+  ex=$(git -C "$PROJECT_ROOT" rev-parse --git-path info/exclude 2>/dev/null) && { grep -qx /data "$ex" 2>/dev/null || echo /data >> "$ex"; }   # keep the submodule clean
+fi
 run="$policy-$bench-$task-$env_cfg-$action-$seed"
 setting="$bench-$task-$env_cfg-$action"
 
