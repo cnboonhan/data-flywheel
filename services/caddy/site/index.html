@@ -28,12 +28,12 @@
   <p>Store stack on {{placeholder "http.request.host"}}</p>
   <ul>
     <li><a href="/gitea/">Gitea</a> <small>Pipelines repo and Actions runners for processing and mixing datasets</small></li>
-    <li><a href="https://fiftyone.{{placeholder "http.request.host" | splitList ":" | first}}:{{placeholder "http.request.host" | splitList ":" | last}}/">FiftyOne</a> <small>Browse the ingested datasets (videos, episodes, metadata)</small></li>
-    <li><a href="https://rerun.{{placeholder "http.request.host" | splitList ":" | first}}:{{placeholder "http.request.host" | splitList ":" | last}}/">Rerun</a> <small>Episode inspector: synchronised cameras and signals; open a recording from FiftyOne's <code>rerun_url</code> field</small></li>
+    <li><a href="https://fiftyone.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/">FiftyOne</a> <small>Browse the ingested datasets (videos, episodes, metadata)</small></li>
+    <li><a href="https://rerun.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/">Rerun</a> <small>Episode inspector: synchronised cameras and signals; open a recording from FiftyOne's <code>rerun_url</code> field</small></li>
     <li><a href="/mlflow/">MLflow</a> <small>Model registry and experiment tracking</small></li>
     <li><a href="/grafana/">Grafana</a> <small>Dashboards over Prometheus and Loki</small></li>
     <li><a href="/prometheus/">Prometheus</a> <small>Metrics</small></li>
-    <li><a href="https://s3.{{placeholder "http.request.host" | splitList ":" | first}}:{{placeholder "http.request.host" | splitList ":" | last}}/ui/">S3 Gateway UI</a> <small>Versity S3 Gateway &middot; API endpoint: <code>https://s3.{{placeholder "http.request.host" | splitList ":" | first}}:{{placeholder "http.request.host" | splitList ":" | last}}</code></small></li>
+    <li><a href="https://s3.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/ui/">S3 Gateway UI</a> <small>Versity S3 Gateway &middot; API endpoint: <code>https://s3.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}</code></small></li>
     <li>Loki <small>Push and query API at <code>/loki/api/v1/…</code></small></li>
     <li><a href="/auth/admin/flywheel/console/">Keycloak</a> <small>Single sign-on: users and groups &middot; <a href="/oauth2/sign_out">sign out</a></small></li>
   </ul>

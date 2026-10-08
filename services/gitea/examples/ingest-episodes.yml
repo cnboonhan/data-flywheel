@@ -45,6 +45,7 @@ jobs:
     env:
       FIFTYONE_DATABASE_URI: mongodb://mongo:27017
       FIFTYONE_DO_NOT_TRACK: "true"
+      RERUN_BASE: ${{ vars.RERUN_BASE }}   # https://rerun.<SERVICE_HOST>:<port>, a repo variable set by ctl.sh up
     steps:
       - name: checkout
         env:

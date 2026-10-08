@@ -78,6 +78,12 @@ bootstrap_gitea() {
   fi
   # Seed files go in once; edit them in the pipelines repo afterwards.
   local f path
+  # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
+  for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT"; do
+    body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
+      || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
+  done
   for f in gitea/examples/*.yml fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh; do
     case $f in
       gitea/examples/*) path=".gitea/workflows/$(basename "$f")" ;;
@@ -101,10 +107,11 @@ bootstrap_slurm() {
   local line="command=\"$here/slurm/slurm-submit\",restrict $key flywheel-actions-runner"
   mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
   grep -qF "$key" ~/.ssh/authorized_keys || echo "$line" >> ~/.ssh/authorized_keys
+  local mltok; mltok=$(mlflow_token "$ADMIN_USER" "$ADMIN_PASSWORD") || { echo "warning: no MLflow token for jobs" >&2; mltok=; }
   (umask 077; cat > "$STATE_DIR/slurm.env" <<EOF
 MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
 MLFLOW_TRACKING_USERNAME=$ADMIN_USER
-MLFLOW_TRACKING_PASSWORD=$ADMIN_PASSWORD
+MLFLOW_TRACKING_PASSWORD=$mltok
 MLFLOW_TRACKING_SERVER_CERT_PATH=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
 MLFLOW_DISABLE_AGENT_HINT=1
 S3_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT
@@ -122,11 +129,62 @@ EOF
   done
 }
 
+# Keycloak's realm import only seeds a new realm; clients added to the template later
+# (mlflow) are created here from the rendered realm file when missing.
+bootstrap_keycloak() {
+  local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh) realm="$STATE_DIR/keycloak/import/flywheel-realm.json" c
+  for _ in $(seq 1 90); do
+    "${kc[@]}" config credentials --server http://localhost:8080/auth --realm master --user "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  for c in $(python3 -c 'import json,sys; print(" ".join(c["clientId"] for c in json.load(open(sys.argv[1]))["clients"]))' "$realm"); do
+    "${kc[@]}" get clients -r flywheel -q "clientId=$c" --fields clientId 2>/dev/null | grep -q "\"$c\"" && continue
+    python3 -c 'import json,sys; print(json.dumps(next(x for x in json.load(open(sys.argv[1]))["clients"] if x["clientId"] == sys.argv[2])))' "$realm" "$c" \
+      | "${kc[@]}" create clients -r flywheel -f - >/dev/null && echo "keycloak: created client $c"
+  done
+}
+
+# MLflow (mlflow-oidc-auth): wait until the server answers.
+bootstrap_mlflow() {
+  for _ in $(seq 1 60); do
+    "${compose[@]}" exec -T gitea curl -fs -H "Host: $SERVICE_HOST" http://mlflow:5000/mlflow/health >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  echo "warning: mlflow is not answering; access tokens can't be minted" >&2
+}
+
+# MLflow access token for API clients (MLFLOW_TRACKING_USERNAME=<name>, MLFLOW_TRACKING_PASSWORD=<token>):
+# sign the user in with a Keycloak password grant, then (re)issue their "default" token, valid a year.
+mlflow_token() {
+  local name=$1 pw=$2 tok
+  tok=$("${compose[@]}" exec -T gitea curl -fs -d grant_type=password -d client_id=mlflow -d "client_secret=$KC_MLFLOW_SECRET" \
+        -d "username=$name" -d "password=$pw" -d scope=openid http://keycloak:8080/auth/realms/flywheel/protocol/openid-connect/token \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])') || return 1
+  "${compose[@]}" exec -T gitea curl -fs -X PATCH -H "Authorization: Bearer $tok" -H "Host: $SERVICE_HOST" -H 'Content-Type: application/json' \
+    -d "{\"expiration\":\"$(date -u -d '+365 days' +%Y-%m-%dT%H:%M:%SZ)\"}" http://mlflow:5000/mlflow/api/2.0/mlflow/users/access-token \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
+}
+
 # Add a person to every service under one username:
 #   ctl.sh user add <name> <email> [password]
-# Keycloak (SSO: Gitea, Grafana, FiftyOne, Rerun, Prometheus, Loki), MLflow
-# (own accounts, basic auth for API clients) and the S3 gateway (an access key
+# Keycloak (SSO: Gitea, Grafana, MLflow, FiftyOne, Rerun, Prometheus, Loki), an MLflow
+# access token for API clients (printed once) and the S3 gateway (an access key
 # pair, printed once). Password defaults to a random one, printed.
+# Grafana creates its own local admin (email admin@localhost). Give it the SSO admin's
+# email so the Keycloak login maps onto it instead of trying to create a second "admin".
+bootstrap_grafana() {
+  local api="http://grafana:3000/grafana/api" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  for _ in $(seq 1 60); do
+    "${compose[@]}" exec -T gitea curl -fs "$api/health" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  # Once the admin has signed in through Keycloak, Grafana marks the user external and refuses edits; by then the email already matches.
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/users/1" | grep -q "\"email\":\"$ADMIN_USER@flywheel.local\"" && return 0
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+    -d "{\"login\":\"$ADMIN_USER\",\"email\":\"$ADMIN_USER@flywheel.local\",\"name\":\"$ADMIN_USER\"}" "$api/users/1" >/dev/null \
+    || echo "warning: could not set the Grafana admin email (SSO login as $ADMIN_USER may fail)" >&2
+}
+
 user_add() {
   local name=${1:?name} email=${2:?email} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
   local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh)
@@ -142,14 +200,12 @@ user_add() {
     echo "keycloak: created $name (group users)"
   fi
 
-  local api="http://localhost:5000/mlflow/api/2.0/mlflow" code
-  code=$(docker compose --project-name flywheel exec -T mlflow python -c "
-import json, urllib.request, base64, sys
-req = urllib.request.Request('$api/users/create', data=json.dumps({'username': '$name', 'password': '$pw'}).encode(), method='POST',
-    headers={'Content-Type': 'application/json', 'Host': '$SERVICE_HOST', 'Authorization': 'Basic ' + base64.b64encode(b'$ADMIN_USER:$ADMIN_PASSWORD').decode()})
-try: urllib.request.urlopen(req); print('created')
-except urllib.error.HTTPError as e: print('exists' if e.code in (400, 409) else f'error {e.code}: {e.read()[:200]}')")
-  echo "mlflow: $code (basic auth: $name / password)"
+  local tok
+  if tok=$(mlflow_token "$name" "$pw" 2>/dev/null) && [[ -n $tok ]]; then
+    echo "mlflow: access token $tok   (MLFLOW_TRACKING_USERNAME=$name MLFLOW_TRACKING_PASSWORD=<token>; shown once)"
+  else
+    echo "mlflow: no token minted (sign in at /mlflow with Keycloak; Profile > Tokens issues one)"
+  fi
 
   local secret; secret=$(openssl rand -hex 20)
   if docker compose --project-name flywheel exec -T -e ROOT_ACCESS_KEY_ID="$ADMIN_USER" -e ROOT_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" versitygw \
@@ -158,7 +214,7 @@ except urllib.error.HTTPError as e: print('exists' if e.code in (400, 409) else 
   else
     echo "s3: $name exists (or create failed); secret unchanged"
   fi
-  echo "password: $pw   (Keycloak + MLflow)"
+  echo "password: $pw   (Keycloak: every web UI, including MLflow)"
 }
 
 if [[ $1 == user ]]; then
@@ -186,6 +242,9 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   # recreates the container even when the rebuilt image is identical.
   "${compose[@]}" up -d "${@:2}" $("${compose[@]}" config --services | grep -vx act_runner)
   bootstrap_gitea
+  bootstrap_grafana
+  bootstrap_keycloak
+  bootstrap_mlflow
   [[ -n ${SLURM_LOGIN_HOST:-} ]] && bootstrap_slurm
   exec "${compose[@]}" up -d "${@:2}"
 fi
