@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# conda shim. XPolicyLab's and RoboDojo's eval scripts hard-code
+#   source "$(conda info --base)/etc/profile.d/conda.sh" && conda activate <env>
+# There is no conda on the cluster; the envs are uv venvs under ENVS_DIR.
+# `conda info --base` points them at this shim's etc/profile.d/conda.sh,
+# which maps activate/deactivate onto the venvs.
+base=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+case "${1:-} ${2:-}" in
+  "info --base") echo "$base" ;;
+  *) echo "conda shim: unsupported: $*" >&2; exit 2 ;;
+esac
