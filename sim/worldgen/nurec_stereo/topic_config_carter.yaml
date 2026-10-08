@@ -1,0 +1,7 @@
+# Stereo pair recorded by sim/worldgen/ros/record.sh (Nova Carter front Hawk), for rosbag_to_mapping_data.
+stereo_cameras:
+  - name: front_stereo_camera
+    left: /front_stereo_camera/left/image_raw
+    left_camera_info: /front_stereo_camera/left/camera_info
+    right: /front_stereo_camera/right/image_raw
+    right_camera_info: /front_stereo_camera/right/camera_info

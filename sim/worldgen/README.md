@@ -69,3 +69,14 @@ What it took, in order of discovery:
 - Nav2 starts only after `ros/wait_for_tf.py` sees odom→base_link and map→odom, with `initial_transform_timeout` effectively unbounded: it is measured on sim time, and a node that starts its timer before its first `/clock` sees time jump from 0 to the current sim time and aborts the bringup.
 
 Next: record a bag during exploration (`record.sh`) and run NuRec's stereo workflow on it; compare this SLAM map with NVIDIA's `occupancy_map.png` for the same room; reduce recovery failures (collision_monitor/behavior settings) so exploration reaches the right half.
+
+## NuRec stereo reconstruction (in progress)
+
+`nurec_stereo/` builds NVIDIA's stereo workflow toolchain into one image (`flywheel-nurec-stereo`, on the Isaac ROS 5.0 / ROS 2 Lyrical dev image, pulled anonymously from NGC): `isaac_mapping_ros` (`rosbag_to_mapping_data`, FoundationStereo offline), pyCuSFM (`cusfm_cli`) and nvblox (`fuse_cusfm`, built for `sm_120`). Build it with `docker build -t flywheel-nurec-stereo sim/worldgen/nurec_stereo`. The FoundationStereo engine is built at run time with `--gpus all` (the EULA was accepted on 2026-10-08) and cached in `runs/nurec_assets`. CUDA 13.2 in the container runs on the host's 580 driver.
+
+Status: a 10-minute capture (`runs/capture1`, 3,091 stereo pairs) is recorded. Getting it into `rosbag_to_mapping_data` took two fixes, and the conversion itself was stopped before it finished, so cuSFM, depth, nvblox and 3DGRUT haven't run yet.
+- **Compression:** record with mcap chunk compression (`--storage-preset-profile zstd_fast`, now in `record.sh`). With rosbag2 per-message compression, the converter fails to deserialize `/tf`.
+- **Camera frames:** the Carter asset stamps camera data with `<cam>_left_optical`, but its TF only has `<cam>_left_rgb`, which is the optical frame. `nurec_stereo/fix_bag.py` copies the bag with identity `/tf_static` aliases between the two.
+
+Next: `rosbag_to_mapping_data --sensor_data_bag_file=<bag_nurec> --pose_bag_file=<bag_nurec> --pose_topic_name=/chassis/odom --camera_topic_config=/cfg/topic_config_carter.yaml ...`, then `cusfm_cli`, `run_foundationstereo_trt_offline.py`, `fuse_cusfm`, and `sim/nurec/train.sh` with `apps/cusfm_3dgut.yaml`.
+

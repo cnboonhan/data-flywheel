@@ -7,7 +7,9 @@ set -euo pipefail
 name="${1:?usage: record.sh <name> [extra topics...]}"; shift
 out="/runs/${name}/bag"
 mkdir -p "/runs/${name}"
-exec ros2 bag record --storage mcap --use-sim-time -o "${out}" \
+# zstd at the mcap chunk level (storage preset), which any mcap reader undoes; rosbag2 per-message compression
+# breaks NuRec's rosbag_to_mapping_data (it fails to deserialize /tf).
+exec ros2 bag record --storage mcap --storage-preset-profile zstd_fast --use-sim-time -o "${out}" \
   /tf /tf_static /clock \
   /chassis/odom \
   /front_3d_lidar/lidar_points \
