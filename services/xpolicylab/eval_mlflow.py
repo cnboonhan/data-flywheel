@@ -25,12 +25,13 @@ def main():
     ap.add_argument("--seed", default="0")
     ap.add_argument("--result-root", required=True)
     ap.add_argument("--experiment", default="xpolicylab")
+    ap.add_argument("--since", type=float, default=0.0, help="ignore result files older than this epoch time (the job's start), so a failed run can't report an earlier result")
     args = ap.parse_args()
 
     pattern = f"{args.result_root}/{args.bench}/{args.task}/{args.policy}/{args.env_cfg}/{args.seed}_ckpt_name={args.ckpt},action_type={args.action}/*/_result.json"
-    results = sorted(glob.glob(pattern), key=os.path.getmtime)
+    results = sorted((p for p in glob.glob(pattern) if os.path.getmtime(p) >= args.since), key=os.path.getmtime)
     if not results:
-        raise SystemExit(f"no _result.json under {pattern}")
+        raise SystemExit(f"no _result.json newer than the job start under {pattern}")
     path = results[-1]
     r = json.load(open(path))
     metrics = {"eval/success_rate": float(r.get("success_rate", 0)), "eval/score": float(r.get("score", 0)), "eval/episodes": float(r.get("eval_time", 0))}

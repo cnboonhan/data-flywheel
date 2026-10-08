@@ -30,6 +30,31 @@ if any("eval_client" in a for a in sys.argv):
 
     import importlib.abc, importlib.util
 
+    def _patch_isaaclab_camera():
+        """Isaac Lab's DirectRLEnv points the viewport camera at the scene on creation. RoboDojo's
+        evaluation never uses that camera (its cameras are separate render products), but when the
+        viewport has not produced a frame yet the camera prim is missing and Isaac Lab raises
+        "Accessed invalid null prim". Make that call best-effort. Runs once Kit is up."""
+        try:
+            import isaaclab.sim.simulation_context as m
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"[robodojo-shim] could not import isaaclab.sim.simulation_context: {e!r}\n"); return
+        if getattr(m.SimulationContext, "_shim_patched", False):
+            return
+        orig = m.SimulationContext.set_camera_view
+
+        def set_camera_view(self, *a, **k):
+            try:
+                return orig(self, *a, **k)
+            except RuntimeError as e:
+                if not getattr(m.SimulationContext, "_shim_warned", False):
+                    m.SimulationContext._shim_warned = True
+                    sys.stderr.write(f"[robodojo-shim] viewport camera unavailable ({e}); continuing without it\n"); sys.stderr.flush()
+
+        m.SimulationContext.set_camera_view = set_camera_view
+        m.SimulationContext._shim_patched = True
+        sys.stderr.write("[robodojo-shim] viewport camera placement made best-effort\n"); sys.stderr.flush()
+
     def _patch_simulation_app(mod):
         cls = mod.SimulationApp
         orig_wait = cls._wait_for_viewport
@@ -45,6 +70,7 @@ if any("eval_client" in a for a in sys.argv):
                 sys.stderr.write(f"[robodojo-shim] viewport={vp} frame_info={getattr(vp, 'frame_info', None)} windows={wins} cuda_init={torch.cuda.is_initialized()} xpl_modules={pol[:8]}\n"); sys.stderr.flush()
             except Exception as e:  # noqa: BLE001
                 sys.stderr.write(f"[robodojo-shim] diagnostics failed: {e!r}\n")
+            _patch_isaaclab_camera()
             import time
             import omni.usd
             t0 = time.time()
@@ -85,35 +111,3 @@ if any("eval_client" in a for a in sys.argv):
 
     sys.meta_path.insert(0, _Hook())
 
-    # Isaac Lab's DirectRLEnv points the viewport camera at the scene on creation. RoboDojo's
-    # evaluation never uses that camera (its cameras are separate render products), but when the
-    # viewport has not produced a frame yet the camera prim is missing and Isaac Lab raises
-    # "Accessed invalid null prim". Make that call best-effort.
-    class _LabHook(importlib.abc.MetaPathFinder):
-        def find_spec(self, name, path, target=None):
-            if name != "isaaclab.sim.simulation_context":
-                return None
-            sys.meta_path.remove(self)
-            spec = importlib.util.find_spec(name)
-            if spec is None or spec.loader is None:
-                return None
-            exec_module = spec.loader.exec_module
-
-            def wrapped(m):
-                exec_module(m)
-                orig = m.SimulationContext.set_camera_view
-
-                def set_camera_view(self, *a, **k):
-                    try:
-                        return orig(self, *a, **k)
-                    except RuntimeError as e:
-                        if not getattr(m.SimulationContext, "_shim_warned", False):
-                            m.SimulationContext._shim_warned = True
-                            sys.stderr.write(f"[robodojo-shim] viewport camera unavailable ({e}); continuing without it\n"); sys.stderr.flush()
-
-                m.SimulationContext.set_camera_view = set_camera_view
-                sys.stderr.write("[robodojo-shim] viewport camera placement made best-effort\n"); sys.stderr.flush()
-            spec.loader.exec_module = wrapped
-            return spec
-
-    sys.meta_path.insert(0, _LabHook())
