@@ -1,0 +1,306 @@
+# Mirror s3://raw into FiftyOne without changing any data: each raw/<group>/<name>/ folder becomes the FiftyOne
+# dataset raw/<group>/<name>, samples point at the raw files, and only units (files or LeRobot roots) that are new,
+# changed or gone are touched. FiftyOne datasets under raw/ with no folder are deleted. Runs hourly and on demand.
+name: sync-fiftyone-raw
+concurrency:
+  group: sync-fiftyone-raw
+  cancel-in-progress: false
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      datasets:
+        description: "Glob over <group>/<name> under raw/, e.g. open_datasets/*"
+        default: "*"
+      dry_run:
+        description: "Only report what would change (true/false)"
+        default: "false"
+
+jobs:
+  sync:
+    runs-on: python
+    container: flywheel-fiftyone:latest   # built by ctl.sh up from services/fiftyone/Dockerfile, same as the App
+    timeout-minutes: 600
+    env:
+      FIFTYONE_DATABASE_URI: mongodb://mongo:27017
+      FIFTYONE_DO_NOT_TRACK: "true"
+      VFF_MULTIMODAL: "1"   # LeRobot episode references and MCAP samples; the App has it too
+    steps:
+      - run: |
+          cat > sync_raw.py <<'PY'
+          """Mirror the raw bucket into FiftyOne. Reads raw, writes only FiftyOne.
+
+          Every dataset folder raw/<group>/<name>/ becomes the FiftyOne dataset
+          raw/<group>/<name>; FiftyOne datasets under raw/ with no folder are deleted.
+          Samples point at the raw files themselves, nothing is converted or copied.
+          Each dataset is read by the first layout it matches:
+
+            lerobot   meta/info.json v3 roots   one sample per episode, a media reference
+                                                into the root's videos and parquet
+            xspark    */data/episode_*.hdf5     one group per episode, a slice per
+                                                preview_video/<episode>_<camera>.mp4
+            mcap      *.mcap, *.bag             one sample per bag (FiftyOne's MCAP viewer)
+            archive   *.tar, *.tar.gz, *.zip    one sample per archive (catalog only)
+
+          Incremental: each sample carries raw_unit (the file or root it came from,
+          relative to the dataset) and raw_sig (size and mtime). Units whose signature
+          changed or that vanished are removed, new or changed ones are added.
+          """
+
+          import argparse
+          import fnmatch
+          import os
+          import re
+          import sys
+          import traceback
+
+          import fiftyone as fo
+          import fiftyone.types as fot
+          from fiftyone import ViewField as F
+
+          ARCHIVES = (".tar", ".tar.gz", ".tgz", ".zip")
+          BAGS = (".mcap", ".bag")
+
+
+          def sig(*paths):
+              """Size and mtime of each path, so any rewrite changes the signature."""
+              parts = []
+              for p in paths:
+                  st = os.stat(p)
+                  parts.append(f"{st.st_size}:{st.st_mtime_ns}")
+              return ",".join(parts)
+
+
+          def walk(top):
+              """Files under top, skipping dot directories (.cache from hf downloads)."""
+              for root, dirs, files in os.walk(top):
+                  dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                  for f in sorted(files):
+                      if not f.startswith("."):
+                          yield os.path.join(root, f)
+
+
+          # --- layouts: scan(dir) -> {unit: sig}; add(ds, dir, units) adds samples ---
+
+
+          class LeRobot:
+              name = "lerobot"
+
+              @staticmethod
+              def roots(top):
+                  import json
+                  out = []
+                  for root, dirs, files in os.walk(top):
+                      dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                      if root.endswith("/meta") and "info.json" in files:
+                          try:
+                              v = json.load(open(os.path.join(root, "info.json"))).get("codebase_version", "")
+                          except ValueError:
+                              continue
+                          if v.lstrip("v").startswith("3"):
+                              out.append(os.path.dirname(root))
+                          dirs[:] = []
+                  return out
+
+              def scan(self, top):
+                  units = {}
+                  for root in self.roots(top):
+                      meta = [os.path.join(root, "meta", "info.json")]
+                      meta += [p for p in walk(os.path.join(root, "meta", "episodes")) if p.endswith(".parquet")]
+                      units[os.path.relpath(root, top)] = sig(*meta)
+                  return units
+
+              def add(self, ds, top, units):
+                  for unit, s in units.items():
+                      ids = ds.add_dir(dataset_dir=os.path.join(top, unit), dataset_type=fot.LeRobotDataset, progress=False)
+                      ds.select(ids).set_values("raw_unit", [unit] * len(ids))
+                      ds.select(ids).set_values("raw_sig", [s] * len(ids))
+                      print(f"  + {unit}: {len(ids)} episodes", flush=True)
+
+
+          class XSpark:
+              name = "xspark"
+              pat = re.compile(r"(^|/)data/(episode_\d+)\.hdf5$")
+
+              def episodes(self, top):
+                  for p in walk(top):
+                      m = self.pat.search(os.path.relpath(p, top))
+                      if m:
+                          d = os.path.dirname(os.path.dirname(p))
+                          yield p, m.group(2), sorted(
+                              q for q in walk(os.path.join(d, "preview_video")) if os.path.basename(q).startswith(m.group(2) + "_") and q.endswith(".mp4")
+                          ) if os.path.isdir(os.path.join(d, "preview_video")) else []
+
+              def scan(self, top):
+                  return {os.path.relpath(h5, top): sig(h5, *videos) for h5, _, videos in self.episodes(top)}
+
+              def add(self, ds, top, units):
+                  import h5py
+                  if not ds.has_field("camera"):
+                      ds.add_group_field("camera", default="cam_head")
+                  samples = []
+                  for h5, ep, videos in self.episodes(top):
+                      unit = os.path.relpath(h5, top)
+                      if unit not in units:
+                          continue
+                      parts = unit.split("/")
+                      fields = dict(raw_unit=unit, raw_sig=units[unit], episode=ep, hdf5=h5,
+                                    task=parts[0] if len(parts) > 3 else None, env_cfg=parts[-3] if len(parts) > 2 else None)
+                      try:
+                          with h5py.File(h5, "r") as f:
+                              if "instruction" in f:
+                                  v = f["instruction"][()]
+                                  fields["instruction"] = v.decode() if isinstance(v, bytes) else str(v)
+                              if "additional_info/frequency" in f:
+                                  fields["fps"] = int(f["additional_info/frequency"][()])
+                              for k in ("state/left_arm_joint_states", "state/arm_joint_states"):
+                                  if k in f:
+                                      fields["frame_count"] = int(f[k].shape[0])
+                                      break
+                      except OSError as e:
+                          print(f"  ! {unit}: {e}", flush=True)
+                      group = fo.Group()
+                      for v in videos:
+                          cam = os.path.basename(v)[len(ep) + 1:-4]
+                          samples.append(fo.Sample(filepath=v, camera=group.element(cam), **fields))
+                      if len(samples) >= 3000:
+                          ds.add_samples(samples, progress=False)
+                          print(f"  + {len(samples)} slices", flush=True)
+                          samples = []
+                  if samples:
+                      ds.add_samples(samples, progress=False)
+                      print(f"  + {len(samples)} slices", flush=True)
+
+
+          class Files:
+              """One sample per matching file: bags (multimodal) or archives (catalog)."""
+
+              def __init__(self, name, exts):
+                  self.name, self.exts = name, exts
+
+              def scan(self, top):
+                  return {os.path.relpath(p, top): sig(p) for p in walk(top) if p.endswith(self.exts)}
+
+              @staticmethod
+              def bag_info(path):
+                  """Duration, messages and topics from a rosbag2 metadata.yaml next to the bag."""
+                  meta = os.path.join(os.path.dirname(path), "metadata.yaml")
+                  if not os.path.exists(meta):
+                      return {}
+                  import yaml
+                  try:
+                      info = yaml.safe_load(open(meta))["rosbag2_bagfile_information"]
+                  except (KeyError, TypeError, yaml.YAMLError):
+                      return {}
+                  topics = [t["topic_metadata"]["name"] for t in info.get("topics_with_message_count", []) if t.get("message_count")]
+                  return dict(duration_s=info["duration"]["nanoseconds"] / 1e9, message_count=info.get("message_count"),
+                              start_ns=info["starting_time"]["nanoseconds_since_epoch"], topics=sorted(topics))
+
+              def add(self, ds, top, units):
+                  samples = []
+                  for unit, s in units.items():
+                      p = os.path.join(top, unit)
+                      fields = dict(raw_unit=unit, raw_sig=s, size_bytes=os.path.getsize(p), folders=unit.split("/")[:-1])
+                      if self.name == "mcap":
+                          fields.update(self.bag_info(p))
+                      samples.append(fo.Sample(filepath=p, **fields))
+                      if len(samples) >= 3000:
+                          ds.add_samples(samples, progress=False)
+                          print(f"  + {len(samples)} files", flush=True)
+                          samples = []
+                  if samples:
+                      ds.add_samples(samples, progress=False)
+                      print(f"  + {len(samples)} files", flush=True)
+
+
+          def layout_for(top):
+              if LeRobot.roots(top):
+                  return LeRobot()
+              names = list(walk(top))
+              if any(XSpark.pat.search(os.path.relpath(p, top)) for p in names):
+                  return XSpark()
+              if any(p.endswith(BAGS) for p in names):
+                  return Files("mcap", BAGS)
+              if any(p.endswith(ARCHIVES) for p in names):
+                  return Files("archive", ARCHIVES)
+              return None
+
+
+          def all_samples(ds):
+              return ds.select_group_slices(_allow_mixed=True) if ds.media_type == "group" else ds
+
+
+          def sync(name, top, dry_run, max_units):
+              layout = layout_for(top)
+              if layout is None:
+                  print(f"{name}: no known layout, skipped")
+                  return
+              on_disk = layout.scan(top)
+              ds = fo.load_dataset(name) if fo.dataset_exists(name) else None
+              have = {}
+              if ds is not None and ds.has_field("raw_unit"):
+                  view = all_samples(ds)
+                  have = dict(zip(*view.values(["raw_unit", "raw_sig"])))
+              stale = [u for u, s in have.items() if on_disk.get(u) != s]
+              new = {u: s for u, s in on_disk.items() if have.get(u) != s}
+              if max_units:
+                  new = dict(list(new.items())[:max_units])
+              skipped = sorted({os.path.splitext(p)[1] or os.path.basename(p) for p in walk(top)} - {".json", ".parquet", ".mp4", ".hdf5", ".yaml", ".md", ".gz", ".mcap", ".bag", ".tar", ".tgz", ".zip"})
+              print(f"{name} [{layout.name}]: {len(on_disk)} units on disk, {len(have)} in FiftyOne; "
+                    f"-{len(stale)} +{len(new)}" + (f" (other file types: {', '.join(skipped[:8])})" if skipped else ""), flush=True)
+              if dry_run or not (stale or new):
+                  return
+              if ds is None:
+                  ds = fo.Dataset(name, persistent=True)
+                  ds.info["raw_layout"] = layout.name
+                  ds.save()
+              if stale:
+                  ds.delete_samples(all_samples(ds).match(F("raw_unit").is_in(stale)))
+              layout.add(ds, top, new)
+              if layout.name == "xspark":
+                  all_samples(ds).exists("metadata", False).compute_metadata(progress=False)
+
+
+          def main():
+              ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+              ap.add_argument("--root", default="/buckets/raw")
+              ap.add_argument("--prefix", default="raw/", help="FiftyOne name prefix; datasets under it are managed")
+              ap.add_argument("--datasets", default="*", help="glob over <group>/<name>, e.g. 'open_datasets/*'")
+              ap.add_argument("--max-units", type=int, default=0, help="add at most N units per dataset per run (testing)")
+              ap.add_argument("--dry-run", action="store_true")
+              args = ap.parse_args()
+
+              wanted = {}
+              for group in sorted(os.listdir(args.root)):
+                  gdir = os.path.join(args.root, group)
+                  if group.startswith(".") or not os.path.isdir(gdir):
+                      continue
+                  for d in sorted(os.listdir(gdir)):
+                      if not d.startswith(".") and os.path.isdir(os.path.join(gdir, d)):
+                          wanted[f"{args.prefix}{group}/{d}"] = os.path.join(gdir, d)
+
+              for name in sorted(n for n in fo.list_datasets() if n.startswith(args.prefix) and n not in wanted):
+                  if fnmatch.fnmatch(name[len(args.prefix):], args.datasets):
+                      print(f"{name}: no longer in raw, deleting" + (" (dry run)" if args.dry_run else ""))
+                      if not args.dry_run:
+                          fo.delete_dataset(name)
+
+              errors = 0
+              for name, top in wanted.items():
+                  if not fnmatch.fnmatch(name[len(args.prefix):], args.datasets):
+                      continue
+                  try:
+                      sync(name, top, args.dry_run, args.max_units)
+                  except Exception:
+                      errors += 1
+                      print(f"{name}: FAILED", flush=True)
+                      traceback.print_exc()
+              sys.exit(1 if errors else 0)
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+      - run: |
+          python sync_raw.py --datasets "${{ inputs.datasets || '*' }}" $([ "${{ inputs.dry_run }}" = true ] && echo --dry-run)

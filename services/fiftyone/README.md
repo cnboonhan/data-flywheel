@@ -1,29 +1,15 @@
 # fiftyone
 
-FiftyOne App (`https://fiftyone.$SERVICE_HOST:$CADDY_PORT/`, behind SSO) over MongoDB (`mongo` service), media streamed from `/buckets` (read-only mount of the buckets, same path in Actions jobs). The scripts here run as Actions jobs ([gitea/](../gitea/README.md)).
+FiftyOne App (`https://fiftyone.$SERVICE_HOST:$CADDY_PORT/`, behind SSO) over MongoDB (`mongo` service), built from `Dockerfile` (stock image plus protobuf, pyarrow, h5py; the sync job uses the same image). Media is read from `/buckets`, the buckets mounted read-only; Actions jobs see the same path. `VFF_MULTIMODAL` is on, so the App plays LeRobot episode references and MCAP bags.
 
-> **Clean setup in progress (2026-10-08).** Only the ingest workflows (`download-datasets-hf`, `download-models-hf` in `services/gitea/ingest/`) exist now. The processing, verify, train and evaluate workflows named below were removed and will be rebuilt under `services/gitea/{clean,validate,mix}/`; the scripts they called (`services/fiftyone/`, `services/xpolicylab/`, `services/slurm/`) are still here.
+The Gitea workflow [`sync-fiftyone-raw`](../gitea/ingest/sync-fiftyone-raw.yml) mirrors the raw bucket hourly. Each `raw/<group>/<name>/` becomes the dataset `raw/<group>/<name>`. Samples point at the raw files, so nothing is converted or copied. Re-runs touch only files that are new, changed or gone, tracked by the `raw_unit` and `raw_sig` fields.
 
-**Canonical episodes**, one layout for every raw format, in the `processed` bucket:
-
-```
-processed/episodes/<dataset>/<...>/<episode_id>/
-    <camera>.mp4        one per camera, common clock
-    episode.json        dataset, episode_id, source, format, robot, task, tasks, fps, frames, duration_s, cameras{...}
-    signals.parquet     t, group, index, value
-```
-
-| Script | Workflow | Input |
-|---|---|---|
-| `episodes_from_lerobot.py` | `episodes-lerobot` | LeRobot v2 (per-episode mp4) and v3 (episodes cut from per-camera mp4s) |
-| `episodes_from_mcap.py` | `episodes-mcap` | ROS 2 bags: `CompressedImage` → mp4, JointState/IMU/Wrench → signals |
-| `episodes_from_xspark.py` | `episodes-xspark` | xspark HDF5 (RoboDojo); also copies the training tree |
-| `episodes.py` | | shared layout and S3 writers |
-| `episode_rrd.py` + `ingest_episodes.py` | `ingest-episodes` | episodes → `processed/rerun/<dataset>/<episode_id>.rrd` + grouped dataset `episodes/<dataset>` (one group per episode, one slice per camera, `rerun_url`) |
-| `unpack_archives.py` | `unpack-archives` | tar archives `raw` → `processed` (`.unpacked` marker) |
-| `ingest_lerobot.py`, `convert_mcap.py`, `ingest_videos.py` | `ingest-lerobot`, `convert-mcap` | earlier per-format ingests, superseded |
-
-Jobs in the FiftyOne image fetch the repo archive from Gitea's API (no `node` for `actions/checkout`). `RERUN_BASE` (repo variable) sets the `rerun_url` prefix.
+| Raw layout | Dataset |
+|---|---|
+| LeRobot v3 (`meta/info.json`) | one sample per episode, a media reference into the source videos and parquet |
+| xspark (`*/data/episode_*.hdf5`) | one group per episode, a slice per `preview_video/<episode>_<camera>.mp4` |
+| `*.mcap`, `*.bag` | one sample per bag, with rosbag2 `metadata.yaml` fields |
+| `*.tar`, `*.tar.gz`, `*.zip` | one sample per archive, catalog only |
 
 ```bash
 services/ctl.sh logs -f fiftyone

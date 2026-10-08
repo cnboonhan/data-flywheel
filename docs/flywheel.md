@@ -14,7 +14,7 @@ A runbook for carrying one dataset through the whole loop of the [architecture d
 
 Everything except training runs as Docker Compose on the service node (`services/ctl.sh up`); training and heavy conversions are Slurm jobs on the GB300 partition, submitted by Gitea Actions over SSH. All state is on `/tier1`, so containers, Slurm jobs and your shell see the same bytes.
 
-> **Clean setup in progress (2026-10-08).** Only the ingest workflows (`download-datasets-hf`, `download-models-hf` in `services/gitea/ingest/`) exist now. The processing, verify, train and evaluate workflows named below were removed and will be rebuilt under `services/gitea/{clean,validate,mix}/`; the scripts they called (`services/fiftyone/`, `services/xpolicylab/`, `services/slurm/`) are still here.
+> **Clean setup in progress (2026-10-08).** The setup, ingest (`download-datasets-hf`, `download-models-hf`, `sync-fiftyone-raw`) and adapter workflows exist; the train and evaluate workflows named below were removed and will be rebuilt under `services/gitea/`. The scripts they call (`services/xpolicylab/`, `services/slurm/`) are still here.
 
 ## 0. Before you start
 
@@ -28,7 +28,7 @@ Done from zero on 2026-10-08 (containers and service state wiped, raw bucket, po
 4. **Environments and assets.** `ctl.sh up` dispatches the Gitea workflow `setup-envs`, which builds the RoboDojo evaluation env (Isaac Sim 5.1, Isaac Lab, curobo, XPolicyLab, ffmpeg, conda shim; ~1 h on a cold cache), downloads the sim assets and the RoboDojo data (35 sim tasks, 1.85 TB, into `raw/open_datasets/robodojo/`; real-robot episodes, 273 GB, into `raw/open_datasets/robodojo_real/`) and the ACT, DP and demo_policy policy envs in a job container on the service node (`services/gitea/setup/*.sh`). It runs again whenever an env is missing or was built for another checkout; `ctl.sh setup` forces it. The RoboDojo job resumes where it stopped and can take a day for the data.
 5. **Run the loop below** from Gitea. Every step was re-run after the wipe; the "Result" lines were reproduced.
 
-What the fresh run caught, all fixed in `ctl.sh` or the scripts: dockerd creating a directory where Caddy's CA file would be (Caddy now starts first), the pipelines checkout not being recreated, the `mlflow` bucket not being created (artifact uploads then fail with 500), the MLflow token minted before the plugin had migrated its database (rerun `up`), and the installers skipping editable installs that pointed at the old checkout (now path-aware). One rule it taught: **don't push to the `pipelines` repo while runs are in flight**. Gitea cancels in-progress runs on the ref when it moves, whatever the workflow (two runs were lost that way); `ingest-episodes` now asks not to be cancelled, but queue the pushes anyway.
+What the fresh run caught, all fixed in `ctl.sh` or the scripts: dockerd creating a directory where Caddy's CA file would be (Caddy now starts first), the pipelines checkout not being recreated, the `mlflow` bucket not being created (artifact uploads then fail with 500), the MLflow token minted before the plugin had migrated its database (rerun `up`), and the installers skipping editable installs that pointed at the old checkout (now path-aware). One rule it taught: **don't push to the `pipelines` repo while runs are in flight**. Gitea cancels in-progress runs on the ref when it moves, whatever the workflow (two runs were lost that way), so queue the pushes.
 
 
 - **Reach the stack.** `https://$SERVICE_HOST:$CADDY_PORT/` (values from `services/.env`) plus the `fiftyone.`, `rerun.` and `s3.` subdomains on the same port; through a login node, forward the port and map the four names in `/etc/hosts`; trust `/ca.crt` once. Commands: [services/README.md](../services/README.md#access).
@@ -67,44 +67,24 @@ Result: `PRE lerobot/`, `PRE logs/`, `lerobot_info.json`, `README.md`, `demo.mp4
 
 ## 2. Process: `raw` → `processed` with Gitea Actions
 
-Pipelines are code in `admin/pipelines` (`.gitea/workflows/*.yml` plus `fiftyone/*.py`, `xpolicylab/*.py`, `slurm/*`). Jobs run as containers on the compose network with the buckets mounted read-only at `/buckets` and `S3_ENDPOINT_URL=http://versitygw:7070`, so they read from the mount and write through S3. `services/ctl.sh up` seeds the repo from `services/` once; after that the repo's copies are what runs.
+Pipelines are code in `admin/pipelines` (`.gitea/workflows/*.yml` plus `setup/`, `adapter/`, `xpolicylab/*.py`, `slurm/*`). Jobs run as containers on the compose network with the buckets mounted read-only at `/buckets` and `S3_ENDPOINT_URL=http://versitygw:7070`, so they read from the mount and write through S3. `services/ctl.sh up` seeds the repo from `services/` once; after that the repo's copies are what runs.
 
-### 2a. Unpack the task archive
-
-Workflow **`unpack-archives`**, inputs `archives = open_datasets/galaxea-open-world-r1lite/lerobot/Arrange_Fruits_20250819_011.tar.gz`, `dest = galaxea-open-world-r1lite`.
-
-Result: `processed/galaxea-open-world-r1lite/Arrange_Fruits_20250819_011/` with `data/`, `meta/`, `videos/` (575 files) and a `.unpacked` marker so re-runs skip it. 88 s including the job's own setup.
-
-### 2b. Canonical episodes
-
-Every raw format gets one converter into the layout both viewers read:
-
-```
-processed/episodes/<dataset>/<subset>/<episode_id>/
-    <camera>.mp4        one per camera, frames on a common clock
-    episode.json        dataset, episode_id, source, format, robot, task, tasks, fps, frames, duration_s, cameras
-    signals.parquet     long format: t, group ("observation.state.left_arm" …), index, value
-```
-
-Workflow **`episodes-lerobot`** (LeRobot v2 and v3; `episodes-mcap` does ROS 2 bags), inputs `dataset = galaxea-open-world-r1lite`, `path = galaxea-open-world-r1lite/Arrange_Fruits_*`, `bucket = processed`, `limit = 0`.
-
-Result: `processed/episodes/galaxea-open-world-r1lite/Arrange_Fruits_20250819_011/episode_000000 … 000113`: 114 episodes, 4 cameras each, 22 signal groups. 87 s.
+Workflow **`galaxeaOpenWorldDataset_to_xpolicylab`** ([adapter/](../services/gitea/adapter/README.md)), inputs `tasks = Arrange_Fruits_*`, `limit = 0`, `env_cfg = arx_x5`, converts the task archives into XPolicyLab xspark at `processed/xpolicylab/galaxeaOpenWorldDataset/<task>/arx_x5/data/`. Incremental: a per-task `manifest.json` records which source episodes are done.
 
 ## 3. Verify: look at what was collected
 
-Workflow **`ingest-episodes`**, input `dataset = galaxea-open-world-r1lite`. Two jobs:
+Workflow **`sync-fiftyone-raw`** ([ingest/](../services/gitea/ingest/README.md)) mirrors `raw` into FiftyOne hourly without writing any data: each `raw/<group>/<name>/` becomes the FiftyOne dataset `raw/<group>/<name>`, with samples pointing at the raw files.
 
-1. `episode_rrd.py` writes one **Rerun** recording per episode to `processed/rerun/<dataset>/<episode_id>.rrd` (camera videos as video assets, every signal group as a scalar series, one timeline).
-2. `ingest_episodes.py` loads the episodes into the grouped **FiftyOne** dataset `episodes/galaxea-open-world-r1lite`: one group per episode, one slice per camera, fields from `episode.json`, signal summaries, and `rerun_url`.
+| Raw dataset | In FiftyOne |
+|---|---|
+| HiFi-UMI-2K (LeRobot v3) | one sample per episode, playing its window of the source videos with the parquet signals |
+| robodojo (xspark HDF5) | one group per episode, a slice per preview video; `instruction`, `task`, `hdf5` path |
+| h2rc (ROS 2 mcap) | one sample per bag in FiftyOne's MCAP viewer; `duration_s`, `topics` |
+| galaxea-open-world-r1lite (tar.gz) | one catalog entry per archive (not playable until unpacked) |
 
-Result: 114 recordings written, 456 videos added (114 episodes × 4 cameras), 116 groups in the dataset (two from an earlier `Make_The_Bed` test). 77 s.
+Then, in the browser, open **FiftyOne** `https://fiftyone.<host>:8443/` and pick a `raw/...` dataset. Filter by `task`, `duration_s` or `topics`; play any episode. **Rerun** opens raw mcap or LeRobot directories directly (`rerun --save out.rrd <path>`).
 
-Then, in the browser:
-
-- **FiftyOne** `https://fiftyone.<host>:8443/` → dataset `episodes/galaxea-open-world-r1lite`. Each tile is an episode; the slice selector switches camera. Filter by `task`, `duration_s`, `left_gripper_range`; play any clip.
-- **Rerun**: a sample's `rerun_url` opens `https://rerun.<host>:8443/?url=…/data/<dataset>/<episode_id>.rrd`: all cameras and every joint/gripper signal scrubbing together (the recording is served on the same SSO session; checked: `206` partial content). Rerun also opens raw mcap or LeRobot directories directly (`rerun --save out.rrd <path>`) for data that hasn't been converted yet.
-
-What to check here, because training inherits it: episode count matches the collection log, every episode has all cameras, durations are plausible, gripper signals actually move, task strings are right.
+What to check here, because training inherits it: episode count matches the collection log, every episode has all cameras, durations are plausible, task strings are right.
 
 ## 4. Train: XPolicyLab under Slurm, tracked in MLflow
 
@@ -152,14 +132,13 @@ What it took on this hardware, and why the job script does what it does:
 
 ## The same loop for other data
 
-| Raw format | Collect | Process → episodes | Train |
+| Raw format | Collect | Look at it | Train |
 |---|---|---|---|
-| LeRobot v2 (Galaxea) | archive or directory into `raw` | `unpack-archives` (if archived) → `episodes-lerobot` | `convert-xpolicylab` → `train-xpolicylab` |
-| LeRobot v3 (HiFi-UMI-2K) | directory into `raw` | `episodes-lerobot` (cuts episodes out of the per-camera videos) | EE-space data; XPolicyLab's joint-space layout doesn't fit yet |
-| ROS 2 mcap (h2rc) | bag directories into `raw` | `episodes-mcap` | no recorded actions in the bags; would need derived targets |
-| anything else | into `raw` | write one `episodes_from_<format>.py` (see `fiftyone/episodes.py`) | one `convert_<format>_xspark.py` |
-
-Adding a format is one converter; FiftyOne, Rerun and the training path need nothing new.
+| LeRobot v2 archives (Galaxea) | archive into `raw` | catalog entry in FiftyOne | `galaxeaOpenWorldDataset_to_xpolicylab` → `train-xpolicylab` |
+| LeRobot v3 (HiFi-UMI-2K) | directory into `raw` | episodes in FiftyOne | EE-space data; XPolicyLab's joint-space layout doesn't fit yet |
+| xspark HDF5 (RoboDojo) | directory into `raw` | episode groups in FiftyOne | `robodojo_to_xpolicylab` → `train-xpolicylab` |
+| ROS 2 mcap (h2rc) | bag directories into `raw` | bags in FiftyOne | no recorded actions in the bags; would need derived targets |
+| anything else | into `raw` | add a layout to `sync-fiftyone-raw` | one `<repo>_to_xpolicylab` adapter |
 
 ## Operations cheat-sheet
 

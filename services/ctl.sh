@@ -92,7 +92,7 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,adapter,clean,validate,mix}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py fiftyone/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
+  for f in gitea/{setup,ingest,adapter,clean,validate,mix}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py xpolicylab/*.py slurm/*.sbatch slurm/follow.sh \
            slurm/conda-shim/bin/conda slurm/conda-shim/etc/profile.d/conda.sh slurm/robodojo-shim/sitecustomize.py; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in

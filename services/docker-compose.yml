@@ -207,20 +207,21 @@ services:
   # both this container and the job containers so filepaths match.
   fiftyone:
     <<: *common
-    image: voxel51/fiftyone:latest
+    build: ./fiftyone
+    image: flywheel-fiftyone:latest
     command: ["fiftyone", "app", "launch", "--remote", "--port", "5151", "--wait", "-1"]
     environment:
       HOME: /fiftyone
       FIFTYONE_DATABASE_URI: mongodb://mongo:27017
       FIFTYONE_DEFAULT_APP_ADDRESS: 0.0.0.0
       FIFTYONE_DO_NOT_TRACK: "true"
+      VFF_MULTIMODAL: "1"   # plays LeRobot episode references and MCAP samples (sync-fiftyone-raw)
     volumes:
       - ${STATE_DIR}/fiftyone:/fiftyone
       - ${STATE_DIR}/versitygw/buckets:/buckets:ro
     depends_on: [mongo]
 
-  # Rerun web viewer for episode recordings (processed/rerun/<dataset>/<episode>.rrd,
-  # built by fiftyone/episode_rrd.py). No login of its own: Caddy fronts it with SSO on rerun.<host>.
+  # Rerun web viewer for recordings in processed/rerun/<dataset>/<episode>.rrd. No login of its own: Caddy fronts it with SSO on rerun.<host>.
   rerun:
     <<: *common
     build: ./rerun
