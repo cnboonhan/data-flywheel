@@ -6,9 +6,10 @@
 #SBATCH --mem=96G
 #SBATCH --time=12:00:00
 #SBATCH --output=%x-%j.log
-# On C01 and C02 the eval client's Kit viewport never renders a frame when a policy server such as ACT
-# runs next to it (the zero-action demo policy is fine there); Isaac Lab then can't place its viewport
-# camera. Identical software, GPU mode and scratch on all four nodes; cause not found. C03 and C04 work.
+# On C01 and C02 the eval client's Kit viewport stopped rendering a frame during the afternoon of
+# 2026-10-08 (first with the ACT policy server beside it, later with the zero-action demo policy too);
+# Isaac Lab then can't place its viewport camera. Identical software, GPU mode and scratch on all four
+# nodes; cause not found. C03 and C04 work.
 #SBATCH --exclude=C2-GB300-02-C01,C2-GB300-02-C02
 #
 # Evaluate a policy checkpoint in the RoboDojo simulator (Isaac Sim, headless)
