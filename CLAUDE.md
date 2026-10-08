@@ -10,7 +10,8 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
 - `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy (`envgen.sh`, `cliproxy/` import hook).
 - `sim/nurec/`: NuRec real-to-sim pipeline (scripts, Arena hook, README). `sim/nurec/3dgrut` is the 3DGRUT trainer.
-- Everything under `eval/` and `sensors/`, plus `sim/nurec/3dgrut`, is an **upstream git submodule**.
+- `sim/worldgen/`: Carter-in-NuRec-room exploration loop; Isaac Sim on the host (bundled ROS 2 Jazzy, `ROS_DOMAIN_ID=42`), Nav2/SLAM in Docker. `sim/worldgen/IsaacSim-ros_workspaces` holds NVIDIA's Carter Nav2 params.
+- Everything under `eval/` and `sensors/`, plus `sim/nurec/3dgrut` and `sim/worldgen/IsaacSim-ros_workspaces`, is an **upstream git submodule**.
 
 ## Rules
 
@@ -19,6 +20,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - **Keep nested submodules pinned.** The RoboDojo and RoboTwin installers move XPolicyLab to its latest commit. After running them, run `git submodule update` inside that benchmark.
 - **IsaacLab-Arena `uv.lock`:** upstream's lock is stale, and it's regenerated locally with `git update-index --skip-worktree uv.lock`. Use `uv sync --frozen --extra dev` so uv doesn't rewrite it. See the README before pulling Arena.
 - **Run one Isaac Sim instance at a time.** The GPU is an RTX 5090 Laptop with 24 GB.
+- **A real robot shares this LAN on ROS domain 0.** Keep sim ROS 2 traffic on another domain (`sim/worldgen` uses 42); never publish to `/hdas/*` or `/motion_target/*`.
 - **NVIDIA driver 580-open is held on purpose**, because Isaac Sim 5.1 crashes on 595. Don't change drivers or system packages without asking.
 - **Off-limits:** don't modify, run or copy from `~/workspaces/htx-robotics-release` or `~/workspaces/snippets`.
 - **Isaac Sim crash reports:** Isaac Sim uploads them to NVIDIA by default. Pass `--/crashreporter/enabled=false` to ad-hoc Isaac Sim runs.

@@ -12,3 +12,6 @@ services/.env
 
 # 3DGRUT training runs (checkpoints, exports)
 sim/nurec/runs/
+
+# world-generation runs (bags, SLAM maps)
+sim/worldgen/runs/
