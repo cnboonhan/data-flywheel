@@ -102,7 +102,22 @@ bootstrap_gitea() {
 # the credentials Slurm jobs need, in a file only the submitting user reads.
 bootstrap_slurm() {
   local dir="$STATE_DIR/act_runner/ssh" key api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
-  mkdir -p "$dir"
+  mkdir -p "$dir" "$STATE_DIR/slurm-logs"
+  # The checkout of the pipelines repo that slurm-submit updates and the jobs read (PIPELINES_ROOT).
+  local ca="$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt" repo="$STATE_DIR/pipelines"
+  if [[ ! -d $repo/.git ]]; then
+    git -c "http.sslCAInfo=$ca" -c "credential.helper=store --file=$STATE_DIR/.pipelines-credentials" \
+      clone -q "https://$SERVICE_HOST:$CADDY_PORT/gitea/$ADMIN_USER/pipelines.git" "$repo" \
+      < <(printf 'protocol=https\nhost=%s:%s\nusername=%s\npassword=%s\n' "$SERVICE_HOST" "$CADDY_PORT" "$ADMIN_USER" "$ADMIN_PASSWORD") || true
+  fi
+  if [[ ! -d $repo/.git ]]; then
+    (umask 077; printf 'https://%s:%s@%s:%s\n' "$ADMIN_USER" "$ADMIN_PASSWORD" "$SERVICE_HOST" "$CADDY_PORT" > "$STATE_DIR/.pipelines-credentials")
+    git -c "http.sslCAInfo=$ca" -c "credential.helper=store --file=$STATE_DIR/.pipelines-credentials" \
+      clone -q "https://$SERVICE_HOST:$CADDY_PORT/gitea/$ADMIN_USER/pipelines.git" "$repo"
+  fi
+  git -C "$repo" config http.sslCAInfo "$ca"
+  git -C "$repo" config credential.helper "store --file=$STATE_DIR/.pipelines-credentials"
+  (umask 077; printf 'https://%s:%s@%s:%s\n' "$ADMIN_USER" "$ADMIN_PASSWORD" "$SERVICE_HOST" "$CADDY_PORT" > "$STATE_DIR/.pipelines-credentials")
   [[ -f $dir/id_ed25519 ]] || ssh-keygen -q -t ed25519 -N "" -C "flywheel-actions-runner" -f "$dir/id_ed25519"
   key=$(cut -d' ' -f1,2 "$dir/id_ed25519.pub")
   local line="command=\"$here/slurm/slurm-submit\",restrict $key flywheel-actions-runner"
