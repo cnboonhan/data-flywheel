@@ -13,7 +13,7 @@
 # conda shim the eval scripts need (they call `conda activate <env>`).
 #   sbatch install-robodojo.sbatch
 set -euo pipefail
-PROJECT_ROOT=${PROJECT_ROOT:-/tier1/htx_boonhan/workspaces/data-flywheel/eval/system1/RoboDojo}
+PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}

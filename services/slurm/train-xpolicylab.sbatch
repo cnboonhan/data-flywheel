@@ -23,7 +23,7 @@ shift 6 || true
 extra=("$@")
 
 PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
-PROJECT_ROOT=${PROJECT_ROOT:-/tier1/htx_boonhan/workspaces/data-flywheel/eval/system1/RoboDojo}
+PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
 XPL=$PROJECT_ROOT/XPolicyLab

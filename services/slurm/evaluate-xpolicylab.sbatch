@@ -24,7 +24,7 @@
 set -euo pipefail
 policy=${1:?policy}; task=${2:?task}; ckpt=${3:?ckpt}; env_cfg=${4:-arx_x5_gpu}; action=${5:-joint}; seed=${6:-0}; eval_num=${7:-}
 PIPELINES_ROOT=${PIPELINES_ROOT:-/tier1/htx_boonhan/services/pipelines}
-PROJECT_ROOT=${PROJECT_ROOT:-/tier1/htx_boonhan/workspaces/data-flywheel/eval/system1/RoboDojo}
+PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
 XPL=$PROJECT_ROOT/XPolicyLab

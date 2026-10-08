@@ -13,7 +13,7 @@
 # Editable installs point at PROJECT_ROOT, so re-run this after moving the repo. Idempotent.
 set -euo pipefail
 policy=${1:?ACT|DP|demo_policy}
-PROJECT_ROOT=${PROJECT_ROOT:-/tier1/htx_boonhan/workspaces/data-flywheel/eval/system1/RoboDojo}
+PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
 export PATH="$HOME/.local/bin:$PATH"

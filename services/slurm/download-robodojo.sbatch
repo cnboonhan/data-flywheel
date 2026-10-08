@@ -28,7 +28,7 @@ case $what in
     ls "$ROBODOJO_DIR/Assets"
     # The robot configs ship as *_tmp.yml templates; RoboDojo's helper writes the real
     # ones with absolute asset paths (it must run from a dir containing Assets/Robots).
-    PROJECT_ROOT=${PROJECT_ROOT:-/tier1/htx_boonhan/workspaces/data-flywheel/eval/system1/RoboDojo}
+    PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
     [[ -e $PROJECT_ROOT/Assets ]] || ln -s "$ROBODOJO_DIR/Assets" "$PROJECT_ROOT/Assets"
     (cd "$PROJECT_ROOT" && python3 utils/update_embodiment_config_path.py </dev/null | tail -2) ;;
   ckpt)
