@@ -217,7 +217,7 @@ mlflow_token() {
 setup_envs() {
   local force=${1:-} project api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD" e stale=()
   project=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
-  for e in robodojo act dp demo_policy; do
+  for e in robodojo act dp; do
     [[ $(cat "$STATE_DIR/envs/$e/.flywheel-setup" 2>/dev/null) == "$project" ]] || stale+=("$e")
   done
   if [[ -z $force && ${#stale[@]} == 0 ]]; then echo "setup: environments are current for $project"; return 0; fi

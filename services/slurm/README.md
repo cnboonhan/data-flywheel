@@ -4,7 +4,7 @@ GPU work (conversion, training, evaluation) runs as Slurm jobs on the `raus_manu
 
 **Bridge.** `ctl.sh up` creates a key at `$STATE_DIR/act_runner/ssh/`, adds it to `~/.ssh/authorized_keys` with the forced command `slurm-submit` (`restrict`: sbatch from the pipelines checkout at the run's commit, status, log, cancel; nothing else), stores it as the repo secrets `SLURM_SSH_KEY` / `SLURM_SSH_HOST` (`SLURM_LOGIN_HOST` in `.env`), and writes `$STATE_DIR/slurm.env`: MLflow and S3 credentials plus `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Jobs read `$PIPELINES_ROOT` = `$STATE_DIR/pipelines` (a checkout of `admin/pipelines`).
 
-**Environments** (RoboDojo eval env, ACT/DP/demo_policy policy envs) are built by the Gitea workflow `setup-envs` in a job container, not through Slurm ([gitea/](../gitea/README.md)): `ctl.sh up` dispatches it when one is missing or was built for another checkout, `ctl.sh setup` forces it.
+**Environments** (RoboDojo eval env, ACT/DP policy envs) are built by the Gitea workflow `setup-envs` in a job container, not through Slurm ([gitea/](../gitea/README.md)): `ctl.sh up` dispatches it when one is missing or was built for another checkout, `ctl.sh setup` forces it.
 
 **By hand** (same scripts, same env):
 

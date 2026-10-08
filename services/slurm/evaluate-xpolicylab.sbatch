@@ -16,7 +16,6 @@
 # and record the result in MLflow.
 #   sbatch evaluate-xpolicylab.sbatch <policy> <task> <ckpt> [env_cfg] [action] [seed] [eval_num]
 #   e.g. sbatch evaluate-xpolicylab.sbatch ACT stack_bowls stack_bowls arx_x5_gpu joint 0 5
-#        sbatch evaluate-xpolicylab.sbatch demo_policy stack_bowls demo arx_x5_gpu joint 0 1   # zero-action smoke test
 # Runs policy/<P>/eval.sh exactly as XPolicyLab documents it: a policy server
 # in the policy's env, RoboDojo's eval client in the `robodojo` env, both
 # activated through the conda shim (the scripts hard-code conda). Then

@@ -3,12 +3,12 @@
 # Build (or re-point) the uv env an XPolicyLab policy trains and serves in: ENVS_DIR/<policy, lowercase>.
 # Run by the Gitea workflow setup-envs in a job container on the service node (dispatched by `ctl.sh up` /
 # `ctl.sh setup`). By hand, on any node:
-#   set -a; . $STATE_DIR/slurm.env; set +a; bash install-policy-env.sh ACT | DP | demo_policy
+#   set -a; . $STATE_DIR/slurm.env; set +a; bash install-policy-env.sh ACT | DP
 # Follows policy/<P>/install.sh, with the versions that work on this aarch64 Blackwell node: torch from
 # the cu128 index (the policies pin torch==2.4.1, which has no CUDA build here), numpy/numba pins relaxed.
 # Editable installs point at PROJECT_ROOT, so re-run this after moving the repo. Idempotent.
 set -euo pipefail
-policy=${1:?ACT|DP|demo_policy}
+policy=${1:?ACT|DP}
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
@@ -31,11 +31,10 @@ case $policy in
     uv pip install -q zarr==2.12.0 wandb ipdb gpustat omegaconf hydra-core==1.2.0 dill==0.3.5.1 einops==0.4.1 diffusers==0.11.1 numba \
       moviepy imageio av matplotlib termcolor sympy h5py opencv-python-headless "numpy<2" huggingface_hub==0.25.2 pandas
     uv pip install -q -e "$XPL/policy/DP" --reinstall-package diffusion-policy ;;
-  demo_policy) ;;
   *) echo "no recipe for $policy" >&2; exit 2 ;;
 esac
 uv pip install -q -e "$XPL" mlflow-skinny --reinstall-package xpolicylab
 python -c "import XPolicyLab, sys; print('XPolicyLab from', XPolicyLab.__file__); sys.exit(0 if XPolicyLab.__file__.startswith('$XPL/') else 1)"
-[[ $policy == demo_policy ]] || python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 echo "$PROJECT_ROOT" > "$env/.flywheel-setup"   # ctl.sh up compares this with the checkout
 echo "$policy env ready"

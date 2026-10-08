@@ -1,5 +1,5 @@
 # Build the environments the pipelines run in: the RoboDojo evaluation env (Isaac Sim 5.1, Isaac Lab, curobo,
-# XPolicyLab, plus the sim assets and the RoboDojo data into raw/open_datasets/) and the ACT, DP and demo_policy
+# XPolicyLab, plus the sim assets and the RoboDojo data into raw/open_datasets/) and the ACT and DP
 # policy envs. Runs the installers directly in a job container on the service node, with $STATE_DIR, the checkout
 # and ~/.local (uv and its Pythons) mounted at their host paths and the commands run under your uid, so the envs
 # work on the GB300 nodes as built (same OS image and glibc). Dispatched by `services/ctl.sh up` when an env is
@@ -29,7 +29,6 @@ jobs:
           - {script: install-robodojo.sh, args: ""}
           - {script: install-policy-env.sh, args: ACT}
           - {script: install-policy-env.sh, args: DP}
-          - {script: install-policy-env.sh, args: demo_policy}
     env:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
