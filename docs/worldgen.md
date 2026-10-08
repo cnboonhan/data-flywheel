@@ -1,6 +1,6 @@
 # World generation: the physical-scene ↔ sim-scene loop
 
-A second flywheel next to the data one, for the diagram's "Sync Specs" edge between Physical Scenes and Sim Scenes: a robot maps and explores a real space, the capture becomes a sim-ready scene, and the sim scene is where navigation and manipulation get trained and evaluated before going back to the robot. Status: **proposal + plan**, nothing implemented yet. The reconstruction half already exists in [`sim/nurec`](../sim/nurec/README.md).
+A second flywheel next to the data one, for the diagram's "Sync Specs" edge between Physical Scenes and Sim Scenes: a robot maps and explores a real space, the capture becomes a sim-ready scene, and the sim scene is where navigation and manipulation get trained and evaluated before going back to the robot. Status: **steps 1–2 prototyped in simulation** with a Nova Carter (see [`sim/worldgen`](../sim/worldgen/README.md), 2026-10-08); the reconstruction half (step 3–4) already exists in [`sim/nurec`](../sim/nurec/README.md). The R1 is not wired up yet.
 
 ```
  Physical scene                                   Sim scene
@@ -20,7 +20,24 @@ A second flywheel next to the data one, for the diagram's "Sync Specs" edge betw
 
 ## Prototype in simulation first
 
-Run steps 1–2 in a simulator standing in for the robot, push the synthetic bag through 3–4. That validates the whole chain (does an R1 stereo bag reconstruct and align, does the map round-trip) before touching hardware, and leaves a sim→sim regression test behind.
+Run steps 1–2 in a simulator standing in for the robot, push the synthetic bag through 3–4. That validates the whole chain (does a stereo bag reconstruct and align, does the map round-trip) before touching hardware, and leaves a sim→sim regression test behind.
+
+### Decision: Nova Carter first, R1 second
+
+The prototype uses NVIDIA's **Nova Carter** instead of an R1 Lite, for three reasons that each remove a step from the plan below: Isaac Sim ships Carter already wired for ROS 2 (odometry, `/tf`, RTX lidar, four Hawk stereo pairs, `/cmd_vel`), NVIDIA publishes Nav2 parameters for it ([`IsaacSim-ros_workspaces`](https://github.com/isaac-sim/IsaacSim-ros_workspaces), a submodule under `sim/worldgen/`), and the NuRec sample room we already load in Arena (`nova_carter-wormhole`) was captured by a Carter, so NVIDIA's own reconstruction of that room is the ground truth for the sim→sim test. The R1 becomes a second embodiment once the loop closes; the nav stack and topic remaps are the only R1-specific parts.
+
+**ROS 2 runs in Docker, not on the host.** Isaac Sim 6.1 bundles its own ROS 2 Jazzy (no system install), and Nav2 + slam_toolbox + explore_lite live in a container on the host network (`sim/worldgen/compose.yml`). The two talk over a UDP-only Fast DDS profile on `ROS_DOMAIN_ID=42`, because a real R1 shares this LAN on domain 0.
+
+### What is built (`sim/worldgen`)
+
+| Step | State |
+|---|---|
+| 1 Robot in sim | Carter referenced out of Isaac Sim's warehouse sample into the NuRec room, spawned on the room's capture trajectory; `/clock`, odometry, TF, XT-32 point cloud (~43k pts/sweep against the room's collision mesh) and the front stereo pair verified from the container |
+| 2 Nav stack | slam_toolbox builds `/map` (lifecycle-launched), Nav2 up on NVIDIA's Carter params with map server/AMCL removed, `pointcloud_to_laserscan` provides `/scan`, `explore_lite` built from source. Exploration itself is being debugged: first runs produced a map from a standing robot; the global costmap now tracks unknown space so frontiers exist |
+| Bag | `record.sh` records `/tf`, odometry, lidar and the front stereo pair (+`camera_info`) as mcap, the inputs NuRec's stereo workflow lists |
+| 3–4 | Not run on a sim bag yet; the NuRec stereo workflow needs the Isaac ROS 4.0 container |
+
+Sim speed is the practical limit: two Hawk cameras over a 1M-Gaussian splat plus the RTX lidar give ~0.4× real time on the RTX 5090 laptop. Everything is on sim time, so correctness holds, but a 10-minute exploration is 25 minutes of wall clock.
 
 ### What exists for an R1 that navigates (surveyed 2026-10-08)
 
@@ -38,7 +55,8 @@ Conclusion: no off-the-shelf "R1 + nav stack + sim". The real robot needs no ven
 
 ## Plan
 
-### Step 1: R1 Lite in Isaac Lab/Arena with a mobile base and sensors
+### Step 1: a navigating robot in Isaac Sim with lidar, stereo and ROS 2
+Done with Nova Carter (`sim/worldgen/isaac/carter_room.py`). For the R1 Lite later:
 - Import the R1 Lite URDF from GalaxeaManipSim (`galaxea_sim/assets/r1_lite/robot.urdf`) into Isaac Sim; put it on a holonomic base (a kinematic/velocity-controlled base is enough for the prototype; Galaxea's chassis is omnidirectional).
 - Add an RTX lidar at the chassis position and the head stereo pair matching the real `/hdas/camera_head/{left,right}` cameras (h2rc bags give the real intrinsics and placement).
 - ROS 2 bridge publishing the real driver's topic names: `/hdas/lidar_chassis_left`, `/hdas/feedback_chassis`, `/hdas/camera_head/*/image_raw_color/compressed` + `camera_info`, `/tf`; subscribing `/motion_target/target_speed_chassis`.
@@ -46,8 +64,8 @@ Conclusion: no off-the-shelf "R1 + nav stack + sim". The real robot needs no ven
 - Scene for the prototype: an existing Arena background (the NuRec `nova_carter-wormhole` room is ideal: it already has a mesh and occupancy map to compare against).
 
 ### Step 2: navigation stack, identical for sim and robot
-- `slam_toolbox` (online async) → map; Nav2 (MPPI or DWB controller, smac planner) for motion; `explore_lite` for frontier exploration.
-- A `worldgen` ROS 2 workspace in the repo: launch files, Nav2 params tuned for a holonomic base, a dead-man republisher for the chassis Twist, and a `ros2 bag record` profile for the capture topics.
+- `slam_toolbox` (online async) → map; Nav2 (DWB, NVIDIA's Carter tuning) for motion; `explore_lite` for frontier exploration. Built: `sim/worldgen/ros/explore.launch.py` + params, in the `flywheel-worldgen-nav` image.
+- Still to add for the R1: Nav2 params for a holonomic base and a dead-man republisher for the chassis Twist (the chassis latches its last command).
 - Deliverable: a bag + the SLAM map from a fully autonomous exploration run in sim.
 
 ### Step 3: reconstruction
@@ -63,7 +81,7 @@ Conclusion: no off-the-shelf "R1 + nav stack + sim". The real robot needs no ven
 - Same launch files on the R1 (real driver topics), capture a room, run steps 3–4 on the real bag.
 
 ## Where it runs
-- Isaac Sim headless on the GB300 node is being established by the RoboDojo evaluate work; if it holds, steps 1–4 are Slurm jobs like the rest of the stack. Otherwise the RTX 5090 laptop, where `sim/nurec` was verified, hosts steps 3–4.
+- Steps 1–2 run on the RTX 5090 laptop today (Isaac Sim from Arena's venv + the nav container; Docker with the NVIDIA toolkit is installed there). Isaac Sim headless on the GB300 node is being established by the RoboDojo evaluate work; if it holds, steps 1–4 become Slurm jobs like the rest of the stack.
 - NuRec stereo needs the Isaac ROS 4.0 container with a GPU runtime; the node's Docker has none, so that step runs via Slurm with a rootless/apptainer-style container or on the laptop.
 
 ## Data layout (proposed)
@@ -77,5 +95,5 @@ processed/scenes/<scene>/arena/                    registered background + envir
 
 ## Open questions
 - Does Galaxea's own R1 Isaac Lab tutorial provide a mobile-base USD? That would replace most of step 1.
-- h2rc bags: is `/tf` present, and are the head cameras calibrated as a stereo pair (baseline in `camera_info`)?
+- h2rc bags: is `/tf` present, and are the head cameras calibrated as a stereo pair (baseline in `camera_info`)? Partly answered: the live R1 on the lab LAN publishes `/hdas/camera_head/{left,right}_raw/image_raw_color/compressed` and `/calib/head_{left,right}/camera_info`; `/tf` was not checked.
 - Lidar: NuRec recommends it for metric scale; the R1 publishes a 3D PointCloud2, which the stereo workflow accepts optionally.
