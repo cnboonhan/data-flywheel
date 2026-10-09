@@ -63,12 +63,15 @@ Verified (2026-10-09) against a local S3 server (moto) laid out like the gateway
 against the real gateway. The local path was verified with 7k iterations: 25.0 dB PSNR / 0.89 SSIM.
 
 Output: `datasets/splat/zh_lounge/runs/zh_lounge/<run>/` with `export_last_lightfield.usdz` (the splat, one
-`ParticleField3DGaussianSplat` prim), `metrics.json` (held-out PSNR/SSIM/LPIPS) and checkpoints.
+`ParticleField3DGaussianSplat` prim), `scene.usda`, `metrics.json` (held-out PSNR/SSIM/LPIPS) and checkpoints.
 
-**Placing it in Isaac Sim:** the export is **Y-up** (COLMAP convention) and Isaac Sim is Z-up, so reference it with a
-+90° rotation about X (quaternion xyzw `(0.7071, 0, 0, 0.7071)`). It has no collision geometry; add proxies (floor
-plane, desk boxes) or a mesh. An Arena background is a `LibraryBackground` subclass with `usd_path` pointing at the
-USDZ, loaded through Arena's `--external_environment_class_path` hook.
+**Sim-ready scene:** open or reference `scene.usda`, not the USDZ. It places the splat in the COLMAP world frame, Z-up. The USDZ
+itself has the exporter's normalizing transform (cameras centred, Y-up) and cameras with a wrong field of view. The COLMAP
+frame is metric and gravity-aligned only if the poses are, as in [`sensors/real2sim`](../../sensors/real2sim/README.md)
+captures (the `map` frame). Plain SfM datasets like zh_lounge have arbitrary scale and orientation, so place them by hand.
+`--floor` adds an invisible collision floor at z = 0. The splat has no other collision; add proxies or a mesh. An Arena
+background is a `LibraryBackground` subclass with `usd_path` pointing at `scene.usda`, loaded through Arena's
+`--external_environment_class_path` hook.
 
 **Reference results** (RTX 5090 Laptop, this commit): 7k iterations, 24.9 dB PSNR / 0.89 SSIM in ~5 min;
 30k iterations (default), 27.2 dB / 0.92 SSIM in 31 min.

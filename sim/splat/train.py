@@ -4,7 +4,7 @@
 # ///
 """Train a Gaussian splat with 3DGRUT; input and output can each be a local directory or an s3:// prefix.
 
-    uv run sim/splat/train.py <input> <output> [3DGRUT hydra overrides...]
+    uv run sim/splat/train.py <input> <output> [3DGRUT hydra overrides...] [--floor]
     uv run sim/splat/train.py datasets/splat/zh_lounge/zh_lounge/colmap datasets/splat/zh_lounge/runs n_iterations=7000
     uv run sim/splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
 
@@ -12,6 +12,7 @@
 synced into --cache (only missing or changed files are fetched). The run is written under <output>/<name>/<run>/;
 for an s3:// output it is trained in --cache and then uploaded. S3 settings are the services stack's: S3_ENDPOINT_URL
 plus AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION and AWS_CA_BUNDLE (see docs/flywheel.md).
+Each run also gets scene.usda: the splat in the COLMAP world frame, Z-up (--floor adds a collision floor at z = 0).
 """
 
 import argparse
@@ -66,12 +67,56 @@ def upload(src: Path, url: str) -> None:
     print(f"output: {src} -> {url} ({len(files)} files)")
 
 
+SCENE_USDA = """#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def "splat" (
+        prepend references = @./%s@</World/gaussians/Gaussians/gaussians>
+    )
+    {
+    }
+%s}
+"""
+
+# Invisible static collider whose top face is z = 0; only meaningful when the COLMAP world is gravity-aligned and
+# metric with the floor at z = 0, as in sensors/real2sim captures (map frame).
+FLOOR = """
+    def Cube "floor" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        token visibility = "invisible"
+        double3 xformOp:translate = (0, 0, -0.05)
+        float3 xformOp:scale = (500, 500, 0.1)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+"""
+
+
+def write_scene(run: Path, floor: bool) -> None:
+    """scene.usda: the splat in the COLMAP world frame, Z-up. The export puts a normalizing transform (cameras
+    centred, Y-up) on the splat's parent Xform; referencing the splat prim itself drops it."""
+    usdz = sorted(run.glob("export_last*.usdz"))
+    if usdz:
+        (run / "scene.usda").write_text(SCENE_USDA % (usdz[-1].name, FLOOR if floor else ""))
+        print(f"scene: {run / 'scene.usda'}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("input", help="COLMAP dataset dir or s3://bucket/prefix")
     parser.add_argument("output", help="dir or s3://bucket/prefix that receives <name>/<run>/")
     parser.add_argument("overrides", nargs="*", help="3DGRUT hydra overrides, e.g. n_iterations=7000")
     parser.add_argument("--name", help="experiment name (default: the input's parent dir name)")
+    parser.add_argument("--floor", action="store_true",
+                        help="add a collision floor at z = 0 to scene.usda (gravity-aligned metric input, e.g. real2sim)")
     parser.add_argument("--config", default="apps/colmap_3dgut_mcmc.yaml", help="3DGRUT config")
     parser.add_argument("--cache", type=Path, default=ROOT / "datasets" / "splat" / "cache",
                         help="local mirror of s3:// inputs and outputs")
@@ -111,6 +156,7 @@ def main() -> None:
         sys.exit(f"training finished but no new run under {out / name}")
     run = new_runs[-1]
     print(f"run: {run}")
+    write_scene(run, args.floor)
     if to_s3:
         upload(run, f"{args.output.rstrip('/')}/{name}/{run.name}")
 
