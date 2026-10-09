@@ -11,5 +11,6 @@ export ROS_DISTRO=jazzy RMW_IMPLEMENTATION=rmw_fastrtps_cpp ROS_DOMAIN_ID="${ROS
 export FASTRTPS_DEFAULT_PROFILES_FILE="${HERE}/fastdds.xml"
 # Without the bundled libraries on the path the bridge logs "ROS2 Bridge startup failed" and publishes nothing.
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${ARENA}/.venv/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.core/jazzy/lib"
+[[ $(uname -m) == aarch64 ]] && export LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}/lib/aarch64-linux-gnu/libgomp.so.1"   # Isaac Sim on ARM refuses to start without it
 cd "${ARENA}"
 exec "${ARENA}/.venv/bin/python" "${HERE}/isaac_sim.py" "$@"

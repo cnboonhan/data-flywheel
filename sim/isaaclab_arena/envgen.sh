@@ -35,4 +35,5 @@ cd "${ARENA}"
 export PYTHONPATH="${ROOT}/sim/isaaclab_arena/hooks${PYTHONPATH:+:${PYTHONPATH}}"
 export ARENA_INFERENCE_ENDPOINT=cliproxy OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y
 export STREAMLIT_SERVER_HEADLESS=true STREAMLIT_SERVER_ADDRESS="${STREAMLIT_SERVER_ADDRESS:-localhost}"   # no email prompt; local-only unless overridden
+[[ $(uname -m) == aarch64 ]] && export LD_PRELOAD="${LD_PRELOAD:+${LD_PRELOAD}:}/lib/aarch64-linux-gnu/libgomp.so.1"   # Isaac Sim on ARM refuses to start without it
 exec .venv/bin/python "isaaclab_arena_examples/agentic_environment_generation/${runner}" "${args[@]}"

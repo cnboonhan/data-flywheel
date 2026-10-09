@@ -11,15 +11,21 @@ Data stays out of git: `datasets/splat/` (gitignored) holds local scenes, runs a
 ## Install (once)
 
 ```bash
-git submodule update --init --recursive sim/splat/3dgrut
-cd sim/splat/3dgrut
-env -u DISPLAY FORCE_LOCAL_CUDA=1 CUDA_VERSION=12 ./scripts/create_venv_cuda.sh 3dgrut   # CUDA 12.8 into .venv, ~4 GB download
-source .venv/bin/activate && env -u DISPLAY ./install_env_uv.sh                           # ~10 min, ~17 GB venv
+bash sim/splat/install.sh   # ~20 GB in sim/splat/3dgrut/.venv; x86_64 or aarch64
 ```
 
-CUDA 12.8 is needed for Blackwell (RTX 50xx); the host has no `nvcc`, so it goes into the venv. `DISPLAY` must be
-unset: the CUDA runfile is a makeself archive that tries to open an xterm when it sees a display but no TTY
-(`exec: -title: not found`). The venv has absolute paths baked in, so don't move the checkout after installing.
+`install.sh` runs upstream's `scripts/create_venv_cuda.sh` and `install_env_uv.sh` and fills the platform gaps:
+
+- **CUDA toolkit** in `.venv/cuda-<ver>/`, so the host needs no `nvcc`. On x86_64 upstream downloads its runfile; on
+  aarch64 (no runfile upstream) the script assembles the same directory from NVIDIA's per-component redist tarballs.
+- **CUDA version** from the GPU: 12.8 (Blackwell RTX 50xx and older), 13.0 for sm_103 (B300/GB300), which 12.8 can't
+  compile for. Override with `CUDA_VERSION=12.8|13`; on a machine without the target GPU (a login node), set it.
+- **USD:** the export needs `pxr`, and PyPI's `usd-core` has no aarch64 wheel, so there OpenUSD (core + Python) is built
+  into `.venv/opt/usd` (~10 min with many cores).
+
+`DISPLAY` is unset for the install: the CUDA runfile is a makeself archive that tries to open an xterm when it sees a
+display but no TTY (`exec: -title: not found`). The venv has absolute paths baked in, so don't move the checkout after
+installing. On the Slurm cluster, run it as a job on a GPU node (it compiles kaolin and tiny-cuda-nn: use many cores).
 
 ## Run: zh_lounge
 
@@ -59,8 +65,9 @@ start immediately); an S3 output is trained in `datasets/splat/cache/runs/` and 
 
 Verified (2026-10-09) against a local S3 server (moto) laid out like the gateway: input mirrored from
 `s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap/` (4 of 4 files fetched, 0 of 4 on a rerun), run uploaded to
-`s3://processed/splats/zh_lounge/zh_lounge/<run>/` (52 objects including the USDZ and `metrics.json`). Not yet run
-against the real gateway. The local path was verified with 7k iterations: 25.0 dB PSNR / 0.89 SSIM.
+`s3://processed/splats/zh_lounge/zh_lounge/<run>/` (52 objects including the USDZ and `metrics.json`). The local path was verified with 7k iterations: 25.0 dB PSNR / 0.89 SSIM. Against the real gateway (2026-10-09, GB300
+Slurm node, aarch64, CUDA 13.0): 7k iterations, 24.8 dB / 0.89 SSIM, 54 files uploaded to
+`s3://processed/splats/zh_lounge/zh_lounge/<run>/`, 8 min including the first-run JIT compile.
 
 Output: `datasets/splat/zh_lounge/runs/zh_lounge/<run>/` with `export_last_lightfield.usdz` (the splat, one
 `ParticleField3DGaussianSplat` prim), `scene.usda`, `metrics.json` (held-out PSNR/SSIM/LPIPS) and checkpoints.
