@@ -5,7 +5,7 @@ Agentic eval environments (system 2).
 | Path | Contents |
 |---|---|
 | `IsaacLab-Arena` | [IsaacLab-Arena](https://github.com/isaac-sim/IsaacLab-Arena) git submodule (Isaac Sim 6.1, uv `.venv`) |
-| `environments/` | Environment specs (YAML) generated with [`sim/isaaclab_arena/envgen.sh`](../../sim/isaaclab_arena/README.md). Example: `franka_mug_to_bowl_splat_scene.yaml`, on a [splat background](../../sim/isaaclab_arena/README.md#splat-backgrounds) |
+| `environments/` | Environment specs (YAML) generated with [`sim/isaaclab_arena/envgen.sh`](../../sim/isaaclab_arena/README.md). Examples on a [splat background](../../sim/isaaclab_arena/README.md#splat-backgrounds): `franka_mug_to_bowl_splat_scene.yaml`, and `ridgeback_mug_to_bowl_splat_scene.yaml` with a [mobile manipulator](../../sim/isaaclab_arena/README.md#mobile-manipulator) |
 
 ## Generate environments
 

@@ -25,6 +25,9 @@ uv run sim/splat/train.py datasets/real2sim/run1/colmap datasets/real2sim/run1/r
 - Camera height: with `--height_steps N`, each viewpoint is captured at N heights within `--height_range` (the robot's
   achievable camera heights above the floor), sent on `/camera_height` (`std_msgs/Float64`, m) and confirmed from TF. In sim
   the stereo rig follows the topic; on a real robot, an adapter turns it into a lift or torso command.
+- A failed goal is retried after clearing the costmaps (`--nav_retries`, default 2). If a viewpoint is still skipped, the
+  model is written but `capture.py` exits nonzero and lists the gaps: the splat's collision floor only covers the captured
+  footprint (plus 2 m).
 - Train for at least 7,000 iterations; 3DGRUT's USD export fails on shorter runs.
 - On a real robot, use its map and Nav2 params, and pass its topics and frames with `--cameras`, `--optical_frames` and `--lidar`.
 - **Not on GB300 (aarch64 Slurm nodes) yet.** Isaac Sim 6.1 starts and the ROS 2 bridge loads, but every frame fails in the RTX renderer (`NGX CreateFeature failed`, `DLSS RenderOp failed`, `Rendering failed`) and the simulation stops advancing once playing, so nothing is published. Switching to `RaytracedLighting`, FXAA and `/rtx-transient/post/dlss/supported=false` didn't help. Run it on an RTX GPU.

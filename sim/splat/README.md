@@ -76,6 +76,8 @@ Output: `datasets/splat/zh_lounge/runs/zh_lounge/<run>/` with `export_last_light
 itself has the exporter's normalizing transform (cameras centred, Y-up) and cameras with a wrong field of view. The COLMAP
 frame is metric and gravity-aligned only if the poses are, as in [`sensors/real2sim`](../../sensors/real2sim/README.md)
 captures (the `map` frame). Plain SfM datasets like zh_lounge have arbitrary scale and orientation, so place them by hand.
+It references `splat.usdc`, the export without gaussians beyond `--crop_radius` (30 m) of the splat's median. 3DGRUT keeps a
+background shell out to ~1000 km, which in Isaac Sim blocks the dome light: meshes render black on top and flicker.
 `--floor` adds an invisible collision floor at z = 0 under the cameras' footprint (plus 2 m); it needs a text COLMAP model. The splat has no other collision; add proxies or a mesh. To use it as an Arena
 background, see [Splat backgrounds](../isaaclab_arena/README.md#splat-backgrounds).
 

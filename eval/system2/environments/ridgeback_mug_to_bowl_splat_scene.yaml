@@ -1,0 +1,62 @@
+env_name: ridgeback_mug_to_bowl_splat_scene
+# Needs ARENA_SPLAT_SCENE=<sim/splat run>/scene.usda (trained with --floor); see sim/isaaclab_arena/README.md.
+embodiment:
+  id: franka
+  registry_name: ridgeback_franka_ik
+  params: {}
+background:
+  id: splat
+  registry_name: splat_scene
+  params: {}
+objects:
+- id: table
+  registry_name: office_table
+  params: {}
+- id: mug
+  registry_name: mug
+  params: {}
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+object_references:
+- id: floor
+  parent_id: splat
+  prim_path: floor
+  object_type: base
+  params: {}
+relations:
+- kind: is_anchor
+  subject: floor
+  params: {}
+- kind: 'on'
+  subject: table
+  reference: floor
+  params: {}
+- kind: at_position          # office_table is 1.8 m long: near edge 1.6 m ahead, for the base to drive up to
+  subject: table
+  params:
+    x: 2.5
+    y: 0.0
+- kind: 'on'
+  subject: mug
+  reference: table
+  params: {}
+- kind: 'on'
+  subject: bowl
+  reference: table
+  params: {}
+- kind: position_limits_box  # near the edge, within reach of the stopped base (record.py --stop_x 1.05)
+  subject: mug
+  params: {x_min: 1.7, x_max: 1.95, y_min: -0.3, y_max: 0.3}
+- kind: position_limits_box
+  subject: bowl
+  params: {x_min: 1.7, x_max: 1.95, y_min: -0.3, y_max: 0.3}
+task:
+  composition: atomic
+  description: Ridgeback-Franka drives to a table in a captured warehouse, picks up a mug and places it in a bowl.
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: mug
+      destination_location: bowl
+      background_scene: splat

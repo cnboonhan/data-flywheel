@@ -20,6 +20,7 @@ TF tree calls the optical frame `<cam>_left_rgb`.
 import argparse
 import json
 import math
+import sys
 import time
 from pathlib import Path
 
@@ -51,6 +52,7 @@ ap.add_argument("--height_range", type=float, nargs=2, metavar=("MIN", "MAX"),
 ap.add_argument("--height_steps", type=int, default=1, help="Heights per viewpoint (1: leave the camera where it is)")
 ap.add_argument("--height_topic", default="/camera_height")
 ap.add_argument("--height_tolerance", type=float, default=0.02, help="(m)")
+ap.add_argument("--nav_retries", type=int, default=2, help="Retries of a failed goal, each after clearing the costmaps")
 args = ap.parse_args()
 if args.height_steps > 1 and not args.height_range:
     ap.error("--height_steps > 1 needs --height_range")
@@ -104,6 +106,7 @@ def capture(i, h):
     fresh = lambda k: k in latest and rclpy.time.Time.from_msg(latest[k].header.stamp).nanoseconds >= t0  # noqa: E731
     if not wait_for(lambda: all(fresh(ns) for ns in args.cameras) and fresh("lidar")):
         print(f"[{i + 1}/{len(views)}] no fresh images/lidar, skipped", flush=True)
+        skipped.append(i + 1)
         return
     for ns, frame in zip(args.cameras, args.optical_frames):
         img, info = latest[ns], latest[ns + "#info"]
@@ -111,6 +114,7 @@ def capture(i, h):
             T = tf.lookup_transform("map", frame, img.header.stamp, Duration(seconds=2)).transform
         except Exception as e:
             print(f"  {ns}: no TF map->{frame}: {e}", flush=True)
+            skipped.append(i + 1)
             return
         name = f"{len(frames):05d}_{ns.strip('/').replace('/', '_')}.png"
         cv2.imwrite(str(out / "images" / name), bridge.imgmsg_to_cv2(img, "bgr8"))
@@ -124,23 +128,31 @@ def capture(i, h):
 
 
 views = json.loads(Path(args.viewpoints).read_text())["viewpoints"]
-frames, clouds, intrinsics = [], [], {}
+frames, clouds, intrinsics, skipped = [], [], {}, []
 for i, v in enumerate(views):
     goal = PoseStamped()
     goal.header.frame_id = "map"
     goal.header.stamp = nav.get_clock().now().to_msg()
     goal.pose.position.x, goal.pose.position.y = v["x"], v["y"]
     goal.pose.orientation.z, goal.pose.orientation.w = math.sin(v["yaw"] / 2), math.cos(v["yaw"] / 2)
-    nav.goToPose(goal)
-    while not nav.isTaskComplete():
-        rclpy.spin_once(nav, timeout_sec=0.1)
-    if nav.getResult() != TaskResult.SUCCEEDED:
+    for attempt in range(args.nav_retries + 1):
+        if attempt:
+            print(f"[{i + 1}/{len(views)}] navigation failed, clearing costmaps and retrying", flush=True)
+            nav.clearAllCostmaps()
+        nav.goToPose(goal)
+        while not nav.isTaskComplete():
+            rclpy.spin_once(nav, timeout_sec=0.1)
+        if nav.getResult() == TaskResult.SUCCEEDED:
+            break
+    else:
         print(f"[{i + 1}/{len(views)}] {v}: navigation failed, skipped", flush=True)
+        skipped.append(i + 1)
         continue
 
     for h in heights:
         if h is not None and not go_to_height(h):
             print(f"[{i + 1}/{len(views)}] camera height {h:.2f} m not reached, skipped", flush=True)
+            skipped.append(i + 1)
             continue
         capture(i, h)
     if heights[0] is not None:
@@ -165,3 +177,5 @@ with open(out / "sparse/0/points3D.txt", "w") as f:
         f.write(f"{i} {x} {y} {z} 128 128 128 0\n")
 print(f"wrote {len(frames)} images, {len(pts)} points -> {out}")
 rclpy.shutdown()
+if skipped:   # the model is still written; a nonzero exit lets scripts notice the gaps
+    sys.exit(f"skipped captures at viewpoints {sorted(set(skipped))} of {len(views)}")

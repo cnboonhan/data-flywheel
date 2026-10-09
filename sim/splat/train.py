@@ -12,8 +12,8 @@
 synced into --cache (only missing or changed files are fetched). The run is written under <output>/<name>/<run>/;
 for an s3:// output it is trained in --cache and then uploaded. S3 settings are the services stack's: S3_ENDPOINT_URL
 plus AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION and AWS_CA_BUNDLE (see docs/flywheel.md).
-Each run also gets scene.usda: the splat in the COLMAP world frame, Z-up (--floor adds a collision floor at z = 0
-under the cameras' footprint).
+Each run also gets scene.usda: the splat in the COLMAP world frame, Z-up, without gaussians beyond --crop_radius
+(--floor adds a collision floor at z = 0 under the cameras' footprint).
 """
 
 import argparse
@@ -119,18 +119,24 @@ def camera_centres(images_txt: Path) -> list[tuple[float, float, float]]:
     return centres
 
 
-def write_scene(run: Path, floor: list[tuple[float, float, float]] | None) -> None:
+def write_scene(run: Path, floor: list[tuple[float, float, float]] | None, crop_radius: float) -> None:
     """scene.usda: the splat in the COLMAP world frame, Z-up. The export puts a normalizing transform (cameras
-    centred, Y-up) on the splat's parent Xform; referencing the splat prim itself drops it."""
+    centred, Y-up) on the splat's parent Xform; referencing the splat prim itself drops it. With crop_radius, it
+    references splat.usdc instead: the export without its far background shell (see crop.py)."""
     usdz = sorted(run.glob("export_last*.usdz"))
     if not usdz:
         return
+    splat = usdz[-1].name
+    if crop_radius > 0:
+        splat = "splat.usdc"
+        subprocess.run([str(GRUT / ".venv" / "bin" / "python"), str(HERE / "crop.py"), str(usdz[-1]), str(run / splat),
+                        str(crop_radius)], check=True)
     floor_usda = ""
     if floor:
         xs, ys = [c[0] for c in floor], [c[1] for c in floor]
         floor_usda = FLOOR % ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
                               max(xs) - min(xs) + 2 * FLOOR_MARGIN, max(ys) - min(ys) + 2 * FLOOR_MARGIN)
-    (run / "scene.usda").write_text(SCENE_USDA % (usdz[-1].name, floor_usda))
+    (run / "scene.usda").write_text(SCENE_USDA % (splat, floor_usda))
     print(f"scene: {run / 'scene.usda'}")
 
 
@@ -143,6 +149,8 @@ def main() -> None:
     parser.add_argument("--floor", action="store_true",
                         help="add a collision floor at z = 0 under the cameras to scene.usda (needs a gravity-aligned, metric "
                              "text COLMAP model, e.g. from sensors/real2sim)")
+    parser.add_argument("--crop_radius", type=float, default=30.0,
+                        help="scene.usda drops gaussians farther than this (m) from the splat's median; 0 keeps all")
     parser.add_argument("--config", default="apps/colmap_3dgut_mcmc.yaml", help="3DGRUT config")
     parser.add_argument("--cache", type=Path, default=ROOT / "datasets" / "splat" / "cache",
                         help="local mirror of s3:// inputs and outputs")
@@ -187,7 +195,7 @@ def main() -> None:
         sys.exit(f"training finished but no new run under {out / name}")
     run = new_runs[-1]
     print(f"run: {run}")
-    write_scene(run, floor)
+    write_scene(run, floor, args.crop_radius)
     if to_s3:
         upload(run, f"{args.output.rstrip('/')}/{name}/{run.name}")
 
