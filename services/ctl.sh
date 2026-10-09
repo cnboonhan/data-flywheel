@@ -98,7 +98,7 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,adapter,clean,validate,mix}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
+  for f in gitea/{setup,ingest,adapter,clean,validate,mix,serve}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
@@ -157,6 +157,8 @@ ENVS_DIR=$STATE_DIR/envs
 ROBODOJO_DIR=$STATE_DIR/robodojo
 BUCKETS_DIR=$STATE_DIR/versitygw/buckets
 DATA_ROOT=$STATE_DIR/xpolicylab
+TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
+TRITON_TOKEN=${TRITON_TOKEN:-}
 EOF
   )
 }
@@ -278,7 +280,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun versitygw/buckets/triton/models; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Keycloak imports the realm (clients, groups, the admin user) on first start.

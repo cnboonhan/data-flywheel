@@ -12,6 +12,7 @@ The **Store** column of the [architecture diagram](../architecture.html): Docker
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
+| Triton: model serving from the MLflow registry (all GPUs of the node) | [triton/](triton/README.md), Gitea `sync-triton` | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (bearer token) |
 | Slurm jobs: train, evaluate (per model and embodiment) | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run
@@ -22,7 +23,7 @@ services/ctl.sh up                         # start or update, provisions everyth
 services/ctl.sh ps
 services/ctl.sh logs -f caddy
 services/ctl.sh restart <service>          # after editing a bind-mounted config (Caddyfile, loki.yml)
-services/ctl.sh up --build                 # after editing mlflow/Dockerfile or rerun/Dockerfile
+services/ctl.sh up --build                 # after editing mlflow/, rerun/ or triton/Dockerfile
 services/ctl.sh up --force-recreate        # after git deleted and recreated files under services/
 services/ctl.sh setup                      # rebuild the policy and RoboDojo envs (Gitea workflow setup-envs); up does it when needed
 services/ctl.sh down
@@ -36,8 +37,8 @@ From a machine that can reach the node: `https://$SERVICE_HOST:$CADDY_PORT/`. Th
 
 ```bash
 ssh -L $CADDY_PORT:$SERVICE_NODE:$CADDY_PORT <login-node>
-# /etc/hosts on the laptop (the subdomains have no wildcard there, list all four):
-# 127.0.0.1 $SERVICE_HOST fiftyone.$SERVICE_HOST rerun.$SERVICE_HOST s3.$SERVICE_HOST
+# /etc/hosts on the laptop (the subdomains have no wildcard there, list all five):
+# 127.0.0.1 $SERVICE_HOST fiftyone.$SERVICE_HOST rerun.$SERVICE_HOST s3.$SERVICE_HOST triton.$SERVICE_HOST
 ```
 
 Trust the CA once per device (also removes the browser warning):

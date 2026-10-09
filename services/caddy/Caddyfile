@@ -150,6 +150,25 @@ https://rerun.{$SERVICE_HOST}:8443 {
 	}
 }
 
+# Triton for programs (robots, evaluation jobs): HTTP/REST (/v2/...) and gRPC on one name, with a bearer token
+# (TRITON_TOKEN) instead of SSO; an empty token never matches. gRPC requests are told apart by their content type.
+https://triton.{$SERVICE_HOST}:8443 {
+	@token expression `{env.TRITON_TOKEN} != "" && {http.request.header.Authorization} == "Bearer " + {env.TRITON_TOKEN}`
+	handle @token {
+		request_header -Authorization
+		@grpc header Content-Type application/grpc*
+		handle @grpc {
+			reverse_proxy h2c://triton:8001
+		}
+		handle {
+			reverse_proxy triton:8000
+		}
+	}
+	handle {
+		respond "Triton: send Authorization: Bearer <TRITON_TOKEN>" 401
+	}
+}
+
 # S3 API and the gateway's web UI (under /ui). SigV4 signs the request path,
 # so no prefix and no SSO here: clients hold access keys, which ctl.sh issues
 # per user; the UI logs in with those keys.

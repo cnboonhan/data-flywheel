@@ -20,6 +20,7 @@ services:
       CADDY_PORT: ${CADDY_PORT:-8443}
       LOKI_PUSH_TOKEN: ${LOKI_PUSH_TOKEN:-}   # bearer token for POST /loki/api/v1/push from outside
       RERUN_RAW_TOKEN: ${RERUN_RAW_TOKEN:-}   # path token for raw bags in Rerun links
+      TRITON_TOKEN: ${TRITON_TOKEN:-}         # bearer token for triton.<host>
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro
@@ -230,6 +231,31 @@ services:
     image: flywheel-rerun:0.38.1
     environment:
       HOME: /tmp
+
+  # Triton Inference Server on all of the node's GPUs (CDI). Its model repository is the triton bucket's models/
+  # folder, read in place; the sync-triton workflow fills it from the MLflow registry and loads and unloads models
+  # (explicit model control). Reached through Caddy on triton.<host> (HTTP and gRPC, bearer token). See triton/README.md.
+  triton:
+    <<: *common
+    build: ./triton
+    image: flywheel-triton:26.08
+    command:
+      - tritonserver
+      - --model-repository=/models
+      - --model-control-mode=explicit
+      - --load-model=*            # on (re)start: whatever the last sync left in the repository
+      - --exit-on-error=false     # a model that fails to load doesn't keep the others down
+    environment:
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"   # the repository is read-only
+    devices:
+      - nvidia.com/gpu=all
+    shm_size: 16gb                   # Python-backend models pass tensors through shared memory
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    volumes:
+      - ${STATE_DIR}/versitygw/buckets/triton/models:/models:ro
 
   # --- Single sign-on -------------------------------------------------------
   keycloak-db:

@@ -37,7 +37,7 @@ What the fresh run caught, all fixed in `ctl.sh` or the scripts: dockerd creatin
 
 ### Access
 
-- **Reach the stack.** `https://$SERVICE_HOST:$CADDY_PORT/` (values from `services/.env`) plus the `fiftyone.`, `rerun.` and `s3.` subdomains on the same port; through a login node, forward the port and map the four names in `/etc/hosts`; trust `/ca.crt` once. Commands: [services/README.md](../services/README.md#access).
+- **Reach the stack.** `https://$SERVICE_HOST:$CADDY_PORT/` (values from `services/.env`) plus the `fiftyone.`, `rerun.`, `s3.` and `triton.` subdomains on the same port; through a login node, forward the port and map the five names in `/etc/hosts`; trust `/ca.crt` once. Commands: [services/README.md](../services/README.md#access).
 - **Log in once.** Keycloak (`/auth`) signs you into Gitea, Grafana, MLflow, FiftyOne and Rerun. MLflow and the S3 API use the account and keys that `services/ctl.sh user add <name> <email>` gives you.
 - **S3 credentials in your shell** for the `aws` commands below:
   ```bash
@@ -146,6 +146,10 @@ What it took on this hardware, and why the job script does what it does:
 - **No `ffmpeg` on the nodes.** RoboDojo streams camera frames through one; `install-robodojo.sh` installs `imageio-ffmpeg`'s static build into `$ROBODOJO_DIR/bin`, which the job puts on `PATH`.
 - Already covered by `install-robodojo.sh`: aarch64 wheels for Isaac Sim 5.1 and torch cu128, `libgomp` preloaded, NVRTC 12.9 preloaded (torch's 12.8 doesn't know sm_103), user-space GL libraries, curobo built from source, robot configs rendered with absolute asset paths. The first Isaac Sim start on a node compiles the RTX pipelines (minutes); the caches under `$ROBODOJO_DIR/cache` are shared, so later starts take 15 s.
 
+## 6. Serve: registry → Triton
+
+Set the MLflow alias `triton` on a model version; `sync-triton` loads it into Triton on C03 within 10 minutes and tags the version `triton.status`. Remove the alias to unload. See [services/triton/README.md](../services/triton/README.md).
+
 ## The same loop for other data
 
 | Raw format | Collect | Look | Adapt and train |
@@ -163,9 +167,10 @@ What it took on this hardware, and why the job script does what it does:
 | Start / stop / update the stack | `services/ctl.sh up` / `down` (runs compose on the service node over ssh) |
 | Rebuild the envs | `services/ctl.sh setup` (Gitea workflow `setup-envs`) |
 | Add a person | `services/ctl.sh user add <name> <email>` → Keycloak (SSO), MLflow account, S3 key |
-| Reach it from a laptop | forward `$CADDY_PORT` + `/etc/hosts` for the four names; trust `/ca.crt` once ([services/README.md](../services/README.md#access)) |
+| Reach it from a laptop | forward `$CADDY_PORT` + `/etc/hosts` for the five names; trust `/ca.crt` once ([services/README.md](../services/README.md#access)) |
 | State on disk | `/tier1/htx_boonhan/services/<service>/`; buckets under `versitygw/buckets/` |
 | Pipelines code | Gitea `admin/pipelines`, seeded from `services/gitea/`; editing checkout at `/tier1/htx_boonhan/services/pipelines` |
 | Slurm jobs and logs | `services/slurm/{train,evaluate}.sbatch`, `models/`, `embodiments/`; logs in `/tier1/htx_boonhan/services/slurm-logs/<job>-<id>.log` |
 | Environments | `/tier1/htx_boonhan/services/envs/{robodojo,act,dp}` (uv venvs) |
+| What Triton serves | MLflow alias `triton`; tags `triton.*` on versions; `s3://triton/sync/status.json`; `services/triton/sync.py --status` |
 | Secrets | `services/.env` (gitignored); Slurm jobs read `/tier1/htx_boonhan/services/slurm.env` |

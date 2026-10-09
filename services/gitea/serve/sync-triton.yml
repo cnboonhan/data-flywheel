@@ -1,0 +1,47 @@
+# Serve MLflow models on Triton (services/triton/sync.py): every registered model whose alias `triton` names a version is
+# packaged into s3://triton/models/ and loaded; a model whose alias is gone is unloaded. Each model's outcome goes back to
+# its MLflow model version as tags triton.* and to s3://triton/sync/ (status.json, log/). Runs every 10 minutes and on demand.
+name: sync-triton
+concurrency:
+  group: sync-triton
+  cancel-in-progress: false
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Registered models to repackage and reload even if unchanged (space-separated)"
+        default: ""
+      dry_run:
+        description: "Only report what would change (true/false)"
+        default: "false"
+
+jobs:
+  sync:
+    runs-on: python
+    container:
+      image: flywheel-triton:26.08   # built by ctl.sh up from services/triton/Dockerfile, same as the server
+      # Literal path: the runner doesn't evaluate ${{ }} in volumes. Must match the checkout and container.valid_volumes
+      # in act_runner/config.yaml. The packagers read XPolicyLab's ACT code and models/mlp from it.
+      volumes:
+        - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel
+    timeout-minutes: 60
+    env:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_TRACKING_USERNAME: ${{ vars.MLFLOW_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+      TRITON_URL: http://triton:8000
+      FLYWHEEL_ROOT: ${{ vars.FLYWHEEL_ROOT }}
+      GIT_PYTHON_REFRESH: quiet
+    steps:
+      - shell: bash
+        run: |
+          args=()
+          [[ "${{ inputs.dry_run }}" == true ]] && args+=(--dry-run)
+          [[ -n "${{ inputs.force }}" ]] && args+=(--force ${{ inputs.force }})
+          rc=0; python3 "$FLYWHEEL_ROOT/services/triton/sync.py" "${args[@]}" || rc=$?
+          python3 "$FLYWHEEL_ROOT/services/triton/sync.py" --status
+          exit $rc
