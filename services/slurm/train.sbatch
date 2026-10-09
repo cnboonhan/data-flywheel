@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=train
-#SBATCH --partition=raus_manual
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G

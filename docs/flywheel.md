@@ -53,7 +53,7 @@ What the fresh run caught, all fixed in `ctl.sh` or the scripts: dockerd creatin
   `ctl.sh up` seeds the repo from `services/gitea/` once; after that the repo's copies are what runs, so copy changed files into `$STATE_DIR/pipelines` and push.
 - **Slurm jobs** read the credentials and paths from `slurm.env`:
   ```bash
-  set -a; . /tier1/htx_boonhan/services/slurm.env; set +a
+  set -a; . /tier1/htx_boonhan/services/slurm.env; set +a; export SBATCH_PARTITION=<partition>   # no cluster default
   cd /tier1/htx_boonhan/services/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
   ```
 

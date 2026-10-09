@@ -1,6 +1,6 @@
 # slurm
 
-GPU work (training, evaluation) runs as Slurm jobs on the `raus_manual` partition, submitted by hand from a login node. Gitea doesn't submit Slurm jobs.
+GPU work (training, evaluation) runs as Slurm jobs, submitted by hand from a login node. Gitea doesn't submit Slurm jobs. The jobs name no partition and the cluster has no default, so pick one when submitting: `export SBATCH_PARTITION=<partition>` (as below) or `sbatch -p <partition>`.
 
 ```
 slurm/
@@ -13,7 +13,7 @@ slurm/
 A new model is a new `models/<name>/` folder (plus its env, built by Gitea `setup-envs`); a new robot is a new `embodiments/<name>.yaml` (plus an adapter writing its data). Neither touches the other.
 
 ```bash
-set -a; . /tier1/htx_boonhan/services/slurm.env; set +a
+set -a; . /tier1/htx_boonhan/services/slurm.env; set +a; export SBATCH_PARTITION=<partition>
 cd /tier1/htx_boonhan/services/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
 sbatch --export=ALL $S/train.sbatch act arx_x5 RoboDojo/stack_bowls -- --num_epochs 30 --save_freq 30
 sbatch --export=ALL $S/train.sbatch mlp arx_x5 'RoboDojo/*,galaxeaOpenWorldDataset/*' --mix arx_x5-all -- --epochs 200
