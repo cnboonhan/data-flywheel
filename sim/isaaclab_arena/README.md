@@ -49,12 +49,16 @@ The hook registers it as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted i
 ```bash
 export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda
 bash sim/isaaclab_arena/envgen.sh record --env_spec eval/system2/environments/ridgeback_mug_to_bowl_splat_scene.yaml \
-  --video_dir datasets/videos/ridgeback_demo --num_steps 460
+  --video_dir datasets/videos/ridgeback_demo --num_steps 460 --eye -1.7 0.8 1.6 --target 3.0 -0.1 0.6
 ```
 
-This writes `video_cam/clip_0000.mp4` (a fixed camera, `--eye`/`--target`) and `wrist_cam/clip_0000.mp4` at 15 fps: the
+This writes `video_cam/clip_0000.mp4` (a fixed camera at `--eye`, looking at `--target`) and `wrist_cam/clip_0000.mp4` at 15 fps: the
 Ridgeback drives 1.05 m to the table (`--stop_x`), the arm hovers over and dips to the mug, moves over the bowl and
 dips, circles over the table, and the base backs off and turns. It's a scripted sweep for checking a scene, not a
 policy, so nothing is grasped; `franka_ik` specs skip the driving. `record.py` writes the frames itself because Isaac
 Lab's `VideoRecorder` (moviepy 1.0.3) duplicates and drops a frame every ~7. In a splat scene, the floor shimmers in
 the wrist view where it's seen from angles the capture didn't cover.
+
+Camera coordinates are Arena's, whose origin is the centre of the capture area, so a framing only fits one capture
+region. The one above, for `sensors/real2sim`'s `--region -9 -4 -3 2`, looks past the table at a forklift and the
+yellow walls; keep the camera inside the captured area, as splat floaters crowd its edges.
