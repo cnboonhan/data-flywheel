@@ -4,6 +4,8 @@ Arena's registries are filled by its own modules, and its Streamlit GUI runs in 
 made by an import hook: right after Arena imports the target module, the addition is registered.
 
 - `cliproxy` inference endpoint (inference_backend): ARENA_PROXY_BASE_URL, ARENA_PROXY_MODEL, key in OPENAI_API_KEY.
+- `ridgeback_franka_ik` embodiment (franka module): franka_ik on Isaac Lab's holonomic Ridgeback base. Actions:
+  franka_ik's 7, then base vx, vy, wz on the planar joints anchored at the spawn pose (so in that frame).
 - `splat_scene` background (background_library), only when ARENA_SPLAT_SCENE is set: the scene.usda written by
   sim/splat/train.py. The splat stays metric and Z-up; it is shifted in x/y so the centre of its collision floor
   (the capture area) is Arena's origin, where embodiments spawn. Reference the floor as `prim_path: floor` to place
@@ -46,7 +48,53 @@ def _register_splat(module) -> None:
     register_asset(SplatSceneBackground)
 
 
-_HOOKS = {"isaaclab_arena.agentic_environment_generation.inference_backend": _register_cliproxy}
+def _register_ridgeback_franka(module) -> None:
+    import isaaclab.sim as sim_utils
+    from isaaclab.envs.mdp.actions.actions_cfg import JointVelocityActionCfg
+    from isaaclab.utils.configclass import configclass
+    from isaaclab_assets.robots.ridgeback_franka import RIDGEBACK_FRANKA_PANDA_CFG
+
+    from isaaclab_arena.assets.register import register_asset
+
+    @configclass
+    class RidgebackFrankaIKActionCfg(module.FrankaIKActionCfg):
+        # Base velocity on the planar joints that carry the base: vx, vy (m/s), wz (rad/s).
+        base_action = JointVelocityActionCfg(
+            asset_name="robot",
+            joint_names=["dummy_base_prismatic_x_joint", "dummy_base_prismatic_y_joint", "dummy_base_revolute_z_joint"],
+            preserve_order=True,
+        )
+
+    class RidgebackFrankaIKEmbodiment(module.FrankaIKEmbodiment):
+        """Franka on a holonomic Clearpath Ridgeback: franka_ik arm and gripper, then base velocity."""
+
+        name = "ridgeback_franka_ik"
+        tags = ["embodiment", "mobile"]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            robot = self.scene_config.robot   # the franka_ik arm pose and gains, on the Ridgeback instead of a stand
+            cfg = RIDGEBACK_FRANKA_PANDA_CFG.replace(
+                prim_path=robot.prim_path,
+                init_state=RIDGEBACK_FRANKA_PANDA_CFG.init_state.replace(
+                    joint_pos={**RIDGEBACK_FRANKA_PANDA_CFG.init_state.joint_pos, **robot.init_state.joint_pos}
+                ),
+            )
+            cfg.spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(disable_gravity=True)   # as franka_ik: IK holds pose
+            for group in ("panda_shoulder", "panda_forearm"):
+                cfg.actuators[group] = cfg.actuators[group].replace(
+                    stiffness=robot.actuators[group].stiffness, damping=robot.actuators[group].damping
+                )
+            self.scene_config.robot = cfg
+            self.action_config = RidgebackFrankaIKActionCfg()
+
+    register_asset(RidgebackFrankaIKEmbodiment)
+
+
+_HOOKS = {
+    "isaaclab_arena.agentic_environment_generation.inference_backend": _register_cliproxy,
+    "isaaclab_arena.embodiments.franka.franka": _register_ridgeback_franka,
+}
 if os.getenv("ARENA_SPLAT_SCENE"):
     _HOOKS["isaaclab_arena.assets.background_library"] = _register_splat
 
