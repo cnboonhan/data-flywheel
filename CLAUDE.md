@@ -7,9 +7,10 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - Data and weights live in the S3 gateway (`services/`), not in the checkout. Gitea workflows fetch from Hugging Face: `services/gitea/ingest/download-datasets-hf.yml` into `raw/open_datasets/`, `download-models-hf.yml` into the MLflow model registry (self-contained workflows; each header lists the known repos).
 - `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
+- `sensors/real2sim/`: Isaac Sim robot (Arena venv, bundled ROS 2 Jazzy, `ROS_DOMAIN_ID=42`) + Nav2 in Docker on a known map; goals via `/goal_pose`. A real robot shares the LAN on domain 0: never publish to `/hdas/*` or `/motion_target/*` from sim.
 - `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy (`envgen.sh`, `cliproxy/` import hook).
 - `sim/splat/`: Gaussian-splat training of real scenes; `sim/splat/3dgrut` is the 3DGRUT trainer (uv venv inside it, CUDA 12.8 bundled). Data in `datasets/splat/` (gitignored).
-- Everything under `eval/` and `sensors/`, plus `sim/splat/3dgrut`, is an **upstream git submodule**.
+- Everything under `eval/`, `sensors/yubi-*` and `sim/splat/3dgrut` is an **upstream git submodule**.
 
 ## Rules
 

@@ -1,0 +1,32 @@
+# Nav2 for the simulated (or, later, real) robot. Host network so DDS reaches Isaac Sim on the host.
+#   docker compose -f sensors/real2sim/compose.yml up nav2          # map server + AMCL + Nav2 (RViz on $DISPLAY, else on Xvfb)
+#   docker compose -f sensors/real2sim/compose.yml run --rm ros2 ros2 topic list
+# First: export UID GID=$(id -g); mkdir -p datasets/real2sim   (else Docker creates /data root-owned)
+x-ros: &ros
+  build: .
+  image: flywheel-nav2
+  network_mode: host
+  ipc: host
+  init: true                          # tini as PID 1: signals reach ros2 launch, and xvfb-run works
+  user: "${UID:-1000}:${GID:-1000}"
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}      # off the lab robot's domain 0
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    FASTRTPS_DEFAULT_PROFILES_FILE: /real2sim/fastdds.xml
+    DISPLAY: ${DISPLAY:-}
+    HOME: /tmp
+  volumes:
+    - ./fastdds.xml:/real2sim/fastdds.xml:ro
+    - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    - ./capture:/capture:ro
+    - ${REAL2SIM_DATA:-../../datasets/real2sim}:/data
+
+services:
+  nav2:
+    <<: *ros
+    # Upstream's launch stops Nav2 when RViz exits, so headless runs give RViz a virtual display.
+    command: bash -c 'L="ros2 launch carter_navigation carter_navigation.launch.xml"; [ -n "$$DISPLAY" ] && exec $$L; exec xvfb-run -a $$L'
+  ros2:
+    <<: *ros
+    stdin_open: true
+    tty: true
