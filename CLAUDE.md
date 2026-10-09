@@ -8,7 +8,8 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
 - `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy (`envgen.sh`, `cliproxy/` import hook).
-- Everything under `eval/` and `sensors/` is an **upstream git submodule**.
+- `sim/splat/`: Gaussian-splat training of real scenes; `sim/splat/3dgrut` is the 3DGRUT trainer (uv venv inside it, CUDA 12.8 bundled). Data in `datasets/splat/` (gitignored).
+- Everything under `eval/` and `sensors/`, plus `sim/splat/3dgrut`, is an **upstream git submodule**.
 
 ## Rules
 
