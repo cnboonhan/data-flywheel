@@ -4,6 +4,8 @@
 #   simple-world-lab/HiFi-UMI-2K            *  HiFi-UMI-2K
 #   nvidia/PhysicalAI-Robotics-NuRec        nova_carter-wormhole/*.usdz,nova_carter-wormhole/occupancy_map.*,nova_carter-wormhole/training_trajectory*  nurec-nova_carter-wormhole   (gated)
 #   nvidia/PhysicalAI-Robotics-NuRec        zh_lounge/*  nurec-zh_lounge   (gated)
+#   LightwheelAI/EgoPro (source: bucket)     EgoProStandard*/mcap/Paper Clips into Box/*  EgoPro   (gated; data is in an HF Bucket, the dataset repo holds only the card)
+# source=bucket reads a Hugging Face Bucket (huggingface.co/buckets/<id>) instead of a dataset repo.
 # Gated repos need the repo secret HF_TOKEN (a Hugging Face token whose account accepted the terms).
 name: download-datasets-hf
 concurrency:
@@ -13,8 +15,13 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: "Hugging Face repo id"
+        description: "Hugging Face repo id (or bucket id with source=bucket)"
         default: "simple-world-lab/HiFi-UMI-2K"
+      source:
+        description: "dataset repo or Hugging Face Bucket"
+        type: choice
+        options: [dataset, bucket]
+        default: dataset
       include:
         description: "Comma-separated globs inside the repo"
         default: "*"
@@ -33,25 +40,28 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
-      - run: pip -q install "huggingface_hub[hf_transfer]" boto3
+      - run: pip -q install "huggingface_hub>=1.9" boto3
       - run: |
           cat > download_hf.py <<'PY'
           #!/usr/bin/env python
-          """Download a Hugging Face repo (or part of it) straight into the S3 gateway, file by file.
+          """Download a Hugging Face repo or bucket (or part of it) straight into the S3 gateway, file by file.
 
               python download_hf.py --repo simple-world-lab/HiFi-UMI-2K --repo-type dataset --include '*' --prefix open_datasets --dest HiFi-UMI-2K
               python download_hf.py --repo nvidia/PhysicalAI-Robotics-NuRec --repo-type dataset \
                   --include 'nova_carter-wormhole/*.usdz,nova_carter-wormhole/occupancy_map.*' --prefix open_datasets --dest nurec-nova_carter-wormhole
+              python download_hf.py --repo LightwheelAI/EgoPro --repo-type bucket \
+                  --include 'EgoProStandard*/mcap/Paper Clips into Box/*' --prefix open_datasets --dest EgoPro
 
           Each file is fetched to a temp dir and uploaded to s3://<bucket>/<prefix>/<dest>/<path in repo>, then deleted, so disk use
           stays at one file. Files already present with the same size are skipped (re-runs resume). Gated repos need
-          HF_TOKEN. S3 credentials: S3_ENDPOINT_URL and AWS_* from the environment.
+          HF_TOKEN. Buckets (--repo-type bucket) are listed and fetched through the bucket API. S3 credentials: S3_ENDPOINT_URL and AWS_* from the environment.
 
-          Needs: pip install "huggingface_hub[hf_transfer]" boto3
+          Needs: pip install "huggingface_hub>=1.9" boto3
           """
 
           import argparse
           import os
+          import re
           import shutil
           import tempfile
           import time
@@ -64,7 +74,7 @@ jobs:
           def main():
               ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
               ap.add_argument("--repo", required=True, help="Hugging Face repo id")
-              ap.add_argument("--repo-type", default="dataset", choices=["dataset", "model"])
+              ap.add_argument("--repo-type", default="dataset", choices=["dataset", "model", "bucket"])
               ap.add_argument("--revision", default=None)
               ap.add_argument("--include", default="*", help="comma-separated globs of paths inside the repo")
               ap.add_argument("--dest", default=None, help="prefix in the bucket (default: repo name)")
@@ -77,8 +87,15 @@ jobs:
               dest = "/".join(p for p in (args.prefix.strip("/"), (args.dest or args.repo.split("/")[-1]).strip("/")) if p)
               globs = [g.strip() for g in args.include.split(",") if g.strip()]
               api = HfApi()
-              files = [f for f in api.list_repo_tree(args.repo, repo_type=args.repo_type, revision=args.revision, recursive=True)
-                       if getattr(f, "size", None) is not None and any(fnmatch(f.path, g) for g in globs)]
+              bucket = args.repo_type == "bucket"
+              if bucket:
+                  # List only below the longest literal prefix the globs share, so a subset doesn't walk the whole bucket.
+                  head = os.path.commonprefix([re.split(r"[*?\[]", g)[0] for g in globs])
+                  head = head[: head.rfind("/") + 1] or None
+                  tree = api.list_bucket_tree(args.repo, prefix=head, recursive=True)
+              else:
+                  tree = api.list_repo_tree(args.repo, repo_type=args.repo_type, revision=args.revision, recursive=True)
+              files = [f for f in tree if getattr(f, "size", None) is not None and any(fnmatch(f.path, g) for g in globs)]
               if args.limit:
                   files = files[: args.limit]
               total = sum(f.size for f in files)
@@ -98,7 +115,11 @@ jobs:
                       if have.get(key) == f.size:
                           skipped += 1
                           continue
-                      local = hf_hub_download(args.repo, f.path, repo_type=args.repo_type, revision=args.revision, local_dir=tmp)
+                      if bucket:
+                          local = os.path.join(tmp, "file")
+                          api.download_bucket_files(args.repo, [(f, local)], raise_on_missing_files=True)
+                      else:
+                          local = hf_hub_download(args.repo, f.path, repo_type=args.repo_type, revision=args.revision, local_dir=tmp)
                       s3.upload_file(local, args.bucket, key)
                       os.remove(local)
                       shutil.rmtree(os.path.join(tmp, ".cache"), ignore_errors=True)
@@ -111,4 +132,4 @@ jobs:
           if __name__ == "__main__":
               main()
           PY
-          python download_hf.py --repo "${{ inputs.repo }}" --repo-type dataset --include "${{ inputs.include }}" --prefix open_datasets --dest "${{ inputs.dest }}" --bucket raw --limit "${{ inputs.limit }}"
+          python download_hf.py --repo "${{ inputs.repo }}" --repo-type "${{ inputs.source }}" --include "${{ inputs.include }}" --prefix open_datasets --dest "${{ inputs.dest }}" --bucket raw --limit "${{ inputs.limit }}"

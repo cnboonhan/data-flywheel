@@ -1,13 +1,13 @@
 # Mirror s3://raw into FiftyOne without changing any data: each raw/<group>/<name>/ folder becomes the FiftyOne
 # dataset raw/<group>/<name>, samples point at the raw files, and only units (files or LeRobot roots) that are new,
-# changed or gone are touched. FiftyOne datasets under raw/ with no folder are deleted. Runs hourly and on demand.
+# changed or gone are touched. FiftyOne datasets under raw/ with no folder are deleted. Runs every 30 minutes and on demand.
 name: sync-fiftyone-raw
 concurrency:
   group: sync-fiftyone-raw
   cancel-in-progress: false
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17,47 * * * *"
   workflow_dispatch:
     inputs:
       datasets:

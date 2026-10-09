@@ -16,7 +16,7 @@ Where things run:
 
 | Stage | Runs as | Started by |
 |---|---|---|
-| Collect, look, adapt | Gitea Actions jobs: containers on the service node, buckets mounted read-only at `/buckets` | Gitea (dispatch, or the hourly schedule of `sync-fiftyone-raw`) |
+| Collect, look, adapt | Gitea Actions jobs: containers on the service node, buckets mounted read-only at `/buckets` | Gitea (dispatch, or the 30-minute schedule of `sync-fiftyone-raw`) |
 | Environments | Gitea workflow `setup-envs` | `ctl.sh up` when an env is missing or stale; `ctl.sh setup` forces it |
 | Train, evaluate | Slurm GPU jobs on the GB300 partition (the node's Docker has no GPU runtime) | you, with `sbatch` from a login node |
 
@@ -72,7 +72,7 @@ Known repos are listed in each workflow's header ([ingest/](../services/gitea/in
 
 ## 2. Look: `raw` in FiftyOne and Rerun
 
-Workflow **`sync-fiftyone-raw`** ([ingest/](../services/gitea/ingest/README.md)) runs hourly and mirrors `raw` into FiftyOne without writing any data: each `raw/<group>/<name>/` becomes the FiftyOne dataset `raw/<group>/<name>`, with samples pointing at the raw files. Re-runs touch only files that are new, changed or gone; a dataset whose folder disappears is deleted. Dispatch it by hand (input `datasets`, a glob such as `internal_datasets/*`) to see new data sooner.
+Workflow **`sync-fiftyone-raw`** ([ingest/](../services/gitea/ingest/README.md)) runs every 30 minutes and mirrors `raw` into FiftyOne without writing any data: each `raw/<group>/<name>/` becomes the FiftyOne dataset `raw/<group>/<name>`, with samples pointing at the raw files. Re-runs touch only files that are new, changed or gone; a dataset whose folder disappears is deleted. Dispatch it by hand (input `datasets`, a glob such as `internal_datasets/*`) to see new data sooner.
 
 | Raw dataset | In FiftyOne |
 |---|---|
