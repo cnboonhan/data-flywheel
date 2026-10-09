@@ -1,0 +1,13 @@
+# Template for a new robot: copy to <name>.yaml and fill in. Fields read by lib/embodiment.py.
+name: my_robot
+arms: [left, right]      # xspark key prefixes: state/<arm>_arm_joint_states etc.; [right] for a single arm
+arm_dim: 7               # joints per arm
+ee_dim: 1                # per arm: 1 for a parallel gripper, e.g. 20 for a dexterous hand
+cameras: [cam_head, cam_left_wrist, cam_right_wrist]   # vision/<cam>/ in the episodes
+data_env_cfg: my_robot   # the adapter writes processed/xpolicylab/<bench>/<task>/<data_env_cfg>/
+# Only for XPolicyLab models (ACT, DP) and RoboDojo evaluation. Omit if neither applies.
+# env_cfg must be a key in XPolicyLab utils/robot/_robot_info.json (a new one needs a fork of the submodule);
+# a robot with an identical layout can borrow an existing entry, e.g. franka for 7 + 1 per arm.
+xpolicylab:
+  env_cfg: franka
+  eval_env_cfg: ""       # RoboDojo env_cfg, empty when RoboDojo has no model of this robot

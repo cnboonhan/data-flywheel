@@ -29,7 +29,7 @@ cd "$PROJECT_ROOT"
 echo "[0/8] system libraries the node lacks, in user space"
 # Isaac Sim's RTX/MDL stack dlopens libGLU, libOpenGL (glvnd) and a few X11 helpers that aren't
 # installed on the compute nodes. Without root, take them from the Ubuntu arm64 packages and put
-# them on LD_LIBRARY_PATH (evaluate-xpolicylab.sbatch does that).
+# them on LD_LIBRARY_PATH (services/slurm/lib/xpolicylab.sh does that).
 ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
 mkdir -p "$ROBODOJO_DIR/lib" "$ROBODOJO_DIR/deb" && cd "$ROBODOJO_DIR/deb"
 for p in libglu1-mesa libopengl0 libglvnd0 libglx0 libgl1 libegl1 libxt6 libxmu6 libxi6; do

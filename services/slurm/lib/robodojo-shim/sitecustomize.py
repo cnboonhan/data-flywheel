@@ -1,4 +1,4 @@
-"""Injected into RoboDojo's eval client via PYTHONPATH by evaluate-xpolicylab.sbatch (no changes to the submodule).
+"""Injected into RoboDojo's eval client via PYTHONPATH by lib/xpolicylab.sh for evaluate.sbatch (no changes to the submodule).
 
 On the GB300 nodes Isaac Sim 5.1 never delivers Replicator camera frames while the simulation runs on
 the CPU device (RoboDojo's default), so the evaluation runs the environment on cuda:0 (env_cfg *_gpu).

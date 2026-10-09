@@ -12,7 +12,7 @@ The **Store** column of the [architecture diagram](../architecture.html): Docker
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
-| Slurm jobs: train, evaluate | [slurm/](slurm/README.md), [xpolicylab/](xpolicylab/README.md) | `sbatch` by hand |
+| Slurm jobs: train, evaluate (per model and embodiment) | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run
 

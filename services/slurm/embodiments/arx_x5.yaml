@@ -1,0 +1,11 @@
+# Two ARX X5 arms (6 joints each) with parallel grippers: RoboDojo's arx_x5.
+# Galaxea r1lite data is converted to this layout too (same 14-D joint space), until r1lite gets its own entry.
+name: arx_x5
+arms: [left, right]
+arm_dim: 6            # per arm, joint space
+ee_dim: 1             # per arm, gripper or hand
+cameras: [cam_head, cam_left_wrist, cam_right_wrist]
+data_env_cfg: arx_x5  # folder under processed/xpolicylab/<bench>/<task>/ that holds this robot's episodes
+xpolicylab:
+  env_cfg: arx_x5         # entry in XPolicyLab utils/robot/_robot_info.json (action dimension for ACT/DP)
+  eval_env_cfg: arx_x5_gpu  # RoboDojo env_cfg for simulation; *_gpu runs the sim on cuda:0 (needed on GB300)

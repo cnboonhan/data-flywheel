@@ -100,42 +100,49 @@ Galaxea LeRobot v2.1 → xspark: 6 arm joints + 1 gripper per arm (14-D, the sam
 
 Result: `Arrange_Fruits_20250819_011` in full is 114 episodes of ~130 MB (110 064 frames); the earlier Slurm converter took 16 min for it. Incremental runs: `limit = 2` then `limit = 3` added 2 then 1 episode; an unchanged archive is skipped without extracting.
 
-## 4. Train: XPolicyLab under Slurm, tracked in MLflow
+## 4. Train: `<model>` for `<embodiment>` under Slurm, tracked in MLflow
 
 ```bash
-sbatch --export=ALL $S/train-xpolicylab.sbatch ACT galaxeaOpenWorldDataset Arrange_Fruits_20250819_011 arx_x5 joint 0 --num_epochs 30 --save_freq 30
-squeue -u $USER; tail -f train-xpolicylab-<id>.log
+sbatch --export=ALL $S/train.sbatch act arx_x5 galaxeaOpenWorldDataset/Arrange_Fruits_20250819_011 -- --num_epochs 30 --save_freq 30
+sbatch --export=ALL $S/train.sbatch mlp arx_x5 'RoboDojo/*,galaxeaOpenWorldDataset/*' --mix arx_x5-all -- --epochs 200
+squeue -u $USER; tail -f train-<id>.log
 ```
 
-Arguments: `<policy> <bench> <task> <env_cfg> <action> <seed> [extra training args]`. Drop the extra arguments for the real 6000-epoch run; `DP` with `training.num_epochs=…` for diffusion policy. Policies with an env: ACT and DP. A new policy needs a recipe in `services/gitea/setup/install-policy-env.sh` and a case in the training job ([slurm/](../services/slurm/README.md)).
+Arguments: `<model> <embodiment> <bench>/<task>[,...] [--mix NAME] [--action joint|ee] [--seed N] [-- model args]`. The jobs are split along what actually differs ([slurm/](../services/slurm/README.md)):
 
-The job runs the policy's own `process_data.sh`, then its training command exactly as `policy/<P>/train.sh` would, through `services/xpolicylab/train_mlflow.py`, which hooks the policy's epoch summary (XPolicyLab prints no metrics itself), mirrors every epoch to MLflow, uploads the checkpoint directory as run artifacts (stored in `s3://mlflow`) and registers it as a model version. Decoded-frame caches and checkpoints go to `$STATE_DIR/xpolicylab/<policy>/`, linked from the checkout.
+- **`models/<model>/`**: per model, a `train.sh` (its env and training command) and an `eval.sh`. `act` and `dp` run XPolicyLab's own `process_data.sh` and training script (one dataset; drop `--num_epochs 30` for the real 6000-epoch ACT run, `training.num_epochs=…` for DP). `mlp` is a small baseline that reads any mix of hdf5 datasets directly, and the template for a new model: copy the folder and replace the DATA, MODEL and LOOP parts of `train.py`.
+- **`embodiments/<robot>.yaml`**: per robot, the arms, joint and gripper dimensions, cameras, the data folder (`data_env_cfg`) and the XPolicyLab/RoboDojo names. Today `arx_x5`; `_example.yaml` is the template for a new robot.
+- **`lib/`**: shared. `flywheel_mlflow.py` fixes the MLflow names; `xpolicylab_train.py` hooks ACT's and DP's loss summaries (XPolicyLab prints no metrics itself).
 
-Result (ACT, 30 epochs, on the bench then named `Galaxea`): 14 min 28 s, most of it `process_data` decoding 330k JPEG frames; the 30 epochs take about a minute. MLflow run `ACT-Galaxea-Arrange_Fruits_20250819_011-arx_x5-joint-0`: `train/loss`, `train/l1`, `train/kl`, `val/loss` (86.1 → 0.754); artifacts `policy_epoch_30_seed_0.ckpt` and `policy_last.ckpt` (336 MB each) plus `dataset_stats.pkl`; registered model **`ACT-Galaxea-Arrange_Fruits_20250819_011` version 1**.
+Every run lands in MLflow as experiment **`train/<embodiment>/<mix>`**, run `<model>-<action>-s<seed>-<time>`, with the checkpoints as artifacts (stored in `s3://mlflow`) registered as a version of **`<model>.<embodiment>.<mix>`**. The mix defaults to the single dataset (`RoboDojo.stack_bowls`). Each run records the dataset list, a data fingerprint (equal fingerprints, identical data), the git commit, the Slurm job and the arguments. Decoded-frame caches and checkpoints of ACT/DP go to `$STATE_DIR/xpolicylab/<policy>/`, linked from the checkout.
 
-**Look at the results.** `https://<host>:8443/mlflow/` → experiment **xpolicylab**: curves, parameters (bench/task/env_cfg/seed/action_dim), the exact command, the Slurm job id. **Models** → the registered model, each version linked to its run and checkpoints. Compare runs across policies or seeds by selecting them.
+Results:
+- ACT, 30 epochs on `Arrange_Fruits_20250819_011` (first run, older naming): 14 min 28 s, most of it `process_data` decoding 330k JPEG frames; the 30 epochs take about a minute. `train/loss`, `train/l1`, `train/kl`, `val/loss` (86.1 → 0.754); `policy_epoch_30_seed_0.ckpt` and `policy_last.ckpt` (336 MB each) plus `dataset_stats.pkl`.
+- With this layout: ACT, 3 epochs on `RoboDojo/stack_bowls` (frames already decoded), 32 s, model `ACT.arx_x5.RoboDojo.stack_bowls` v1. MLP, 20 epochs on a mix of every RoboDojo and Galaxea dataset, 14 s, model `MLP.arx_x5.arx_x5-test` v1.
+
+**Look at the results.** `https://<host>:8443/mlflow/` → experiments `train/<embodiment>/<mix>`: curves, parameters, the exact command, the Slurm job id; every model trained on the same robot and data sits in one experiment, so select runs to compare. **Models** → `<model>.<embodiment>.<mix>`, each version linked to its run and checkpoints. Runs from before this layout stay under the experiment `xpolicylab`.
 
 Caveats: `env_cfg=arx_x5` is a stand-in label for Galaxea (r1lite has the same 14-D layout; a proper `r1lite` entry needs edits inside the XPolicyLab/RoboDojo submodules, i.e. a fork); the policies' pinned `torch==2.4.1` has no CUDA build for this aarch64 Blackwell node, so the envs use the cu128 index.
 
 ## 5. Evaluate and feed back
 
 ```bash
-sbatch --export=ALL $S/evaluate-xpolicylab.sbatch ACT stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 arx_x5_gpu joint 0 5
+sbatch --export=ALL $S/evaluate.sbatch act arx_x5 stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 joint 0 5
 ```
 
-Arguments: `<policy> <task> <ckpt> <env_cfg> <action> <seed> [eval_num]`; leave `eval_num` empty for the task's default 25 to 50 episodes.
+Arguments: `<model> <embodiment> <task> <ckpt> [action] [seed] [eval_num]`; leave `eval_num` empty for the task's default 25 to 50 episodes. `<ckpt>` is XPolicyLab's checkpoint name, shown as the tag `xpolicylab_ckpt` on the training run. The simulator config comes from the embodiment (`arx_x5` → `arx_x5_gpu`).
 
-The job runs XPolicyLab's `eval.sh` exactly as documented: a policy server in the policy's env and RoboDojo's eval client in the `robodojo` env (Isaac Sim 5.1 headless, both through the conda shim). RoboDojo plays `eval_num` episodes against its evaluation layouts, scores them and writes `_result.json` plus one mp4 per camera under `$ROBODOJO_DIR/eval_result/`. `services/xpolicylab/eval_mlflow.py` then logs `eval/success_rate`, `eval/score` and `eval/episodes` **on the training run that produced the checkpoint** (found by name; a new `eval-…` run if there is none), uploads the result and the videos under `eval/<task>/`, and tags the registered model version with the scores. So the registry answers "how good is version N" directly.
+The job runs XPolicyLab's `eval.sh` exactly as documented: a policy server in the policy's env and RoboDojo's eval client in the `robodojo` env (Isaac Sim 5.1 headless, both through the conda shim). RoboDojo plays `eval_num` episodes against its evaluation layouts, scores them and writes `_result.json` plus one mp4 per camera under `$ROBODOJO_DIR/eval_result/`. `services/slurm/lib/eval_mlflow.py` then logs `eval/success_rate`, `eval/score` and `eval/episodes` **on the training run that produced the checkpoint** (found by its `xpolicylab_ckpt` tag; a new run in `eval/<model>` if there is none), uploads the result and the videos under `eval/<task>/`, and tags the registered model version with the scores. So the registry answers "how good is version N" directly.
 
-This closes the loop on data that has a simulator: RoboDojo's `stack_bowls` episodes (`raw/open_datasets/robodojo/`, from `setup-envs`) → `robodojo_to_xpolicylab` → `train-xpolicylab.sbatch` (bench `RoboDojo`) → evaluated here → scores on the run and the model version. Galaxea's r1lite has no simulator, so its evaluation stays physical.
+This closes the loop on data that has a simulator: RoboDojo's `stack_bowls` episodes (`raw/open_datasets/robodojo/`, from `setup-envs`) → `robodojo_to_xpolicylab` → `train.sbatch act arx_x5 RoboDojo/stack_bowls` → evaluated here → scores on the run and the model version. Galaxea's r1lite has no simulator, so its evaluation stays physical.
 
-Result: the 30-epoch ACT checkpoint (`RoboDojo-stack_bowls-arx_x5-joint-0`, trained in 5 min 54 s), 2 episodes of 800 steps, `COMPLETED` in 10 min 32 s on one GB300; `eval/success_rate 0.0` on the training run, six episode videos and `_result.json` as artifacts, model `ACT-RoboDojo-stack_bowls` v1 tagged `eval_stack_bowls_success_rate = 0.000`. A 30-epoch model is not expected to succeed; the point is the plumbing.
+Result: the 30-epoch ACT checkpoint (`RoboDojo-stack_bowls-arx_x5-joint-0`, trained in 5 min 54 s), 2 episodes of 800 steps, `COMPLETED` in 10 min 32 s on one GB300; `eval/success_rate 0.0` on the training run, six episode videos and `_result.json` as artifacts, model `ACT-RoboDojo-stack_bowls` v1 tagged `eval_stack_bowls_success_rate = 0.000`. A 30-epoch model is not expected to succeed; the point is the plumbing. With the per-model and per-embodiment layout: `evaluate.sbatch act arx_x5 stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 joint 0 1` on the 3-epoch checkpoint, 7 min 10 s on C03, logged to its training run in `train/arx_x5/RoboDojo.stack_bowls` and tagged `ACT.arx_x5.RoboDojo.stack_bowls` v1.
 
 What it took on this hardware, and why the job script does what it does:
 
 - **The simulation runs on the GPU device (`env_cfg = *_gpu`).** RoboDojo defaults the Isaac Lab simulation device to CPU. On the GB300 nodes Isaac Sim 5.1 then never delivers Replicator camera frames (verified with Isaac Lab's own tiled camera: empty buffers on `cpu`, frames on `cuda:0`), and RoboDojo's capture kernel spins forever on the empty buffer. An `env_cfg` ending in `_gpu` is derived from its base config by the job (`device: cuda:0`), with the base's evaluation layouts and checkpoints aliased. Physics on the GPU may score slightly differently from the official CPU-physics numbers.
 - **Two nodes can't run it.** On C01 and C02 the eval client's Kit viewport stopped rendering on 2026-10-08 while C03 and C04 kept working, so Isaac Lab's viewport camera controller fails with "Accessed invalid null prim". Software, GPU mode, scratch and extension order are identical on all four nodes; the cause was not found. The job excludes those two nodes.
-- **RoboDojo assumes CPU tensors** in a few places (`np.asarray` on a tensor, `.numpy()`); `services/slurm/robodojo-shim/sitecustomize.py`, injected through `PYTHONPATH`, makes CUDA tensors convert transparently and the viewport camera placement best-effort. The proper fix is a RoboDojo fork with a `device` setting and device-safe conversions.
+- **RoboDojo assumes CPU tensors** in a few places (`np.asarray` on a tensor, `.numpy()`); `services/slurm/lib/robodojo-shim/sitecustomize.py`, injected through `PYTHONPATH`, makes CUDA tensors convert transparently and the viewport camera placement best-effort. The proper fix is a RoboDojo fork with a `device` setting and device-safe conversions.
 - **No `ffmpeg` on the nodes.** RoboDojo streams camera frames through one; `install-robodojo.sh` installs `imageio-ffmpeg`'s static build into `$ROBODOJO_DIR/bin`, which the job puts on `PATH`.
 - Already covered by `install-robodojo.sh`: aarch64 wheels for Isaac Sim 5.1 and torch cu128, `libgomp` preloaded, NVRTC 12.9 preloaded (torch's 12.8 doesn't know sm_103), user-space GL libraries, curobo built from source, robot configs rendered with absolute asset paths. The first Isaac Sim start on a node compiles the RTX pipelines (minutes); the caches under `$ROBODOJO_DIR/cache` are shared, so later starts take 15 s.
 
@@ -143,9 +150,9 @@ What it took on this hardware, and why the job script does what it does:
 
 | Raw format | Collect | Look | Adapt and train |
 |---|---|---|---|
-| LeRobot v2 archives (Galaxea) | archives into `raw` | catalog entry per archive | `galaxeaOpenWorldDataset_to_xpolicylab` → `train-xpolicylab.sbatch` |
+| LeRobot v2 archives (Galaxea) | archives into `raw` | catalog entry per archive | `galaxeaOpenWorldDataset_to_xpolicylab` → `train.sbatch` |
 | LeRobot v3 (HiFi-UMI-2K) | `download-datasets-hf` | episodes with videos and state/action plots | EE-space data; XPolicyLab's joint-space layout doesn't fit yet |
-| xspark HDF5 (RoboDojo) | `setup-envs` | episode groups with preview videos | `robodojo_to_xpolicylab` → `train-xpolicylab.sbatch` |
+| xspark HDF5 (RoboDojo) | `setup-envs` | episode groups with preview videos | `robodojo_to_xpolicylab` → `train.sbatch` |
 | ROS 2 mcap (h2rc) | bag directories into `raw` | bags in FiftyOne and Rerun | no recorded actions in the bags; would need derived targets |
 | anything else | into `raw` | add a layout to `sync-fiftyone-raw` | one `<repo>_to_xpolicylab` adapter |
 
@@ -159,6 +166,6 @@ What it took on this hardware, and why the job script does what it does:
 | Reach it from a laptop | forward `$CADDY_PORT` + `/etc/hosts` for the four names; trust `/ca.crt` once ([services/README.md](../services/README.md#access)) |
 | State on disk | `/tier1/htx_boonhan/services/<service>/`; buckets under `versitygw/buckets/` |
 | Pipelines code | Gitea `admin/pipelines`, seeded from `services/gitea/`; editing checkout at `/tier1/htx_boonhan/services/pipelines` |
-| Slurm jobs and logs | `services/slurm/*.sbatch`; logs in `/tier1/htx_boonhan/services/slurm-logs/<job>-<id>.log` |
+| Slurm jobs and logs | `services/slurm/{train,evaluate}.sbatch`, `models/`, `embodiments/`; logs in `/tier1/htx_boonhan/services/slurm-logs/<job>-<id>.log` |
 | Environments | `/tier1/htx_boonhan/services/envs/{robodojo,act,dp}` (uv venvs) |
 | Secrets | `services/.env` (gitignored); Slurm jobs read `/tier1/htx_boonhan/services/slurm.env` |
