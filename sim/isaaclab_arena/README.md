@@ -5,7 +5,7 @@ Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule. Not
 | Path | Purpose |
 |---|---|
 | `envgen.sh` | Runs Arena's agentic environment generation (CLI runner or Streamlit GUI) through a local OpenAI-compatible proxy |
-| `cliproxy/sitecustomize.py` | Adds a `cliproxy` entry to Arena's fixed list of inference endpoints. Loaded via `PYTHONPATH` by `envgen.sh`; registers through an import hook so it also applies inside the GUI's separate process |
+| `hooks/sitecustomize.py` | Import hooks loaded via `PYTHONPATH` by `envgen.sh` (so they also apply inside the GUI's separate process): a `cliproxy` inference endpoint, and a `splat_scene` background when `ARENA_SPLAT_SCENE` is set |
 
 ## Generate environments
 
@@ -26,3 +26,15 @@ Environment variables:
 | `ARENA_PROXY_MODEL` | Model name the proxy serves | `claude-sonnet-5-5` |
 
 The proxy is [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), which exposes a CLI-authenticated model over the OpenAI API. `build` mode only needs Isaac Sim (it instantiates an existing spec); `resolve` and the GUI need the proxy running.
+
+## Splat backgrounds
+
+A [`sim/splat`](../splat/README.md) run trained with `--floor` (e.g. from a [`sensors/real2sim`](../../sensors/real2sim/README.md) capture) can be the background of an Arena environment:
+
+```bash
+export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda
+bash sim/isaaclab_arena/envgen.sh cli --mode build --env_spec eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml
+bash sim/isaaclab_arena/envgen.sh cli --mode resolve --prompt "Franka at a table in the splat_scene warehouse ..."
+```
+
+The hook registers it as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted in x/y so the middle of the capture area is Arena's origin, where the robot spawns. The splat only renders, and its baked lighting doesn't respond to the sim. The only collision is the floor, so anchor on it with an object reference (`parent_id: <background id>`, `prim_path: floor`), then place real assets such as a table `on` it and objects on the table. [`franka_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml) pins the table in front of the robot with `at_position`.

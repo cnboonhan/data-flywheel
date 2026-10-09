@@ -12,7 +12,8 @@
 synced into --cache (only missing or changed files are fetched). The run is written under <output>/<name>/<run>/;
 for an s3:// output it is trained in --cache and then uploaded. S3 settings are the services stack's: S3_ENDPOINT_URL
 plus AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION and AWS_CA_BUNDLE (see docs/flywheel.md).
-Each run also gets scene.usda: the splat in the COLMAP world frame, Z-up (--floor adds a collision floor at z = 0).
+Each run also gets scene.usda: the splat in the COLMAP world frame, Z-up (--floor adds a collision floor at z = 0
+under the cameras' footprint).
 """
 
 import argparse
@@ -84,8 +85,8 @@ def Xform "World"
 %s}
 """
 
-# Invisible static collider whose top face is z = 0; only meaningful when the COLMAP world is gravity-aligned and
-# metric with the floor at z = 0, as in sensors/real2sim captures (map frame).
+# Invisible static collider whose top face is z = 0, covering the cameras' footprint plus FLOOR_MARGIN. Only meaningful
+# when the COLMAP world is gravity-aligned and metric with the floor at z = 0, as in sensors/real2sim captures (map frame).
 FLOOR = """
     def Cube "floor" (
         prepend apiSchemas = ["PhysicsCollisionAPI"]
@@ -93,20 +94,44 @@ FLOOR = """
     {
         double size = 1
         token visibility = "invisible"
-        double3 xformOp:translate = (0, 0, -0.05)
-        float3 xformOp:scale = (500, 500, 0.1)
+        double3 xformOp:translate = (%.3f, %.3f, -0.05)
+        float3 xformOp:scale = (%.3f, %.3f, 0.1)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
     }
 """
+FLOOR_MARGIN = 2.0
 
 
-def write_scene(run: Path, floor: bool) -> None:
+def camera_centres(images_txt: Path) -> list[tuple[float, float, float]]:
+    """Camera centres C = -R^T t from a COLMAP images.txt (pose lines have 10 fields; point lines follow each)."""
+    def rotate(q, v):   # v rotated by unit quaternion q = (w, x, y, z)
+        w, u = q[0], q[1:]
+        cross = lambda a, b: (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])  # noqa: E731
+        t = [2 * c for c in cross(u, v)]
+        return [v[i] + w * t[i] + cross(u, t)[i] for i in range(3)]
+
+    centres = []
+    for line in images_txt.read_text().splitlines():
+        f = line.split()
+        if len(f) == 10 and not line.startswith("#"):
+            qw, qx, qy, qz, tx, ty, tz = map(float, f[1:8])
+            centres.append(tuple(-c for c in rotate((qw, -qx, -qy, -qz), (tx, ty, tz))))
+    return centres
+
+
+def write_scene(run: Path, floor: list[tuple[float, float, float]] | None) -> None:
     """scene.usda: the splat in the COLMAP world frame, Z-up. The export puts a normalizing transform (cameras
     centred, Y-up) on the splat's parent Xform; referencing the splat prim itself drops it."""
     usdz = sorted(run.glob("export_last*.usdz"))
-    if usdz:
-        (run / "scene.usda").write_text(SCENE_USDA % (usdz[-1].name, FLOOR if floor else ""))
-        print(f"scene: {run / 'scene.usda'}")
+    if not usdz:
+        return
+    floor_usda = ""
+    if floor:
+        xs, ys = [c[0] for c in floor], [c[1] for c in floor]
+        floor_usda = FLOOR % ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
+                              max(xs) - min(xs) + 2 * FLOOR_MARGIN, max(ys) - min(ys) + 2 * FLOOR_MARGIN)
+    (run / "scene.usda").write_text(SCENE_USDA % (usdz[-1].name, floor_usda))
+    print(f"scene: {run / 'scene.usda'}")
 
 
 def main() -> None:
@@ -116,7 +141,8 @@ def main() -> None:
     parser.add_argument("overrides", nargs="*", help="3DGRUT hydra overrides, e.g. n_iterations=7000")
     parser.add_argument("--name", help="experiment name (default: the input's parent dir name)")
     parser.add_argument("--floor", action="store_true",
-                        help="add a collision floor at z = 0 to scene.usda (gravity-aligned metric input, e.g. real2sim)")
+                        help="add a collision floor at z = 0 under the cameras to scene.usda (needs a gravity-aligned, metric "
+                             "text COLMAP model, e.g. from sensors/real2sim)")
     parser.add_argument("--config", default="apps/colmap_3dgut_mcmc.yaml", help="3DGRUT config")
     parser.add_argument("--cache", type=Path, default=ROOT / "datasets" / "splat" / "cache",
                         help="local mirror of s3:// inputs and outputs")
@@ -138,6 +164,11 @@ def main() -> None:
             sys.exit(f"{data} has neither images/ nor images.zip")
         with zipfile.ZipFile(data / "images.zip") as z:   # archives contain images/...
             z.extractall(data)
+    floor = None
+    if args.floor:
+        if not (data / "sparse" / "0" / "images.txt").exists():
+            sys.exit("--floor needs sparse/0/images.txt (a text COLMAP model, as sensors/real2sim writes)")
+        floor = camera_centres(data / "sparse" / "0" / "images.txt")
     name = args.name or (data.parent.name if data.name == "colmap" else data.name)
 
     to_s3 = args.output.startswith("s3://")
@@ -156,7 +187,7 @@ def main() -> None:
         sys.exit(f"training finished but no new run under {out / name}")
     run = new_runs[-1]
     print(f"run: {run}")
-    write_scene(run, args.floor)
+    write_scene(run, floor)
     if to_s3:
         upload(run, f"{args.output.rstrip('/')}/{name}/{run.name}")
 

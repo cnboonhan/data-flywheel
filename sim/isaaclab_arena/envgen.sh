@@ -5,7 +5,8 @@
 #   bash sim/isaaclab_arena/envgen.sh gui                                  # live editor on http://localhost:8501
 # Generated specs go to eval/system2/environments/ unless --out_dir is given.
 # Env: OPENAI_API_KEY (proxy client key), ARENA_PROXY_BASE_URL (default http://127.0.0.1:8317/v1),
-#      ARENA_PROXY_MODEL (default claude-sonnet-5-5; CLI also accepts --model).
+#      ARENA_PROXY_MODEL (default claude-sonnet-5-5; CLI also accepts --model),
+#      ARENA_SPLAT_SCENE (a sim/splat scene.usda, registered as the `splat_scene` background).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARENA="${ROOT}/eval/system2/IsaacLab-Arena"
@@ -31,7 +32,7 @@ if [[ "${mode}" == cli && " ${args[*]} " != *" --inference_endpoint "* ]]; then
 fi
 
 cd "${ARENA}"
-export PYTHONPATH="${ROOT}/sim/isaaclab_arena/cliproxy${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${ROOT}/sim/isaaclab_arena/hooks${PYTHONPATH:+:${PYTHONPATH}}"
 export ARENA_INFERENCE_ENDPOINT=cliproxy OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y
 export STREAMLIT_SERVER_HEADLESS=true STREAMLIT_SERVER_ADDRESS="${STREAMLIT_SERVER_ADDRESS:-localhost}"   # no email prompt; local-only unless overridden
 exec .venv/bin/python "isaaclab_arena_examples/agentic_environment_generation/${runner}" "${args[@]}"

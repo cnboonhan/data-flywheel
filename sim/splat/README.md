@@ -69,9 +69,8 @@ Output: `datasets/splat/zh_lounge/runs/zh_lounge/<run>/` with `export_last_light
 itself has the exporter's normalizing transform (cameras centred, Y-up) and cameras with a wrong field of view. The COLMAP
 frame is metric and gravity-aligned only if the poses are, as in [`sensors/real2sim`](../../sensors/real2sim/README.md)
 captures (the `map` frame). Plain SfM datasets like zh_lounge have arbitrary scale and orientation, so place them by hand.
-`--floor` adds an invisible collision floor at z = 0. The splat has no other collision; add proxies or a mesh. An Arena
-background is a `LibraryBackground` subclass with `usd_path` pointing at `scene.usda`, loaded through Arena's
-`--external_environment_class_path` hook.
+`--floor` adds an invisible collision floor at z = 0 under the cameras' footprint (plus 2 m); it needs a text COLMAP model. The splat has no other collision; add proxies or a mesh. To use it as an Arena
+background, see [Splat backgrounds](../isaaclab_arena/README.md#splat-backgrounds).
 
 **Reference results** (RTX 5090 Laptop, this commit): 7k iterations, 24.9 dB PSNR / 0.89 SSIM in ~5 min;
 30k iterations (default), 27.2 dB / 0.92 SSIM in 31 min.

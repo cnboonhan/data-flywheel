@@ -15,11 +15,15 @@ $C run --rm ros2 ros2 topic pub --once -w 1 /goal_pose geometry_msgs/msg/PoseSta
 
 # Splat capture (sim started with --cameras)
 $C run --rm ros2 python3 /capture/plan_viewpoints.py --out /data/run1/viewpoints.json [--region X0 Y0 X1 Y1]
-$C run --rm ros2 python3 /capture/capture.py --viewpoints /data/run1/viewpoints.json --out /data/run1/colmap
+$C run --rm ros2 python3 /capture/capture.py --viewpoints /data/run1/viewpoints.json --out /data/run1/colmap \
+  [--height_range 0.35 1.2 --height_steps 3]
 uv run sim/splat/train.py datasets/real2sim/run1/colmap datasets/real2sim/run1/runs n_iterations=7000 --floor
 ```
 
 - The COLMAP world frame is the `map` frame, so the splat is metric. Lidar points seed it. The run's `scene.usda` is the splat
   in the map frame with a collision floor, ready to open or reference in Isaac Sim.
+- Camera height: with `--height_steps N`, each viewpoint is captured at N heights within `--height_range` (the robot's
+  achievable camera heights above the floor), sent on `/camera_height` (`std_msgs/Float64`, m) and confirmed from TF. In sim
+  the stereo rig follows the topic; on a real robot, an adapter turns it into a lift or torso command.
 - Train for at least 7,000 iterations; 3DGRUT's USD export fails on shorter runs.
 - On a real robot, use its map and Nav2 params, and pass its topics and frames with `--cameras`, `--optical_frames` and `--lidar`.

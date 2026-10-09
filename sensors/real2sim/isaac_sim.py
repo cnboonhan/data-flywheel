@@ -1,9 +1,12 @@
 """Open an Isaac Sim scene and run it; its OmniGraphs publish ROS 2 (bundled Jazzy). Launched by run_sim.sh.
 
-    run_sim.sh [--scene <usd>] [--gui]
+    run_sim.sh [--scene <usd>] [--gui] [--cameras]
 
 Default scene: Isaac Sim's Nova Carter Nav2 sample (warehouse + ROS-wired Nova Carter: /cmd_vel in;
 /chassis/odom, /tf, /front_3d_lidar/lidar_points, /clock out).
+
+With --cameras the front stereo publishers are enabled, and the stereo rig follows /camera_height (std_msgs/Float64,
+camera height above the floor in metres): the sim stand-in for a real robot's lift or torso. The camera TF follows.
 """
 
 import argparse
@@ -15,6 +18,7 @@ parser.add_argument("--scene", default=SAMPLE, help="USD path or URL (paths star
 parser.add_argument("--gui", action="store_true")
 parser.add_argument("--cameras", action="store_true", help="Enable the front stereo camera publishers (off in the sample)")
 parser.add_argument("--camera_prefix", default="/World/Nova_Carter_ROS/chassis_link/sensors/front_hawk")
+parser.add_argument("--camera_height_topic", default="/camera_height")
 args = parser.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -43,6 +47,27 @@ if args.cameras:
             raise SystemExit(f"--cameras: no camera node at {prim.GetPath()}")
         prim.GetAttribute("inputs:enabled").Set(True)
     print("[sim] front stereo camera publishers enabled", flush=True)
+height = {}
+if args.cameras:
+    import rclpy
+    from pxr import Gf, Usd, UsdGeom
+    from std_msgs.msg import Float64
+
+    rig = stage.GetPrimAtPath(args.camera_prefix)
+    cam = next(p for p in Usd.PrimRange(rig) if p.IsA(UsdGeom.Camera))
+
+    def set_height(target: float) -> None:
+        """Raise or lower the rig so the first camera under it sits at `target` above z = 0."""
+        dz = target - UsdGeom.Xformable(cam).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()[2]
+        local = UsdGeom.Xformable(rig).GetLocalTransformation()
+        # dz is in world z; the rig's parent (chassis) is upright, so it is the same in the parent frame.
+        local.SetTranslateOnly(local.ExtractTranslation() + Gf.Vec3d(0, 0, dz))
+        UsdGeom.Xformable(rig).MakeMatrixXform().Set(local)
+        print(f"[sim] camera height -> {target:.3f} m", flush=True)
+
+    rclpy.init()
+    node = rclpy.create_node("camera_height")
+    node.create_subscription(Float64, args.camera_height_topic, lambda m: height.__setitem__("target", m.data), 1)
 omni.timeline.get_timeline_interface().play()
 print(f"[sim] running {scene}; Ctrl-C to stop", flush=True)
 
@@ -51,5 +76,9 @@ signal.signal(signal.SIGINT, lambda *_: stop.__setitem__("now", True))
 signal.signal(signal.SIGTERM, lambda *_: stop.__setitem__("now", True))
 while app.is_running() and not stop["now"]:
     app.update()
+    if args.cameras:
+        rclpy.spin_once(node, timeout_sec=0)
+        if "target" in height:
+            set_height(height.pop("target"))
 omni.timeline.get_timeline_interface().stop()
 app.close()

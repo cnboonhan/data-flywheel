@@ -1,0 +1,56 @@
+env_name: franka_mug_to_bowl_splat_scene
+# Needs ARENA_SPLAT_SCENE=<sim/splat run>/scene.usda (trained with --floor); see sim/isaaclab_arena/README.md.
+embodiment:
+  id: franka
+  registry_name: franka_ik
+  params: {}
+background:
+  id: splat
+  registry_name: splat_scene
+  params: {}
+objects:
+- id: table
+  registry_name: office_table
+  params: {}
+- id: mug
+  registry_name: mug
+  params: {}
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+object_references:
+- id: floor
+  parent_id: splat
+  prim_path: floor
+  object_type: base
+  params: {}
+relations:
+- kind: is_anchor
+  subject: floor
+  params: {}
+- kind: 'on'
+  subject: table
+  reference: floor
+  params: {}
+- kind: at_position
+  subject: table
+  params:
+    x: 0.7
+    y: 0.0
+- kind: 'on'
+  subject: mug
+  reference: table
+  params: {}
+- kind: 'on'
+  subject: bowl
+  reference: table
+  params: {}
+task:
+  composition: atomic
+  description: Franka robot picks up a mug from a table in a captured warehouse and places it in a bowl.
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: mug
+      destination_location: bowl
+      background_scene: splat
