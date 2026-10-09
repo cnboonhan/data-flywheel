@@ -7,8 +7,6 @@ Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule. Not
 | `envgen.sh` | Runs Arena's agentic environment generation (CLI runner or Streamlit GUI) through a local OpenAI-compatible proxy |
 | `cliproxy/sitecustomize.py` | Adds a `cliproxy` entry to Arena's fixed list of inference endpoints. Loaded via `PYTHONPATH` by `envgen.sh`; registers through an import hook so it also applies inside the GUI's separate process |
 
-The NuRec smoke test that loads a Gaussian-splat scene as an Arena background lives in [`../nurec/`](../nurec/README.md).
-
 ## Generate environments
 
 ```bash
