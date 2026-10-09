@@ -13,9 +13,6 @@
 [submodule "sensors/yubi-sw"]
 	path = sensors/yubi-sw
 	url = https://github.com/airoa-org/yubi-sw.git
-[submodule "sim/3dgrut"]
-	path = sim/nurec/3dgrut
+[submodule "sim/splat/3dgrut"]
+	path = sim/splat/3dgrut
 	url = https://github.com/nv-tlabs/3dgrut.git
-[submodule "sim/worldgen/IsaacSim-ros_workspaces"]
-	path = sim/worldgen/IsaacSim-ros_workspaces
-	url = https://github.com/isaac-sim/IsaacSim-ros_workspaces.git

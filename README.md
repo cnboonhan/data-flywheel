@@ -20,7 +20,7 @@ git -c url."https://github.com/".insteadOf=git@github.com: \
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
 | [`services/`](services/README.md) | Store stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Slurm job scripts |
-| [`sim/`](sim/README.md) | Simulation tooling: NuRec real-to-sim scenes, IsaacLab-Arena environment generation |
+| [`sim/`](sim/README.md) | Simulation tooling: IsaacLab-Arena environment generation |
 
 - **Download data and checkpoints:** the `download-datasets-hf` workflow in Gitea puts Hugging Face repos into the `raw` bucket ([services/gitea/](services/gitea/README.md)).
 - **Evaluation:** see [`eval/`](eval/README.md).

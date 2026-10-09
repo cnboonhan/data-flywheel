@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!-- UDP-only Fast DDS profile, as Isaac Sim's docs recommend when the other side of ROS 2 runs in Docker.
-     Shared-memory transport would otherwise be tried and fail across the container boundary.
-     Used by both Isaac Sim (host) and the worldgen container: FASTRTPS_DEFAULT_PROFILES_FILE points here. -->
+<!-- UDP-only Fast DDS profile (Isaac Sim's recommendation when ROS 2 runs in Docker): shared memory would be tried
+     and fail across the container boundary. Loaded by both Isaac Sim and the nav2 container. -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
   <transport_descriptors>
     <transport_descriptor>
