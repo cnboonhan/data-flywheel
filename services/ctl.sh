@@ -237,6 +237,31 @@ bootstrap_grafana() {
     || echo "warning: could not set the Grafana admin email (SSO login as $ADMIN_USER may fail)" >&2
 }
 
+# S3 access: every gateway user (role `user`, from `user add`) reads and writes the shared buckets below; everything
+# else (mlflow, triton) has no policy, so only the root key (ADMIN_USER) reaches it. Rewritten from the user list on
+# every `up` and `user add`.
+S3_SHARED_BUCKETS="raw processed"
+apply_s3_policies() {
+  local users
+  users=$("${compose[@]}" exec -T versitygw versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 list-users \
+          | awk 'NR > 2 && $2 == "user" {print $1}' | paste -sd,)
+  "${compose[@]}" exec -T -e USERS="$users" -e BUCKETS="$S3_SHARED_BUCKETS" -e AWS_ACCESS_KEY_ID="$ADMIN_USER" \
+    -e AWS_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" -e AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}" mlflow python -c '
+import boto3, json, os
+s3 = boto3.client("s3", endpoint_url="http://versitygw:7070")
+users = [u for u in os.environ["USERS"].split(",") if u]
+for b in os.environ["BUCKETS"].split():
+    if not users:
+        s3.delete_bucket_policy(Bucket=b)
+        continue
+    s3.put_bucket_policy(Bucket=b, Policy=json.dumps({"Version": "2012-10-17", "Statement": [{
+        "Effect": "Allow", "Principal": {"AWS": users},
+        "Action": ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetObject", "s3:PutObject", "s3:DeleteObject",
+                   "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+        "Resource": [f"arn:aws:s3:::{b}", f"arn:aws:s3:::{b}/*"]}]}))
+print("s3:", len(users), "users read/write", os.environ["BUCKETS"])'
+}
+
 user_add() {
   local name=${1:?name} email=${2:?email} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
   local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh)
@@ -263,6 +288,7 @@ user_add() {
   if docker compose --project-name flywheel exec -T -e ROOT_ACCESS_KEY_ID="$ADMIN_USER" -e ROOT_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" versitygw \
        versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 create-user -a "$name" -s "$secret" -r user >/dev/null 2>&1; then
     echo "s3: access key $name, secret $secret   (endpoint https://s3.$SERVICE_HOST:$CADDY_PORT; shown once)"
+    apply_s3_policies
   else
     echo "s3: $name exists (or create failed); secret unchanged"
   fi
@@ -307,6 +333,7 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_keycloak
   bootstrap_mlflow
   bootstrap_jobs
+  apply_s3_policies
   "${compose[@]}" up -d "${@:2}"
   setup_envs
   exit 0

@@ -2,6 +2,8 @@
 
 Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket>/` is the bucket, every file an object (`meta/` holds the sidecar metadata, `iam/` the users; `/tier1` has no xattrs). API at `https://s3.$SERVICE_HOST:$CADDY_PORT/`, web UI at `/ui/` behind SSO. Root key = `ADMIN_USER` / `ADMIN_PASSWORD`; per-user keys from `ctl.sh user add`. Buckets `raw`, `processed`, `mlflow` are created by `ctl.sh up`.
 
+**Access:** every gateway user (`ctl.sh user add`) reads and writes `raw` and `processed` through a bucket policy that `ctl.sh up` and `user add` regenerate from the user list (`apply_s3_policies`, `S3_SHARED_BUCKETS`). `mlflow` and `triton` have no policy: only the root key reaches them. Policies can also scope a user to a key prefix (`Resource: arn:aws:s3:::raw/<prefix>/*`, listing via an `s3:prefix` condition). They govern S3 requests only, not reads of the bucket directories on disk.
+
 ## Client setup
 
 Keys from `ctl.sh user add`. The CLI: `uvx --from awscli aws ...` (no install), or `uv tool install awscli`. The
