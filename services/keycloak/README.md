@@ -10,7 +10,7 @@ Identity provider (`/auth`, realm `flywheel`) plus oauth2-proxy (`/oauth2`) for 
 | S3 API | access keys (SigV4), no SSO possible ([versitygw/](../versitygw/README.md)) |
 
 1. To add a person (Keycloak user in group `users`, MLflow token, S3 keys), follow [Users](../README.md#users).
-2. To manage users, groups and clients, open the admin console at `https://$SERVICE_HOST:$CADDY_PORT/auth/admin/flywheel/console/` and log in as `ADMIN_USER`.
+2. To manage users, groups and clients, open the admin console at `https://$SERVICE_HOST:$CADDY_PORT/auth/admin/flywheel/console/` and log in as `ADMIN_USER` (or any member of group `admins`, which `ctl.sh up` gives the `realm-admin` role). For Keycloak itself (other realms, server settings), use the master realm's console, `/auth/admin/master/console/`, with the same credentials.
 3. To sign out of FiftyOne, Rerun and the other proxied apps, open `https://$SERVICE_HOST:$CADDY_PORT/oauth2/sign_out`.
 4. After changing `ADMIN_PASSWORD` in `.env`, set the new password in Keycloak and Grafana.
    ```bash

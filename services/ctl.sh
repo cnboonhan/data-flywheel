@@ -177,6 +177,9 @@ bootstrap_keycloak() {
     python3 -c 'import json,sys; print(json.dumps(next(x for x in json.load(open(sys.argv[1]))["clients"] if x["clientId"] == sys.argv[2])))' "$realm" "$c" \
       | "${kc[@]}" create clients -r flywheel -f - >/dev/null && echo "keycloak: created client $c"
   done
+  # Group admins administers the flywheel realm in its own admin console (/auth/admin/flywheel/console/).
+  "${kc[@]}" add-roles -r flywheel --gname admins --cclientid realm-management --rolename realm-admin >/dev/null 2>&1 \
+    || echo "warning: could not give group admins the realm-admin role" >&2
 }
 
 # MLflow (mlflow-oidc-auth): wait until the server answers. Inside the compose network MLflow serves at the
