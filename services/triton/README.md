@@ -42,9 +42,10 @@ Other models are tagged `unsupported`; to add one, write a `package_<model>` fun
 
 ## Notes
 
-- C03 is still a Slurm node: jobs placed there share its GPUs with Triton until the admin removes them from Slurm.
-- gRPC metadata keys must be lowercase. `tritonclient.http` modifies the `headers` dict it is given, so pass a fresh one per call.
-- ACT with three 640×480 cameras: 40 ms per call from the login node.
-- `Dockerfile`: `tritonserver:26.08-py3` (CUDA 13 in forward-compatibility mode on driver 580, needed for sm_103) plus torch 2.14 cu130. Rebuild with `ctl.sh up --build`.
-- `sync.py` is the reconciler; it runs in the same image with the checkout mounted.
-- The server reads the bucket directory read-only and reloads everything on restart; `sync.py` keeps `models/.keep` so the folder never disappears. Metrics are on port 8002 (not scraped).
+- C03 is still a Slurm node, so Slurm jobs placed there share its GPUs with Triton. Until the admin removes C03's GPUs from Slurm, submit GPU-heavy jobs with `--exclude=C2-GB300-02-C03`.
+- Send gRPC metadata keys in lowercase (`authorization`). `tritonclient.http` adds entries to the `headers` dict it is given, so pass a fresh dict on every call.
+- Expect about 40 ms per ACT call with three 640×480 cameras from the login node.
+- After editing `Dockerfile` (`tritonserver:26.08-py3` plus torch 2.14 cu130; CUDA 13 runs in forward-compatibility mode on driver 580, which sm_103 needs), rebuild with `services/ctl.sh up --build`.
+- `sync.py` is the reconciler. It runs in the same image with the checkout mounted, so a change to it takes effect on the next sync without a rebuild. After changing `backends/` or a packager, dispatch `sync-triton` with `force` set to the affected models to repackage them.
+- The server reads the bucket directory read-only and reloads every model on restart. Leave `models/.keep` in place: the gateway deletes an empty folder, and Triton loses its repository with it.
+- Metrics are on port 8002 inside the compose network; nothing scrapes them.

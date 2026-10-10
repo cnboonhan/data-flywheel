@@ -67,10 +67,10 @@ As an Arena background: [Splat backgrounds](../isaaclab_arena/README.md#splat-ba
 
 ## Notes
 
-- **Large captures:** with 500+ images `train.py` lowers MCMC's opacity and scale penalties to 0.001 (override with `loss.lambda_opacity=` / `loss.lambda_scale=`). At 0.01 a 1008-image capture collapsed (11 dB held out); at 0.001 it trained (18 dB).
-- **Gaussian cap:** `strategy.add.max_n_gaussians` (1M) limits growth only; a denser starting point cloud keeps its size (ridgeback_demo started and stayed at ~2M). 3M ran out of memory on a 24 GB GPU.
-- **Settings sweep** (zh_lounge, 30k iterations, GB300, 2026-10-10; held-out PSNR / SSIM / LPIPS): the defaults, 27.27 / 0.921 / 0.339, were not beaten. 60k iterations 27.25; penalties 0.001 27.17; PPISP 27.19; 2-3M gaussians 26.8-27.2 (slightly sharper, worse held out). On ridgeback_demo, 3M gave 13.7 dB against 18.1 at the default, with two thirds of the gaussians beyond the 30 m crop. Quality is limited by the capture, not training.
-- **Results:** zh_lounge at 7k iterations, 24.9 dB / 0.89 SSIM in ~5 min (RTX 5090 Laptop) and 24.8 dB in 8 min on a GB300 node through the S3 gateway, including the first-run JIT compile; at 30k, 27.2 dB / 0.92 in 31 min (laptop), 19 min (GB300).
+- **What to expect:** zh_lounge at 30k iterations scores ~27 dB PSNR / 0.92 SSIM held out, in ~19 min on a GB300 (~31 min on an RTX 5090 Laptop). At 7k iterations expect ~25 dB in ~5 min, plus a few minutes for the tracer's JIT compile on the first run on a machine.
+- **Keep the default settings.** 60k iterations, weaker penalties, PPISP and 2-3M gaussians did not improve held-out quality on zh_lounge; more gaussians make renders slightly sharper but worse on new views, and on a large capture most of the extra gaussians go to the background shell beyond the crop. Improve the capture instead (coverage, lens model, poses).
+- **Large captures:** with 500+ images `train.py` lowers MCMC's opacity and scale penalties to 0.001, because the default 0.01 lets a 1000-image capture collapse. Override with `loss.lambda_opacity=` / `loss.lambda_scale=`.
+- **Gaussian cap:** `strategy.add.max_n_gaussians` (1M) only limits growth; a denser starting point cloud (e.g. real2sim's lidar points) keeps its size. On a 24 GB GPU, stay at or below ~2M.
 
 ## Your own scenes
 

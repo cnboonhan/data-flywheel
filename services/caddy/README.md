@@ -13,14 +13,14 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 | `https://s3.$SERVICE_HOST` (`/ui/` behind SSO) | Versity S3 gateway |
 | `https://triton.$SERVICE_HOST` | Triton, bearer token ([triton/](../triton/README.md)) |
 
-1. Apply an edit to `Caddyfile` or `site/`.
+1. After editing `Caddyfile` or `site/`, restart Caddy.
    ```bash
    services/ctl.sh restart caddy
    ```
-2. Fetch the CA root for a client: [Access](../README.md#access).
+2. To trust the CA on a client, follow [Access](../README.md#access).
 
 **Notes**
-- `/loki`, FiftyOne, Rerun and the S3 UI are gated by the `(sso)` snippet (forward auth to oauth2-proxy). Exception: `POST /loki/api/v1/push` with the `LOKI_PUSH_TOKEN` bearer token ([loki/](../loki/README.md)).
-- `$SERVICE_HOST` must resolve to the node from every client; `flywheel.<ip>.sslip.io` works without DNS.
-- CA material is in `$STATE_DIR/caddy/data/caddy/pki/authorities/local/`. Gitea and oauth2-proxy mount `root.crt`, so `ctl.sh up` starts Caddy first on a clean state.
-- A subdomain page that spins forever means the name didn't go through the tunnel: add it to `/etc/hosts` next to `$SERVICE_HOST`.
+- To put a new app behind the login, import the `(sso)` snippet in its route, as `/loki`, FiftyOne, Rerun and the S3 UI do (forward auth to oauth2-proxy). `POST /loki/api/v1/push` is the exception: it takes the `LOKI_PUSH_TOKEN` bearer token instead ([loki/](../loki/README.md)).
+- Set `$SERVICE_HOST` to a name every client resolves to the node; `flywheel.<ip>.sslip.io` works without DNS.
+- Find the CA files in `$STATE_DIR/caddy/data/caddy/pki/authorities/local/`. Gitea and oauth2-proxy mount `root.crt`, which is why `ctl.sh up` starts Caddy first on a clean state; keep that order if you change the startup.
+- If a subdomain page spins forever, the name isn't going through your tunnel: add it to `/etc/hosts` next to `$SERVICE_HOST`.

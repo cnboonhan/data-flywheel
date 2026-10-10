@@ -11,8 +11,8 @@ Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket
 
 ## Client setup
 
-1. Get keys: `ctl.sh user add` ([Users](../README.md#users)).
-2. Fetch the CA root once (through a login node, set up the [port forward](../README.md#access) first).
+1. Get your keys from `ctl.sh user add` ([Users](../README.md#users)).
+2. Fetch the CA root once. Through a login node, set up the [port forward](../README.md#access) first.
    ```bash
    mkdir -p ~/.aws && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o ~/.aws/flywheel-ca.crt
    ```
@@ -43,7 +43,7 @@ Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket
    uvx --from awscli aws s3 ls s3://raw/      # or: uv tool install awscli
    ```
 
-The aws CLI and boto3 (>= 1.28) read both forms, so repo scripts such as `sim/splat/train.py` need nothing more (their `S3_ENDPOINT_URL`, if set, takes precedence).
+Repo scripts such as `sim/splat/train.py` then need nothing more: the aws CLI and boto3 (>= 1.28) read both forms. If you also set `S3_ENDPOINT_URL`, it takes precedence.
 
 ## Copy folders
 
@@ -56,7 +56,7 @@ aws s3 cp ./file s3://raw/<dest>/file                            # one file (cp 
 aws s3 rm s3://raw/<dest>/ --recursive                           # delete a prefix
 ```
 
-On the service node, move a directory into a bucket instead of copying it (instant; the objects then have no ETag):
+On the service node, move a directory into a bucket instead of copying it. It's instant, but the objects then have no ETag:
 
 ```bash
 mv <dir> $STATE_DIR/versitygw/buckets/raw/internal_datasets/<dataset>
@@ -64,8 +64,8 @@ mv <dir> $STATE_DIR/versitygw/buckets/raw/internal_datasets/<dataset>
 
 ## Notes
 
-- `sync` copies the folder's contents into the target prefix, not a subfolder named after the source: name the target folder in the destination. `--delete` removes target files that are gone from the source.
-- **Access control.** `ctl.sh up` and `user add` regenerate the `raw` and `processed` bucket policies from the gateway's user list (`apply_s3_policies`, `S3_SHARED_BUCKETS` in `ctl.sh`); `mlflow` and `triton` have no policy, so only the root key (`ADMIN_USER` / `ADMIN_PASSWORD`) reaches them. A policy can also scope a user to a key prefix (`Resource: arn:aws:s3:::raw/<prefix>/*`, listing via an `s3:prefix` condition).
-- Policies govern S3 requests only. FiftyOne, Rerun and the Slurm jobs read the bucket directories on disk directly.
-- `meta/` holds the object metadata in sidecar files (`/tier1` has no xattrs), `iam/` the users. The gateway deletes a folder once its last object is gone.
+- `sync` copies the folder's contents into the target prefix, not into a subfolder named after the source, so name the target folder in the destination. Add `--delete` only when you want target files that are gone from the source removed.
+- **Access control.** Don't edit the `raw` and `processed` bucket policies by hand: `ctl.sh up` and `user add` regenerate them from the gateway's user list (`apply_s3_policies`; change `S3_SHARED_BUCKETS` in `ctl.sh` to share other buckets). `mlflow` and `triton` have no policy, so only the root key (`ADMIN_USER` / `ADMIN_PASSWORD`) reaches them. To limit a user to a subpath, scope a statement's `Resource` to `arn:aws:s3:::raw/<prefix>/*` and allow listing with an `s3:prefix` condition.
+- Policies only govern S3 requests. Anyone on the node, and FiftyOne, Rerun and the Slurm jobs, read the bucket directories on disk directly.
+- Leave `$STATE_DIR/versitygw/meta/` (object metadata in sidecar files, since `/tier1` has no xattrs) and `iam/` (the users) alone. The gateway deletes a folder once its last object is gone, so if a service needs a folder to exist, keep a placeholder object in it.
 - `ctl.sh up` creates the buckets `raw`, `processed`, `mlflow` and `triton/models`.

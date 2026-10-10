@@ -8,5 +8,5 @@ Upload and Sync: brings data and models into the store.
 | `sync-fiftyone-raw` | `raw/` → FiftyOne datasets `raw/<group>/<name>`, every 30 min, read-only and incremental ([fiftyone/](../../fiftyone/README.md)) |
 | `download-models-hf` | a Hugging Face model → MLflow registry (artifacts in the `mlflow` bucket, experiment `hf-models`, version tagged with the hub commit); known models in the header |
 
-1. Run one: [gitea/](../README.md) (step 1); inputs are listed in each workflow's header.
-2. For gated repos, set `HF_TOKEN` in `services/.env` and run `services/ctl.sh up` (it syncs the Gitea secret).
+1. Run one as described in [gitea/](../README.md#run-a-workflow); each workflow's header lists its inputs and the known repos.
+2. For a gated Hugging Face repo, accept its terms, set `HF_TOKEN` in `services/.env` and run `services/ctl.sh up` to copy it into the Gitea secret.

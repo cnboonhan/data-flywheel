@@ -73,7 +73,7 @@ Today: `arx_x5`, which Galaxea r1lite data also uses (same 14-D layout). A robot
 | mix | `--mix`, or the single dataset with `/` → `.` | `RoboDojo.stack_bowls` |
 | metrics | `train/<name>`, `val/<name>` (DP: its own `train_*`/`val_*` keys); `eval/success_rate`, `eval/score`, `eval/episodes` | |
 
-Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerprint` (hash of the episodes' paths, sizes and mtimes: equal fingerprints mean identical data), `action`, `action_dim`, `git_commit` (`-dirty` with local changes to tracked files), `slurm_job`, the model's arguments, and `config/mix.json` with the episode list. Model versions carry the same tags; evaluation adds `eval_<task>_success_rate` and `eval_<task>_score`. Runs from before this layout stay in the experiment `xpolicylab` under the models `<policy>-<bench>-<task>`; evaluation still finds them.
+Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerprint` (hash of the episodes' paths, sizes and mtimes: equal fingerprints mean identical data), `action`, `action_dim`, `git_commit` (`-dirty` with local changes to tracked files), `slurm_job`, the model's arguments, and `config/mix.json` with the episode list. Model versions carry the same tags; evaluation adds `eval_<task>_success_rate` and `eval_<task>_score`. Older runs live in the experiment `xpolicylab` under the models `<policy>-<bench>-<task>`; evaluation still finds them.
 
 ## Environment
 
@@ -81,15 +81,17 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 - **Envs** (RoboDojo eval env, ACT/DP policy envs): built by the Gitea workflow `setup-envs` ([gitea/setup/](../gitea/setup/README.md)).
 - **Data layout:** the checkout holds code only; `lib/xpolicylab.sh` links `XPolicyLab/policy/<P>/{processed_data,checkpoints}`, `policy/DP/data` → `$DATA_ROOT/<P>/`, RoboDojo `eval_result` → `$ROBODOJO_DIR/eval_result`, `data` → `$BUCKETS_DIR/processed/xpolicylab`, `Assets` → `$ROBODOJO_DIR/Assets`.
 
-**Evaluation on the GB300 nodes.** The policy server gets its own GPU (`--gres=gpu:2`). What it took on this hardware:
+**Evaluation on the GB300 nodes.** `evaluate.sbatch` already handles the following (except the GPU count, which is your choice); keep it that way when you change it.
 
-- **Simulation on the GPU device (`env_cfg = *_gpu`).** RoboDojo defaults Isaac Lab's simulation device to CPU, where Isaac Sim 5.1 on these nodes never delivers Replicator camera frames (verified with Isaac Lab's tiled camera: empty buffers on `cpu`, frames on `cuda:0`) and RoboDojo's capture kernel spins forever. `arx_x5`'s `eval_env_cfg` is `arx_x5_gpu`, derived by the job with `device: cuda:0` and the base's evaluation layouts and checkpoints aliased. GPU physics may score slightly differently from the official CPU numbers.
-- **C01 and C02 are excluded.** Their Kit viewport stopped rendering on 2026-10-08 ("Accessed invalid null prim" in the viewport camera controller); software, GPU mode, scratch and extension order match C03/C04; cause not found.
-- **RoboDojo assumes CPU tensors** in places (`np.asarray` on a tensor, `.numpy()`): `lib/robodojo-shim/sitecustomize.py`, injected via `PYTHONPATH`, converts CUDA tensors and makes the viewport camera placement best-effort. The proper fix is a RoboDojo fork with a `device` setting.
-- **No `ffmpeg` on the nodes:** `install-robodojo.sh` puts `imageio-ffmpeg`'s static build in `$ROBODOJO_DIR/bin`, on the job's `PATH`. It also covers aarch64 Isaac Sim 5.1 and torch cu128 wheels, `libgomp` and NVRTC 12.9 preloads (torch's 12.8 doesn't know sm_103), user-space GL, curobo from source. The first Isaac Sim start on a node compiles RTX pipelines (minutes); shared caches in `$ROBODOJO_DIR/cache` make later starts 15 s.
-- The policies pin `torch==2.4.1`, which has no CUDA build for aarch64 Blackwell; the envs use the cu128 index.
+- **Run the simulation on the GPU device.** RoboDojo defaults Isaac Lab's simulation device to CPU, and on these nodes Isaac Sim 5.1 then delivers no camera frames, so RoboDojo's capture loop spins forever. Use an `eval_env_cfg` ending in `_gpu` (`arx_x5_gpu` for `arx_x5`): the job derives it from the base config with `device: cuda:0` and aliases the base's evaluation layouts and checkpoints. Expect scores to differ slightly from the official CPU-physics numbers.
+- **Keep C01 and C02 excluded.** Their Kit viewport doesn't render, and Isaac Lab's viewport camera then fails with "Accessed invalid null prim".
+- **To give the policy server its own GPU,** submit with `sbatch --gres=gpu:2 ...`; with the default single GPU, the simulator and the policy server share it.
+- **Keep the RoboDojo shim on `PYTHONPATH`.** RoboDojo assumes CPU tensors in places (`np.asarray` on a tensor, `.numpy()`); `lib/robodojo-shim/sitecustomize.py` converts CUDA tensors and makes the viewport camera placement best-effort. Drop it once a RoboDojo fork has a `device` setting.
+- **`ffmpeg` comes from the env.** The nodes have none; `install-robodojo.sh` puts `imageio-ffmpeg`'s static build in `$ROBODOJO_DIR/bin`, which the job puts on `PATH`. The same installer handles the aarch64 Isaac Sim 5.1 and torch cu128 wheels, the `libgomp` and NVRTC 12.9 preloads (torch's 12.8 doesn't know sm_103), user-space GL and curobo from source. The policy envs use the cu128 index because the pinned `torch==2.4.1` has no CUDA build for aarch64 Blackwell.
 
-## Results
+## What to expect
 
-- **Train.** ACT, 30 epochs on `galaxeaOpenWorldDataset/Arrange_Fruits_20250819_011`: 14 min 28 s, mostly `process_data` decoding 330k JPEGs (the epochs take a minute); `val/loss` 86.1 → 0.754, 336 MB checkpoints. ACT, 3 epochs on `RoboDojo/stack_bowls` (frames already decoded): 32 s, `ACT.arx_x5.RoboDojo.stack_bowls` v1. MLP, 20 epochs on every RoboDojo and Galaxea dataset: 14 s, `MLP.arx_x5.arx_x5-test` v1.
-- **Evaluate.** The 30-epoch ACT on `stack_bowls`, 2 episodes of 800 steps: 10 min 32 s on one GB300, `eval/success_rate 0.0` (not expected to succeed; the point is the plumbing), videos and `_result.json` on the run. The 3-epoch checkpoint, 1 episode: 7 min 10 s on C03, logged to its training run and tagged on `ACT.arx_x5.RoboDojo.stack_bowls` v1.
+- **Training ACT on a new dataset** spends most of its first run in `process_data.sh` decoding JPEGs: about 15 min for one Galaxea task (330k frames), against about a minute for 30 epochs. Later runs reuse the decoded frames.
+- **The MLP** trains in seconds, even on a mix of every dataset; use it to check the plumbing.
+- **An evaluation** of 2 RoboDojo episodes of 800 steps takes about 10 min on one GB300. The first Isaac Sim start on a node also compiles RTX pipelines for a few minutes; the shared caches in `$ROBODOJO_DIR/cache` make later starts take about 15 s.
+- **A short training run won't succeed** in evaluation (a 30-epoch ACT scores 0 on `stack_bowls`); use one to check the plumbing, and train for XPolicyLab's default 6000 epochs for real results.
