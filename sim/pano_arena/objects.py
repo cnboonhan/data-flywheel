@@ -28,6 +28,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+import common
+
 PROMPT = (
     "List the kinds of physical objects in this indoor photo: furniture, appliances, devices, containers and small "
     "items on surfaces. Skip walls, floor, ceiling, windows, curtains and ceiling lights. Give each kind a short "
@@ -56,36 +58,16 @@ shutil.rmtree(out / "masks", ignore_errors=True)
 
 pano = cv2.cvtColor(cv2.imread(str(src / "pano.jpg")), cv2.COLOR_BGR2RGB)
 distance = np.load(src / "distance.npy")
-frame = json.loads((src / "frame.json").read_text())
+frame = common.load_frame(args.scene)
 H, W = distance.shape
-R = np.array(frame["R_moge_to_level"])
 
-# Scene-frame points per panorama pixel, as in depth.py: MoGe's spherical directions, turned to face +x, levelled.
-v, u = np.meshgrid((np.arange(H) + 0.5) / H, (np.arange(W) + 0.5) / W, indexing="ij")
-theta, phi = (1 - u) * 2 * np.pi, v * np.pi
-dirs = np.stack([-np.sin(phi) * np.cos(theta), -np.sin(phi) * np.sin(theta), np.cos(phi)], -1)
-points = (distance[..., None] * dirs) @ R.T + [0, 0, frame["camera_height"]]
-
-
-def view(yaw, pitch, size, fov=90.0):
-    """Remap grids (panorama pixel coords per view pixel) for a pinhole view; yaw/pitch in degrees, scene frame."""
-    f = 0.5 * size / np.tan(np.radians(fov) / 2)
-    x, y = np.meshgrid(np.arange(size) + 0.5 - size / 2, np.arange(size) + 0.5 - size / 2)
-    d = np.stack([np.full_like(x, f), -x, -y], -1)                       # forward +x, image right -y, image down -z
-    a, b = np.radians(yaw), np.radians(pitch)
-    Rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
-    Ry = np.array([[np.cos(b), 0, -np.sin(b)], [0, 1, 0], [np.sin(b), 0, np.cos(b)]])
-    d = d @ (Rz @ Ry).T @ R                                              # scene frame -> unlevelled panorama frame
-    d /= np.linalg.norm(d, axis=-1, keepdims=True)
-    uu = 1 - (np.arctan2(-d[..., 1], -d[..., 0]) / (2 * np.pi)) % 1.0
-    vv = np.arccos(np.clip(d[..., 2], -1, 1)) / np.pi
-    return (uu * W - 0.5).astype(np.float32), (vv * H - 0.5).astype(np.float32)
+points = common.points(distance, frame)
 
 
 cams = [(yaw, pitch) for pitch in (0, -45) for yaw in range(0, 360, 45)] + [(0, -90)]
 grids, images = [], []
 for i, (yaw, pitch) in enumerate(cams):
-    mx, my = view(yaw, pitch, args.view_size)
+    mx, my = common.view(frame, H, W, yaw, pitch, args.view_size)
     grids.append((mx, my))
     images.append(cv2.remap(pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP))
     cv2.imwrite(str(out / "views" / f"{i:02d}.jpg"), cv2.cvtColor(images[-1], cv2.COLOR_RGB2BGR))

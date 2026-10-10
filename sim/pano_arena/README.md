@@ -6,6 +6,7 @@ IsaacLab-Arena scenes from a single equirectangular panorama: metric depth, inte
 |---|---|---|
 | 1. Depth and frame | `depth.py` | `depth/` |
 | 2. Objects | `objects.py` | `objects/` |
+| 3. Remove objects | `inpaint.py` | `inpaint/` |
 
 ## Sample panoramas
 
@@ -54,3 +55,19 @@ Notes:
 - Interactable = movable or articulated (Qwen3-VL decides, per view; cabinets, drawers, doors and bins are always searched for), at most `--max_size` (2.2 m) across and at least `--min_thickness` (3 cm) thick. `--max_distance` limits the distance from the camera (none by default); each object's distance and centre are recorded for placing its asset.
 - Detections are cached in `objects/detections.json`, so changing the thresholds reruns only segmentation and merging (about 1 min). Pass `--redetect` to run the detection models again.
 - Expect misses and odd labels; inspect `labels.jpg` before the next step.
+
+## 3. Remove objects
+
+Erase the interactable objects from the panorama and record each one for the sim (the models, ~60 GB, download on first use; on a 24 GB GPU expect ~3 min per large hole).
+
+```bash
+uv run sim/pano_arena/inpaint.py datasets/pano_arena/kitchen
+```
+
+Check `inpaint/before_after.jpg`. `inpaint/removed.json` lists every interactable object with its identity (id, label, kind), placement (scene-frame centre, size, distance), the camera of its crop, and `erased`; `inpaint/removed/<id>/` holds `crop.jpg` and `cutout.png` (the object on a transparent background), cut from the untouched panorama.
+
+Notes:
+- Built-ins stay in the panorama (`--keep`, default cabinets, cupboards, drawers and doors); they are recorded with `erased: false`.
+- Small holes use LaMa; holes over `--large` (8%) of their view use Qwen-Image-Edit-2511 with an object-removal LoRA and the 8-step Lightning LoRA (all Apache-2.0).
+- Keep Qwen's transformer in bf16: 4-bit quantisation turns its output to grain. Under 48 GB of GPU memory it is streamed from CPU memory, which needs ~40 GB of free RAM.
+- The depth behind each removed object comes from MoGe on the cleaned panorama, scaled to the original depth around the hole.

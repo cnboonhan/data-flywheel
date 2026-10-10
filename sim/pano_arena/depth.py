@@ -6,9 +6,7 @@
 
     uv run sim/pano_arena/depth.py datasets/pano_arena/<scene> [--camera_height 1.5]
 
-Reads <scene>/source.jpg. MoGe-2 runs on 20 perspective views (MoGe's own panorama split); their depths are merged in
-the gradient domain (MoGe's merge), which loses the absolute scale, so the merged map is rescaled to the views' metric
-depths. The floor is the lowest large horizontal layer of points. The output frame is Arena's: z up, origin on the floor
+Reads <scene>/source.jpg. MoGe-2 metric depth (common.moge_distance). The floor is the lowest large horizontal layer of points. The output frame is Arena's: z up, origin on the floor
 below the camera, +x towards the middle of the panorama. --camera_height rescales to a known height above the floor.
 Writes <scene>/depth/: distance.npy (metres from the camera, per panorama pixel), pano.jpg (the image at that size),
 points.ply (coloured points in the output frame), depth.png and floor.png (previews), frame.json.
@@ -20,13 +18,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
 import trimesh
-import utils3d_moge as utils3d
-from moge.model.v2 import MoGeModel
-from moge.utils.panorama import (get_panorama_cameras, merge_panorama_depth, spherical_uv_to_directions,
-                                 split_panorama_image)
 from moge.utils.vis import colorize_depth
+
+from common import directions, moge_distance
 
 p = argparse.ArgumentParser()
 p.add_argument("scene", type=Path)
@@ -41,39 +36,8 @@ image = cv2.cvtColor(cv2.imread(str(args.scene / "source.jpg")), cv2.COLOR_BGR2R
 image = cv2.resize(image, (args.width, args.width // 2), interpolation=cv2.INTER_AREA)
 h, w = image.shape[:2]
 
-# Per-view metric depth.
-extr, intr = get_panorama_cameras()
-views = split_panorama_image(image, extr, intr, 512)
-model = MoGeModel.from_pretrained(args.model).cuda().eval()
-dist, masks = [], []
-for i in range(0, len(views), 4):
-    x = torch.tensor(np.stack(views[i:i + 4]) / 255, dtype=torch.float32, device="cuda").permute(0, 3, 1, 2)
-    fov_x = torch.tensor(np.rad2deg(utils3d.np.intrinsics_to_fov(np.array(intr[i:i + 4])))[0], device="cuda")
-    with torch.no_grad():
-        o = model.infer(x, fov_x=fov_x, apply_mask=False)
-    dist += list(o["points"].norm(dim=-1).cpu().numpy())
-    masks += list(o["mask"].cpu().numpy())
-del model
-torch.cuda.empty_cache()
-
-# Merge, then restore the scale: median ratio of each view's metric distance to the merged one where they overlap.
-mw, mh = min(1920, w), min(960, h)
-merged, valid = merge_panorama_depth(mw, mh, dist, masks, extr, intr)
-dirs = spherical_uv_to_directions(utils3d.np.uv_map(mh, mw))
-ratios = []
-for d, m, e, k in zip(dist, masks, extr, intr):
-    uv, z = utils3d.np.project_cv(dirs, extrinsics=e, intrinsics=k)
-    ok = (z > 0) & (uv > 0).all(-1) & (uv < 1).all(-1) & valid
-    px = utils3d.np.uv_to_pixel(uv[ok], d.shape).astype(int)
-    ok_px = m[px[:, 1], px[:, 0]]
-    ratios.append(d[px[ok_px, 1], px[ok_px, 0]] / merged[ok][ok_px])
-scale = float(np.median(np.concatenate(ratios)))
-merged *= scale
-distance = cv2.resize(merged, (w, h), interpolation=cv2.INTER_LINEAR)
-valid = cv2.resize(valid.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
-
-# MoGe's panorama frame: z up, the middle column (u = 0.5) looks along -x. Turn it 180 deg about z so it looks along +x.
-pts = distance[..., None] * spherical_uv_to_directions(utils3d.np.uv_map(h, w)) * np.array([-1, -1, 1])
+distance, valid = moge_distance(image, args.model)
+pts = distance[..., None] * directions(h, w)
 
 # Floor: the lowest z layer (2 cm bins) holding at least 2% of the points below the camera, refined with a plane fit.
 below = pts[valid & (pts[..., 2] < -0.3)]
@@ -113,7 +77,7 @@ cv2.circle(img, (int(half / res),) * 2, 8, (0, 0, 255), -1)
 cv2.imwrite(str(out / "floor.png"), img)
 
 frame = {"camera_height": estimated * s, "estimated_camera_height": estimated, "scale": s,
-         "floor_tilt_deg": float(np.degrees(np.arccos(n[2]))), "moge_merge_scale": scale,
+         "floor_tilt_deg": float(np.degrees(np.arccos(n[2]))),
          "R_moge_to_level": R.tolist(), "model": args.model, "width": w, "height": h}
 (out / "frame.json").write_text(json.dumps(frame, indent=1))
 print(f"{args.scene.name}: camera {estimated:.2f} m above the floor (estimated), floor tilt "
