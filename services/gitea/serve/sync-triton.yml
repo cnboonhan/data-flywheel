@@ -36,6 +36,7 @@ jobs:
       TRITON_URL: http://triton:8000
       FLYWHEEL_ROOT: ${{ vars.FLYWHEEL_ROOT }}
       GIT_PYTHON_REFRESH: quiet
+      PYTHONDONTWRITEBYTECODE: "1"   # the job runs as root; don't leave root-owned __pycache__ in the checkout
     steps:
       - shell: bash
         run: |
