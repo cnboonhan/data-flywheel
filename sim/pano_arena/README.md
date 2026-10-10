@@ -1,12 +1,12 @@
 # sim/pano_arena
 
-IsaacLab-Arena scenes from a single equirectangular panorama: metric depth, interactable objects cut out and turned into 3D assets, the rest of the room as a Gaussian-splat background. Each step is a uv script that reads and writes `datasets/pano_arena/<scene>/` (gitignored), so its output can be checked before the next step runs.
+IsaacLab-Arena scenes from a single equirectangular panorama: metric depth, pickable objects erased, the rest of the room as a Gaussian-splat background. Each step is a uv script that reads and writes `datasets/pano_arena/<scene>/` (gitignored), so its output can be checked before the next step runs.
 
 | Step | Script | Writes |
 |---|---|---|
 | 1. Depth and frame | `depth.py` | `depth/` |
 | 2. Objects | `objects.py` | `objects/` |
-| 3. Remove objects | `inpaint.py` | `inpaint/` |
+| 3. Erase pickable objects | `inpaint.py` | `inpaint/` |
 
 ## Sample panoramas
 
@@ -43,31 +43,30 @@ Notes:
 
 ## 2. Objects
 
-Find the objects and mark which are interactable (about 5 min per scene; the models, ~20 GB, download on first use).
+Find the objects and mark which are pickable (about 5 min per scene; the models, ~20 GB, download on first use).
 
 ```bash
 uv run sim/pano_arena/objects.py datasets/pano_arena/office
 ```
 
-Check `objects/labels.jpg`: interactable objects are in colour with their label and distance, everything else grey or background. `objects/objects.json` lists every object with its kind, 3D centre and size (scene frame) and mask.
+Check `objects/labels.jpg`: pickable objects are in colour with their label and distance, everything else grey or background. `objects/objects.json` lists every object with its kind, 3D centre and size (scene frame) and mask.
 
 Notes:
-- Interactable = movable or articulated (Qwen3-VL decides, per view; cabinets, drawers, doors and bins are always searched for), at most `--max_size` (2.2 m) across and at least `--min_thickness` (3 cm) thick. `--max_distance` limits the distance from the camera (none by default); each object's distance and centre are recorded for placing its asset.
+- Pickable = one hand can pick it up (Qwen3-VL decides, per view), at most `--max_size` (0.6 m) across and at least `--min_thickness` (3 cm) thick. Furniture, chairs, large appliances and built-ins stay in the background.
 - Detections are cached in `objects/detections.json`, so changing the thresholds reruns only segmentation and merging (about 1 min). Pass `--redetect` to run the detection models again.
 - Expect misses and odd labels; inspect `labels.jpg` before the next step.
 
-## 3. Remove objects
+## 3. Erase pickable objects
 
-Erase the interactable objects from the panorama and record each one for the sim (the models, ~60 GB, download on first use; on a 24 GB GPU expect ~3 min per large hole).
+Erase the pickable objects from the panorama (the models, ~60 GB, download on first use; on a 24 GB GPU expect ~3 min per large hole).
 
 ```bash
 uv run sim/pano_arena/inpaint.py datasets/pano_arena/kitchen
 ```
 
-Check `inpaint/before_after.jpg`. `inpaint/removed.json` lists every interactable object with its identity (id, label, kind), placement (scene-frame centre, size, distance), the camera of its crop, and `erased`; `inpaint/removed/<id>/` holds `crop.jpg` and `cutout.png` (the object on a transparent background), cut from the untouched panorama.
+Check `inpaint/before_after.jpg`; `inpaint/pano.jpg` and `inpaint/distance.npy` are the cleaned panorama and its depth.
 
 Notes:
-- Built-ins stay in the panorama (`--keep`, default cabinets, cupboards, drawers and doors); they are recorded with `erased: false`.
-- Small holes use LaMa; holes over `--large` (8%) of their view use Qwen-Image-Edit-2511 with an object-removal LoRA and the 8-step Lightning LoRA (all Apache-2.0).
+- Small holes use LaMa. Each connected part of a hole over `--large` (3%) of its view goes on its own, tinted red, to Qwen-Image-Edit-2511 with an object-removal LoRA and the 8-step Lightning LoRA (all Apache-2.0). With several objects marked at once, or a red box instead of a tint, the LoRA leaves objects in place.
 - Keep Qwen's transformer in bf16: 4-bit quantisation turns its output to grain. Under 48 GB of GPU memory it is streamed from CPU memory, which needs ~40 GB of free RAM.
-- The depth behind each removed object comes from MoGe on the cleaned panorama, scaled to the original depth around the hole.
+- The depth behind each erased object comes from MoGe on the cleaned panorama, scaled to the original depth around the hole.

@@ -2,23 +2,18 @@
 # requires-python = ">=3.10"
 # dependencies = ["moge @ git+https://github.com/microsoft/MoGe.git@74fbce054ebe", "diffusers>=0.36", "transformers", "accelerate", "bitsandbytes", "peft"]
 # ///
-"""Step 3: remove the interactable objects from the panorama, keeping a record of each for the sim.
+"""Step 3: erase the pickable objects from the panorama.
 
     uv run sim/pano_arena/inpaint.py datasets/pano_arena/<scene>
 
-Needs steps 1 and 2. Each interactable object is first cropped from the untouched panorama: a perspective view centred
-on it (crop.jpg) and the same view with the object alone on a transparent background (cutout.png). removed.json keeps
-its identity (id, label, kind) and placement (scene-frame centre, size, distance) beside the crop's camera, for building
-its asset (step 5) and putting it back (step 7). Then the objects are erased, except built-ins (--keep: cabinets,
-drawers, doors), which stay in the panorama and are recorded with erased: false. A perspective view around each object
-is inpainted and pasted back onto the panorama: LaMa for small holes; holes covering more than --large of the view go
-to Qwen-Image-Edit-2511 with an object-removal LoRA and the 8-step Lightning LoRA (all Apache-2.0), with the hole
-highlighted in red as the removal LoRA expects (LaMa smears big holes; SDXL inpainting paints new objects into them).
+Needs steps 1 and 2. A perspective view around each pickable object is inpainted and pasted back onto the panorama:
+LaMa for small holes; each connected part of a hole covering more than --large of the view goes, one at a time, to
+Qwen-Image-Edit-2511 with an object-removal LoRA and the 8-step Lightning LoRA (all Apache-2.0), the part tinted red
+(LaMa smears big holes; SDXL inpainting paints new objects into them; the LoRA leaves several marked objects in place).
 Qwen's 20B transformer must stay bf16 (4-bit NF4 turns its output to grain); on a GPU under 48 GB it is streamed from
-CPU memory (~40 GB of RAM) and the text encoder is 4-bit. The depth behind them comes from MoGe on the cleaned panorama,
-scaled to match the original depth around each hole.
-Writes <scene>/inpaint/: pano.jpg, distance.npy, mask.png (what was removed), before_after.jpg, removed.json,
-removed/<id>/{crop.jpg,cutout.png}.
+CPU memory (~40 GB of RAM) and the text encoder is 4-bit. The depth behind the objects comes from MoGe on the cleaned
+panorama, scaled to match the original depth around each hole.
+Writes <scene>/inpaint/: pano.jpg, distance.npy, mask.png (what was erased), before_after.jpg.
 """
 
 import argparse
@@ -37,25 +32,23 @@ p = argparse.ArgumentParser()
 p.add_argument("scene", type=Path)
 p.add_argument("--size", type=int, default=1024, help="crop size in pixels")
 p.add_argument("--grow", type=int, default=12, help="px to grow masks by at 4096 wide (edges, contact shadows)")
-p.add_argument("--keep", default="cabinet,cupboard,drawer,door", help="label words of built-ins to leave in place")
-p.add_argument("--large", type=float, default=0.08, help="hole fraction of a view above which Qwen-Image-Edit inpaints")
+p.add_argument("--large", type=float, default=0.03, help="view fraction of a hole part above which Qwen-Image-Edit inpaints")
 p.add_argument("--editor", default="Qwen/Qwen-Image-Edit-2511")
 p.add_argument("--remover", default="prithivMLmods/QIE-2511-Object-Remover-v2", help="object-removal LoRA")
 p.add_argument("--lightning", default="lightx2v/Qwen-Image-Edit-2511-Lightning")
 p.add_argument("--model", default="Ruicheng/moge-2-vitl-normal")
 args = p.parse_args()
 out = args.scene / "inpaint"
-(out / "removed").mkdir(parents=True, exist_ok=True)
+out.mkdir(exist_ok=True)
 
 pano = cv2.cvtColor(cv2.imread(str(args.scene / "depth" / "pano.jpg")), cv2.COLOR_BGR2RGB)
 distance = np.load(args.scene / "depth" / "distance.npy")
 frame = common.load_frame(args.scene)
-objects = [o for o in json.loads((args.scene / "objects" / "objects.json").read_text()) if o["interactable"]]
+objects = [o for o in json.loads((args.scene / "objects" / "objects.json").read_text()) if o["pickable"]]
 H, W = distance.shape
 R = np.array(frame["R_moge_to_level"])
 dirs = common.directions(H, W)
 grow = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * (args.grow * W // 4096) + 1,) * 2)
-keep = [w.strip() for w in args.keep.split(",") if w.strip()]
 masks = {o["id"]: cv2.imread(str(args.scene / "objects" / o["mask"]), cv2.IMREAD_GRAYSCALE) > 0 for o in objects}
 
 
@@ -69,23 +62,6 @@ def crop_camera(mask):
     return {"yaw": round(float(yaw), 3), "pitch": round(float(pitch), 3),
             "fov": round(float(np.clip(3 * extent + 10, 40, 120)), 3), "size": args.size}
 
-
-# Record each object, cropped from the untouched panorama.
-records = []
-for o in objects:
-    cam = crop_camera(masks[o["id"]])
-    mx, my = common.view(frame, H, W, cam["yaw"], cam["pitch"], cam["size"], cam["fov"])
-    crop = cv2.remap(pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-    alpha = cv2.remap(masks[o["id"]].astype(np.uint8) * 255, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-    d = out / "removed" / o["id"]
-    d.mkdir(exist_ok=True)
-    cv2.imwrite(str(d / "crop.jpg"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])
-    cv2.imwrite(str(d / "cutout.png"), np.dstack([cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), alpha]))
-    erased = not any(w in o["label"].split() for w in keep)
-    records.append({k: o[k] for k in ("id", "label", "kind", "center", "size", "distance")}
-                   | {"erased": erased, "crop": cam, "files": {"crop": f"removed/{o['id']}/crop.jpg",
-                                             "cutout": f"removed/{o['id']}/cutout.png"}})
-(out / "removed.json").write_text(json.dumps(records, indent=1))
 
 # Erase: per object (largest first), LaMa on its crop with every still-unfilled removed pixel masked; the central 90%
 # of the crop is pasted back, and those pixels count as filled.
@@ -122,7 +98,7 @@ def remove_large(img, hole):
         qwen.set_adapters(["remove", "lightning"], [1.0, 1.0])
         qwen.set_progress_bar_config(disable=True)
     m = hole[..., None].astype(np.float32)
-    marked = (img * (1 - 0.6 * m) + np.array([255, 0, 0]) * 0.6 * m).astype(np.uint8)
+    marked = (img * (1 - 0.6 * m) + np.array([255, 0, 0]) * 0.6 * m).astype(np.uint8)   # a red box removes less
     res = qwen(image=[Image.fromarray(marked)], prompt="Remove the red highlighted object from the scene.",
                true_cfg_scale=1.0, num_inference_steps=8,
                generator=torch.Generator("cuda").manual_seed(0)).images[0]
@@ -132,24 +108,29 @@ def remove_large(img, hole):
     return np.where(m > 0, res.clip(0, 255), img).astype(np.uint8)
 
 
-erase = [r for r in records if r["erased"]]
-removed = cv2.dilate(np.any([masks[r["id"]] for r in erase], 0).astype(np.uint8), grow) > 0
+removed = cv2.dilate(np.any(list(masks.values()), 0).astype(np.uint8), grow) > 0
 todo, clean, n_large = removed.copy(), pano.copy(), 0
-for r in sorted(erase, key=lambda r: -masks[r["id"]].sum()):
-    cam = r["crop"]
+for o in sorted(objects, key=lambda o: -masks[o["id"]].sum()):
+    cam = crop_camera(masks[o["id"]])
     mx, my = common.view(frame, H, W, cam["yaw"], cam["pitch"], cam["size"], cam["fov"])
     hole = cv2.remap(todo.astype(np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
     if not hole.any():
         continue
     img = cv2.remap(clean, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-    if hole.mean() > args.large:
-        fill, n_large = remove_large(img, hole), n_large + 1
-        print(f"  {r['id']}: Qwen-Image-Edit ({hole.mean() * 100:.0f}% of the view)", flush=True)
-    else:
+    # Each connected part of the hole separately: the removal LoRA leaves several highlighted objects in place.
+    n, part, stats, _ = cv2.connectedComponentsWithStats(hole)
+    big = [k for k in range(1, n) if stats[k, cv2.CC_STAT_AREA] > args.large * hole.size]
+    small = (hole > 0) & ~np.isin(part, big)
+    fill = img
+    if small.any():
         with torch.no_grad():
             x = torch.from_numpy(img).permute(2, 0, 1)[None].float().cuda() / 255
-            m = torch.from_numpy(hole)[None, None].float().cuda()
-            fill = (lama(x, m)[0].permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()[:cam["size"], :cam["size"]]
+            m = torch.from_numpy(small)[None, None].float().cuda()
+            lamafill = (lama(x, m)[0].permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()
+        fill = np.where(small[..., None], lamafill[:cam["size"], :cam["size"]], img)
+    for k in big:
+        fill, n_large = remove_large(fill, (part == k).astype(np.uint8)), n_large + 1
+        print(f"  {o['id']}: Qwen-Image-Edit ({stats[k, cv2.CC_STAT_AREA] / hole.size * 100:.0f}% of the view)", flush=True)
     idx = np.flatnonzero(todo)
     px, py, front = common.project(frame, dirs.reshape(-1, 3)[idx], cam["yaw"], cam["pitch"], cam["size"], cam["fov"])
     lo, hi = 0.05 * cam["size"], 0.95 * cam["size"]
@@ -183,6 +164,6 @@ cv2.imwrite(str(out / "pano.jpg"), cv2.cvtColor(clean, cv2.COLOR_RGB2BGR), [cv2.
 cv2.imwrite(str(out / "mask.png"), removed.astype(np.uint8) * 255)
 half = lambda a: cv2.resize(a, (W // 2, H // 2), interpolation=cv2.INTER_AREA)
 cv2.imwrite(str(out / "before_after.jpg"), cv2.cvtColor(np.vstack([half(pano), half(clean)]), cv2.COLOR_RGB2BGR))
-print(f"{args.scene.name}: erased {len(erase)} of {len(records)} objects ({removed.mean() * 100:.1f}% of the panorama, "
-      f"{n_large} views with Qwen-Image-Edit"
+print(f"{args.scene.name}: erased {len(objects)} objects ({removed.mean() * 100:.1f}% of the panorama, "
+      f"{n_large} holes with Qwen-Image-Edit"
       f"{f', {left} px by classical inpainting' if left else ''}) -> {out}")

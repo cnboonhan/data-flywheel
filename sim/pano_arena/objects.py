@@ -2,18 +2,18 @@
 # requires-python = ">=3.10"
 # dependencies = ["transformers>=4.57", "accelerate", "torch", "torchvision", "opencv-python-headless", "pillow"]
 # ///
-"""Step 2: find the objects in a panorama and decide which are interactable.
+"""Step 2: find the objects in a panorama and decide which are pickable.
 
-    uv run sim/pano_arena/objects.py datasets/pano_arena/<scene> [--max_distance 3.0]
+    uv run sim/pano_arena/objects.py datasets/pano_arena/<scene>
 
 Needs step 1 (depth/). The panorama is cut into perspective views (8 headings at the horizon and 45 deg down, one
-straight down). Qwen3-VL names the kinds of object in each view and whether each is movable, articulated or fixed;
-Grounding DINO boxes every instance of those names, and SAM 2.1 turns each box into a mask. Masks are mapped back onto the panorama, and detections of the same object from overlapping
-views are merged. Each object gets a 3D box from the depth. Interactable = movable or articulated, within --max_distance
-of the camera (horizontally; no limit by default), at most --max_size across and at least --min_thickness thick;
-everything else stays in the background. Each object's distance and 3D centre are recorded, to place its asset later.
+straight down). Qwen3-VL names the kinds of object in each view and whether each is pickable (one hand can pick it up);
+Grounding DINO boxes every instance of those names, and SAM 2.1 turns each box into a mask. Masks are mapped back onto
+the panorama, and detections of the same object from overlapping views are merged. Each object gets a 3D box from the
+depth. Pickable also needs at most --max_size across and at least --min_thickness thick; everything else stays in the
+background.
 Writes <scene>/objects/: objects.json, masks/<id>.png (panorama-sized), views/ (the perspective views and their
-cameras, reused by later steps), labels.jpg (preview: interactable objects in colour, the rest grey).
+cameras, reused by later steps), labels.jpg (preview: pickable objects in colour, the rest grey).
 """
 
 import argparse
@@ -33,18 +33,14 @@ import common
 PROMPT = (
     "List the kinds of physical objects in this indoor photo: furniture, appliances, devices, containers and small "
     "items on surfaces. Skip walls, floor, ceiling, windows, curtains and ceiling lights. Give each kind a short "
-    "singular name (e.g. \"office chair\") and say whether it is 'movable' (a person could pick it up or push it: "
-    "cups, jars, bowls, boxes, chairs, bins, bags), 'articulated' (has a door, drawer or lid that opens: cabinets, "
-    "fridges, ovens, microwaves, doors, drawers), or 'fixed' (built in or too heavy to move: counters, desks, "
-    "shelving, radiators). Answer only with a JSON object mapping each name to its kind.")
-# Always searched for as well: Qwen tends not to name built-in furniture that opens.
-ALWAYS = {"cabinet": "articulated", "drawer": "articulated", "door": "articulated", "bin": "movable"}
+    "singular name (e.g. \"glass jar\") and say whether it is 'pickable' (one hand can pick it up and carry it: cups, "
+    "bottles, jars, bowls, boxes, books, kettles, toasters) or 'fixed' (anything else: furniture, chairs, large "
+    "appliances, built-in fittings). Answer only with a JSON object mapping each name to its kind.")
 
 p = argparse.ArgumentParser()
 p.add_argument("scene", type=Path)
-p.add_argument("--max_distance", type=float, default=float("inf"), help="m from the camera, horizontally")
-p.add_argument("--max_size", type=float, default=2.2, help="m, largest side of an interactable object")
-p.add_argument("--min_thickness", type=float, default=0.03, help="m, smallest side of an interactable object")
+p.add_argument("--max_size", type=float, default=0.6, help="m, largest side of a pickable object")
+p.add_argument("--min_thickness", type=float, default=0.03, help="m, smallest side of a pickable object")
 p.add_argument("--view_size", type=int, default=1024)
 p.add_argument("--redetect", action="store_true", help="ignore objects/detections.json from an earlier run")
 p.add_argument("--vlm", default="Qwen/Qwen3-VL-8B-Instruct")
@@ -94,8 +90,8 @@ else:
         with torch.no_grad():
             y = vlm.generate(**x, max_new_tokens=400, do_sample=False)
         text = proc.decode(y[0, x["input_ids"].shape[1]:], skip_special_tokens=True)
-        pairs = re.findall(r'"([^"]+)"\s*:\s*"(movable|articulated|fixed)"', text)
-        names.append(ALWAYS | {n.lower().strip(): k for n, k in pairs})
+        pairs = re.findall(r'"([^"]+)"\s*:\s*"(pickable|fixed)"', text)
+        names.append({n.lower().strip(): k for n, k in pairs})
     del vlm
     torch.cuda.empty_cache()
 
@@ -141,8 +137,7 @@ del sam
 torch.cuda.empty_cache()
 
 # Merge detections of one object from overlapping views (most of the smaller mask inside the larger). Views can
-# disagree on the kind; the majority wins, ties going to the more interactive kind. A name Qwen gave outranks an
-# ALWAYS name (a "drawer" box on a bookshelf).
+# disagree on the kind; the majority wins, ties going to pickable.
 objs = []
 for d in sorted((d for d in dets if len(d.get("pixels", ())) > 50), key=lambda d: -len(d["pixels"])):
     for o in objs:
@@ -157,9 +152,7 @@ for d in sorted((d for d in dets if len(d.get("pixels", ())) > 50), key=lambda d
         objs.append({"pixels": d["pixels"], "labels": [d["label"]], "kinds": [d["kind"]],
                      "views": [{"view": d["view"], "box": d["box"]}]})
 for o in objs:
-    named = [(l, k) for l, k in zip(o["labels"], o["kinds"]) if l not in ALWAYS]   # Qwen's names outrank ALWAYS
-    o["labels"], o["kinds"] = map(list, zip(*(named or zip(o["labels"], o["kinds"]))))
-    o["kind"] = max(set(o["kinds"]), key=lambda k: (o["kinds"].count(k), ["fixed", "movable", "articulated"].index(k)))
+    o["kind"] = max(set(o["kinds"]), key=lambda k: (o["kinds"].count(k), ["fixed", "pickable"].index(k)))
 
 # 3D extent from the depth: drop mask pixels that bled onto the background (far from the object's median distance).
 records, preview = [], (pano * 0.35).astype(np.uint8)
@@ -174,20 +167,19 @@ for k, o in enumerate(objs):
     lo, hi = np.percentile(pts, 2, 0), np.percentile(pts, 98, 0)
     size, near = hi - lo, float(np.percentile(np.linalg.norm(pts[:, :2], axis=1), 5))
     label = Counter(o["labels"]).most_common(1)[0][0]
-    interactable = (o["kind"] != "fixed" and near <= args.max_distance and size.max() <= args.max_size
-                    and size.min() >= args.min_thickness)
+    pickable = o["kind"] == "pickable" and args.min_thickness <= size.min() and size.max() <= args.max_size
     oid = f"{k:02d}_{re.sub(r'[^a-z0-9]+', '_', label).strip('_')}"
     cv2.imwrite(str(out / "masks" / f"{oid}.png"), mask.astype(np.uint8) * 255)
-    records.append({"id": oid, "label": label, "kind": o["kind"], "interactable": bool(interactable),
+    records.append({"id": oid, "label": label, "kind": o["kind"], "pickable": bool(pickable),
                     "center": ((lo + hi) / 2).round(3).tolist(), "size": size.round(3).tolist(),
                     "distance": round(near, 2), "views": o["views"], "mask": f"masks/{oid}.png"})
     colour = np.array(cv2.applyColorMap(np.uint8([[k * 47 % 255]]), cv2.COLORMAP_TURBO)[0, 0][::-1])
-    preview[mask] = (0.5 * pano[mask] + 0.5 * colour) if interactable else gray[mask] * 0.7
+    preview[mask] = (0.5 * pano[mask] + 0.5 * colour) if pickable else gray[mask] * 0.7
 (out / "objects.json").write_text(json.dumps(records, indent=1))
 
 # Preview with labels (half resolution).
 preview = cv2.cvtColor(cv2.resize(preview, (W // 2, H // 2)), cv2.COLOR_RGB2BGR)
-for r in (r for r in records if r["interactable"]):
+for r in (r for r in records if r["pickable"]):
     ys, xs = np.nonzero(cv2.imread(str(out / r["mask"]), cv2.IMREAD_GRAYSCALE)[::2, ::2])
     if len(xs) and xs.max() - xs.min() < W // 4:
         text = f"{r['label']} {r['distance']:.1f}m"
@@ -195,8 +187,8 @@ for r in (r for r in records if r["interactable"]):
         cv2.putText(preview, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4, cv2.LINE_AA)
         cv2.putText(preview, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
 cv2.imwrite(str(out / "labels.jpg"), preview)
-n = sum(r["interactable"] for r in records)
-print(f"{args.scene.name}: {len(records)} objects, {n} interactable -> {out}")
+n = sum(r["pickable"] for r in records)
+print(f"{args.scene.name}: {len(records)} objects, {n} pickable -> {out}")
 for r in records:
-    print(f"  {'*' if r['interactable'] else ' '} {r['id']:28s} {r['kind']:11s} {r['distance']:5.2f} m  "
+    print(f"  {'*' if r['pickable'] else ' '} {r['id']:28s} {r['kind']:8s} {r['distance']:5.2f} m  "
           f"size {' x '.join(f'{s:.2f}' for s in r['size'])}")
