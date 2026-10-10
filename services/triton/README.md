@@ -45,4 +45,4 @@ gRPC metadata keys must be lowercase. `tritonclient.http` modifies the `headers`
 
 - `Dockerfile`: `tritonserver:26.08-py3` (CUDA 13 forward-compat on driver 580, needed for sm_103) + torch 2.14 cu130. Rebuild with `ctl.sh up --build`.
 - `sync.py`: the reconciler; runs in the same image with the checkout mounted.
-- The server reads the bucket directory read-only and reloads everything on restart. Metrics on port 8002 (not scraped).
+- The server reads the bucket directory read-only (`sync.py` keeps `models/.keep` so the folder never disappears) and reloads everything on restart. Metrics on port 8002 (not scraped).

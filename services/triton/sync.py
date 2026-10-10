@@ -137,6 +137,7 @@ def ensure_bucket():
         s3.head_bucket(Bucket=BUCKET)
     except Exception:
         s3.create_bucket(Bucket=BUCKET)
+    s3.put_object(Bucket=BUCKET, Key=f"{MODELS}/.keep", Body=b"")   # the gateway deletes a folder once it's empty
 
 
 def keys(prefix):

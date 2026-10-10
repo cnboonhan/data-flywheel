@@ -241,7 +241,7 @@ services:
     image: flywheel-triton:26.08
     command:
       - tritonserver
-      - --model-repository=/models
+      - --model-repository=/triton/models
       - --model-control-mode=explicit
       - --load-model=*            # on (re)start: whatever the last sync left in the repository
       - --exit-on-error=false     # a model that fails to load doesn't keep the others down
@@ -255,7 +255,7 @@ services:
       memlock: -1
       stack: 67108864
     volumes:
-      - ${STATE_DIR}/versitygw/buckets/triton/models:/models:ro
+      - ${STATE_DIR}/versitygw/buckets/triton:/triton:ro   # the bucket, not models/: the gateway deletes empty folders
 
   # --- Single sign-on -------------------------------------------------------
   keycloak-db:
