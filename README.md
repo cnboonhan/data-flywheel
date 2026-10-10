@@ -20,17 +20,23 @@ Click the diagram for the interactive version, with links to each component ([so
 
 ## Setup
 
-1. **Install [Git LFS](https://git-lfs.com/)** and run `git lfs install`. Several submodules store assets in LFS and otherwise check out as pointer files.
-2. **Clone with submodules.** IsaacLab-Arena pins two of its submodules with SSH URLs; the `-c` option fetches them over HTTPS, so no GitHub SSH key is needed. The full clone is several GB; to fetch one benchmark only, clone without `--recurse-submodules` and run `git submodule update --init --recursive <path>` (same `-c` option for `eval/system2/IsaacLab-Arena`).
+1. Install Git LFS.
+   ```bash
+   git lfs install
+   ```
+2. Clone with submodules.
    ```bash
    git -c url."https://github.com/".insteadOf=git@github.com: \
        clone --recurse-submodules --jobs 8 https://github.com/cnboonhan/data-flywheel.git
    ```
-3. **Set the push URL** if you will push from the cluster, where port 22 is blocked: `git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`.
-4. **Bring up the services.** Copy `services/.env.example` to `services/.env`, fill in the secrets, and run `services/ctl.sh up`. It provisions every service and dispatches `setup-envs`, which builds the Slurm-side environments and downloads the RoboDojo data: [services/](services/README.md#run) (fresh install included).
-5. **Get access.** Trust the stack's CA and, through a login node, forward its port: [Access](services/README.md#access). Create your account (Keycloak login, MLflow token, S3 keys) with `services/ctl.sh user add <name> <email>` ([Users](services/README.md#users)); set up the S3 client: [versitygw/](services/versitygw/README.md#client-setup).
-6. **Install the simulation tooling you need**, each in its own venv: splat training `bash sim/splat/install.sh` ([sim/splat/](sim/splat/README.md#install-once)), IsaacLab-Arena `bash eval/system2/setup-arena.sh` ([eval/system2/](eval/system2/README.md#install)), the system 1 benchmarks per [eval/system1/](eval/system1/README.md).
-7. **For Slurm jobs,** source the credentials and pick a partition (the cluster has no default): `set -a; . $STATE_DIR/slurm.env; set +a; export SBATCH_PARTITION=<partition>` ([slurm/](services/slurm/README.md)).
+3. Set the push URL (port 22 is blocked on the cluster).
+   ```bash
+   git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git
+   ```
+4. Bring up the services: [services/](services/README.md#run).
+5. Get access and an account: [Access](services/README.md#access), [Users](services/README.md#users), [S3 client](services/versitygw/README.md#client-setup).
+6. Install the simulation tooling you need: [sim/splat/](sim/splat/README.md#install-once), [eval/system2/](eval/system2/README.md#install), [eval/system1/](eval/system1/README.md).
+7. Set up Slurm jobs: [slurm/](services/slurm/README.md).
 
 ## The flywheel, end to end
 
