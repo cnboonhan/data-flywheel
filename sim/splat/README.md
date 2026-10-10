@@ -57,7 +57,13 @@ Either side can be an `s3://` prefix. The script uses the services stack's setti
 export S3_ENDPOINT_URL=https://s3.<host>:8443 AWS_ACCESS_KEY_ID=<name> AWS_SECRET_ACCESS_KEY=<secret> \
        AWS_DEFAULT_REGION=us-east-1 AWS_CA_BUNDLE=flywheel-ca.crt
 uv run sim/splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
+# a sensors/real2sim capture (1008 images, metric map frame; on a GB300 node, more gaussians fit)
+uv run sim/splat/train.py s3://raw/internal_datasets/real2sim/ridgeback_demo/colmap s3://processed/splats/ridgeback_demo \
+  --floor strategy.add.max_n_gaussians=3000000
 ```
+
+Captures are uploaded with `aws s3 sync <run>/colmap s3://raw/internal_datasets/real2sim/<name>/colmap/` (client
+setup: [services/versitygw](../../services/versitygw/README.md)).
 
 An S3 input is mirrored into `datasets/splat/cache/inputs/` (only missing or changed files are fetched, so reruns
 start immediately); an S3 output is trained in `datasets/splat/cache/runs/` and the run directory is uploaded to
