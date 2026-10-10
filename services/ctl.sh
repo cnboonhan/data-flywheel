@@ -178,6 +178,7 @@ bootstrap_keycloak() {
     python3 -c 'import json,sys; print(json.dumps(next(x for x in json.load(open(sys.argv[1]))["clients"] if x["clientId"] == sys.argv[2])))' "$realm" "$c" \
       | "${kc[@]}" create clients -r flywheel -f - >/dev/null && echo "keycloak: created client $c"
   done
+  "${kc[@]}" update realms/flywheel -s loginTheme=flywheel >/dev/null 2>&1 || echo "warning: could not set the login theme" >&2
   # Group admins administers the flywheel realm in its own admin console (/auth/admin/flywheel/console/).
   "${kc[@]}" add-roles -r flywheel --gname admins --cclientid realm-management --rolename realm-admin >/dev/null 2>&1 \
     || echo "warning: could not give group admins the realm-admin role" >&2
@@ -349,7 +350,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import keycloak/login-background versitygw/buckets/processed/rerun versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Keycloak imports the realm (clients, groups, the admin user) on first start.

@@ -1,0 +1,7 @@
+/* Tile resources/img/background.png behind the login card; without an image the page stays dark so the title reads. */
+body, .pf-v5-c-login, .pf-v5-c-background-image {
+  background-color: #1f2328 !important;
+  background-image: url("../img/background.png") !important;
+  background-repeat: repeat !important;
+  background-size: 160px auto !important;
+}

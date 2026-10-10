@@ -295,6 +295,10 @@ services:
       HOME: /tmp   # kcadm.sh (used by ctl.sh user add) writes its config under $HOME
     volumes:
       - ${STATE_DIR}/keycloak/import:/opt/keycloak/data/import:ro   # realm.json rendered by ctl.sh
+      - ./keycloak/themes/flywheel:/opt/keycloak/themes/flywheel:ro    # login theme: the default plus a tiled background
+      - ${STATE_DIR}/keycloak/login-background:/opt/keycloak/themes/flywheel/login/resources/img:ro   # its image, kept out of git
+    tmpfs:
+      - /opt/keycloak/data/tmp:mode=1777   # Keycloak's gzip cache of theme files; cleared on restart so theme edits show
     depends_on:
       keycloak-db:
         condition: service_healthy

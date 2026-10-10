@@ -18,6 +18,10 @@ Identity provider (`/auth`, realm `flywheel`) plus oauth2-proxy (`/oauth2`) for 
    services/ctl.sh exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r flywheel --username admin --new-password "$ADMIN_PASSWORD"
    services/ctl.sh exec grafana grafana cli admin reset-admin-password "$ADMIN_PASSWORD"
    ```
+5. To change the login page's tiled background, save the image as `background.png` in `$STATE_DIR/keycloak/login-background/` and restart Keycloak (the image stays out of git; the theme is [`themes/flywheel/`](themes/flywheel/)). Remove the file to go back to a plain dark background.
+   ```bash
+   cp <image>.png $STATE_DIR/keycloak/login-background/background.png && services/ctl.sh restart keycloak
+   ```
 
 **Notes**
 - Change the realm (clients `gitea`, `grafana`, `mlflow`, `oauth2-proxy`, groups, mappers, the admin user) in `realm.json.tmpl`. Keycloak imports it, filled in with the `KC_*` secrets from `.env`, on its first start only; afterwards `ctl.sh up` adds missing clients, and any other change has to be made in the admin console.
