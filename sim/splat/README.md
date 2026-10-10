@@ -95,6 +95,22 @@ capped by `strategy.add.max_n_gaussians` (1M): 3M ran out of memory on a 24 GB G
 **Reference results** (RTX 5090 Laptop, this commit): 7k iterations, 24.9 dB PSNR / 0.89 SSIM in ~5 min;
 30k iterations (default), 27.2 dB / 0.92 SSIM in 31 min.
 
+## On the Slurm cluster
+
+`train.sbatch` runs `train.py` as a one-GPU job (arguments are `train.py`'s), with the S3 settings from `slurm.env`.
+It skips C03, whose GPUs Triton holds.
+
+```bash
+set -a; . /tier1/htx_boonhan/services/slurm.env; set +a; export SBATCH_PARTITION=<partition>
+cd /tier1/htx_boonhan/services/slurm-logs
+sbatch --export=ALL $FLYWHEEL_ROOT/sim/splat/train.sbatch \
+  s3://raw/internal_datasets/real2sim/<scene>/colmap s3://processed/splats/<scene> --name <scene> --floor
+```
+
+**Settings sweep** (zh_lounge, 30k iterations, GB300, 2026-10-10; held-out PSNR / SSIM / LPIPS): defaults 27.27 / 0.921 /
+0.339 were not beaten. 60k iterations 27.25; opacity and scale penalties 0.001 27.17; PPISP 27.19; 2-3M gaussians
+26.8-27.2 (LPIPS 0.332-0.335: slightly sharper, worse on held-out views). Quality is limited by the capture, not training.
+
 ## Your own scenes
 
 Any COLMAP dataset works the same way (`images/` + `sparse/0/`). Capture: lock focus, exposure and white balance;
