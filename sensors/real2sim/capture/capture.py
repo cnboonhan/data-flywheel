@@ -5,7 +5,8 @@
 
 At each viewpoint: Nav2 NavigateToPose (nav2_simple_commander), wait --settle seconds (sim or robot clock), take the
 next left/right images, their poses from TF (map -> camera optical frame at the image stamp) and one lidar cloud in
-the map frame. Writes images/ and sparse/0/{cameras,images,points3D}.txt (COLMAP text model; world = map frame, so
+the map frame. Each camera's lens comes from its CameraInfo: no distortion -> PINHOLE, plumb_bob or
+rational_polynomial -> OPENCV or FULL_OPENCV, equidistant -> OPENCV_FISHEYE. Writes images/ and sparse/0/{cameras,images,points3D}.txt (COLMAP text model; world = map frame, so
 the result is metric and gravity-aligned). Train with sim/splat/train.py.
 
 Camera heights: with --height_steps N > 1, each viewpoint is captured at N camera heights spread over --height_range
@@ -123,6 +124,22 @@ def go_to_pitch(p):
     return wait_for(lambda: (q := camera_pitch()) is not None and abs(q - p) <= args.pitch_tolerance, timeout=30)
 
 
+def colmap_camera(info):
+    """COLMAP camera model and parameters for a CameraInfo's lens (OpenCV conventions on both sides)."""
+    k, d, m = info.k, [float(x) for x in info.d], info.distortion_model
+    head = f"{info.width} {info.height} {k[0]} {k[4]} {k[2]} {k[5]}"
+    if not any(d):
+        return f"PINHOLE {head}"
+    if m == "equidistant":                                     # k1 k2 k3 k4
+        return f"OPENCV_FISHEYE {head} " + " ".join(map(str, (d + [0.0] * 4)[:4]))
+    if m in ("plumb_bob", "rational_polynomial"):             # k1 k2 p1 p2 [k3 [k4 k5 k6]]
+        d = (d + [0.0] * 8)[:8]
+        if not any(d[4:]):
+            return f"OPENCV {head} " + " ".join(map(str, d[:4]))
+        return f"FULL_OPENCV {head} " + " ".join(map(str, d))
+    sys.exit(f"unsupported CameraInfo distortion_model {m!r}")
+
+
 def capture(i, h, p=None):
     """Settle, then save the next stereo pair (posed by TF) and one lidar cloud in the map frame."""
     v = views[i]
@@ -145,7 +162,7 @@ def capture(i, h, p=None):
             return
         name = f"{len(frames):05d}_{ns.strip('/').replace('/', '_')}.png"
         cv2.imwrite(str(out / "images" / name), bridge.imgmsg_to_cv2(img, "bgr8"))
-        intrinsics[ns] = (info.width, info.height, info.k[0], info.k[4], info.k[2], info.k[5])
+        intrinsics[ns] = colmap_camera(info)
         frames.append((name, ns, T))
     cloud = do_transform_cloud(latest["lidar"], tf.lookup_transform("map", latest["lidar"].header.frame_id,
                                                                      latest["lidar"].header.stamp, Duration(seconds=2)))
@@ -195,8 +212,8 @@ for i, v in enumerate(views):
 # COLMAP text model. images.txt holds world-to-camera poses: R_cw = R_wc^T, t_cw = -R_cw t_wc; quaternion as qw qx qy qz.
 cam_ids = {ns: i + 1 for i, ns in enumerate(intrinsics)}
 with open(out / "sparse/0/cameras.txt", "w") as f:
-    for ns, (w, h, fx, fy, cx, cy) in intrinsics.items():
-        f.write(f"{cam_ids[ns]} PINHOLE {w} {h} {fx} {fy} {cx} {cy}\n")
+    for ns, camera in intrinsics.items():
+        f.write(f"{cam_ids[ns]} {camera}\n")
 with open(out / "sparse/0/images.txt", "w") as f:
     for i, (name, ns, T) in enumerate(frames, start=1):
         r_wc = Rotation.from_quat([T.rotation.x, T.rotation.y, T.rotation.z, T.rotation.w])
