@@ -61,7 +61,7 @@ The diagram reads left to right: data is built, stored raw, processed into train
 |---|---|
 | Connectivity | access through Caddy on one port, SSH-tunnelled from a login node ([Access](services/README.md#access)) |
 | Data Storage | Versity S3 gateway, buckets `raw`, `processed`, `mlflow`, `triton` ([versitygw/](services/versitygw/README.md)); `raw` browsable in FiftyOne ([fiftyone/](services/fiftyone/README.md)) and Rerun ([rerun/](services/rerun/README.md)) |
-| Logging | Loki and Grafana ([loki/](services/loki/README.md), [grafana/](services/grafana/README.md)); Prometheus not yet |
+| Logging | Loki and Grafana ([loki/](services/loki/README.md), [grafana/](services/grafana/README.md)) |
 | Model Registry | MLflow: runs, registered models, checkpoints in `s3://mlflow` ([mlflow/](services/mlflow/README.md)) |
 
 ### Processed

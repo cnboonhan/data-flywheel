@@ -96,7 +96,7 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
 
       <rect class="box" x="355" y="188" width="180" height="60" rx="8"/>
       <text class="t" x="445" y="206" text-anchor="middle">Logging</text>
-      <a href="https://grafana.com/docs/grafana/latest/fundamentals/getting-started/first-dashboards/get-started-grafana-prometheus/" target="_blank" rel="noopener"><text class="lnk" x="445" y="222" text-anchor="middle">Prometheus</text></a>
+      <a href="https://grafana.com/oss/grafana/" target="_blank" rel="noopener"><text class="lnk" x="445" y="222" text-anchor="middle">Grafana</text></a>
       <a href="https://grafana.com/oss/loki/" target="_blank" rel="noopener"><text class="lnk" x="445" y="238" text-anchor="middle">Loki</text></a>
 
       <rect class="box" x="355" y="268" width="180" height="44" rx="8"/>
