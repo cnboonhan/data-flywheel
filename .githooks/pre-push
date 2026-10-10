@@ -4,11 +4,11 @@ set -euo pipefail
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 while read -r _ local_sha _ _; do
   [[ $local_sha =~ ^0+$ ]] && continue   # branch deletion
-  git show "$local_sha:architecture.html" > "$tmp/a.html" 2>/dev/null || continue
+  git show "$local_sha:assets/architecture.html" > "$tmp/a.html" 2>/dev/null || continue
   python3 tools/architecture_svg.py "$tmp/a.html" "$tmp/a.svg" >/dev/null
-  if ! git show "$local_sha:architecture.svg" 2>/dev/null | cmp -s - "$tmp/a.svg"; then
+  if ! git show "$local_sha:assets/architecture.svg" 2>/dev/null | cmp -s - "$tmp/a.svg"; then
     python3 tools/architecture_svg.py >/dev/null
-    echo "pre-push: architecture.svg is out of date in the pushed commit; it has been regenerated: commit it and push again." >&2
+    echo "pre-push: assets/architecture.svg is out of date in the pushed commit; it has been regenerated: commit it and push again." >&2
     exit 1
   fi
 done

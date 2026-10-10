@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write architecture.svg from architecture.html (the source), so the README can show the diagram inline.
 
-    python3 tools/architecture_svg.py [architecture.html [architecture.svg]]
+    python3 tools/architecture_svg.py [assets/architecture.html [assets/architecture.svg]]
 
 GitHub renders READMEs without iframes, scripts or page styles, so the HTML can't be embedded; the SVG inside it can,
 once its styles travel with it. Light and dark follow the viewer's colour scheme. Links aren't clickable in a README
@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-src = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "architecture.html"
-dst = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "architecture.svg"
+src = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "assets" / "architecture.html"
+dst = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "assets" / "architecture.svg"
 html = src.read_text()
 css = re.search(r"<style>(.*?)</style>", html, re.S).group(1)
 svg = re.search(r"<svg\b.*?</svg>", html, re.S).group(0)

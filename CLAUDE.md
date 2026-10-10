@@ -59,5 +59,5 @@ XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_
 
 ## Git
 
-- Push goes over SSH on port 443, because port 22 is blocked from the cluster: `remote.origin.pushurl` is `ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`. Fetch uses HTTPS. On a fresh clone, set the pushurl with `git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`. Also `git config core.hooksPath .githooks`: pre-commit regenerates `architecture.svg` when `architecture.html` is committed, pre-push refuses a stale one. Edit the HTML, never the SVG.
+- Push goes over SSH on port 443, because port 22 is blocked from the cluster: `remote.origin.pushurl` is `ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`. Fetch uses HTTPS. On a fresh clone, set the pushurl with `git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`. Also `git config core.hooksPath .githooks`: pre-commit regenerates `assets/architecture.svg` when `assets/architecture.html` is committed, pre-push refuses a stale one. Edit the HTML, never the SVG.
 - Commit only when asked.

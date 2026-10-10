@@ -6,9 +6,9 @@ Using the stack (browse data, upload, train, read results)? Start with the [quic
 
 ## Architecture
 
-[![Data Flywheel architecture](architecture.svg)](https://htmlpreview.github.io/?https://github.com/cnboonhan/data-flywheel/blob/main/architecture.html)
+[![Data Flywheel architecture](assets/architecture.svg)](https://htmlpreview.github.io/?https://github.com/cnboonhan/data-flywheel/blob/main/assets/architecture.html)
 
-Click the diagram for the interactive version, with links to each component ([source](architecture.html); `architecture.svg` is generated from it by `tools/architecture_svg.py`, run by the git hooks in `.githooks/`).
+Click the diagram for the interactive version, with links to each component ([source](assets/architecture.html); `assets/architecture.svg` is generated from it by `tools/architecture_svg.py`, run by the git hooks in `.githooks/`).
 
 ## Folder structure
 
