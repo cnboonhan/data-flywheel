@@ -45,11 +45,11 @@ An S3 input is mirrored into `datasets/splat/cache/inputs/` (only changed files 
 
 ## On the Slurm cluster
 
-Source `slurm.env` ([slurm/](../../services/slurm/README.md)), then submit `train.sbatch` with `train.py`'s arguments. It runs on one GPU and skips C03, whose GPUs Triton holds.
+Source `slurm.env` ([slurm/](../../services/slurm/README.md)), then submit `train.sbatch` with `train.py`'s arguments. It runs on one GPU; exclude the service node (`SERVICE_NODE` in `services/.env`), whose GPUs Triton holds.
 
 ```bash
 cd $STATE_DIR/slurm-logs
-sbatch --export=ALL $FLYWHEEL_ROOT/sim/splat/train.sbatch \
+sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/splat/train.sbatch \
   s3://raw/internal_datasets/real2sim/<scene>/colmap s3://processed/splats/<scene> --name <scene> --floor
 ```
 

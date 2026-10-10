@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server on all four GPUs of the service node, serving models from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
+Triton Inference Server on all GPUs of the service node (`SERVICE_NODE` in [`.env.example`](../.env.example)), serving models from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
 
 ## Serve a model
 
@@ -42,7 +42,7 @@ Other models are tagged `unsupported`; to add one, write a `package_<model>` fun
 
 ## Notes
 
-- C03 is still a Slurm node, so Slurm jobs placed there share its GPUs with Triton. Until the admin removes C03's GPUs from Slurm, submit GPU-heavy jobs with `--exclude=C2-GB300-02-C03`.
+- If the service node is also a Slurm node, jobs placed there share its GPUs with Triton. Until its GPUs are removed from Slurm, submit GPU-heavy jobs with `--exclude=$SERVICE_NODE` (`slurm.env` sets it).
 - Send gRPC metadata keys in lowercase (`authorization`). `tritonclient.http` adds entries to the `headers` dict it is given, so pass a fresh dict on every call.
 - Expect about 40 ms per ACT call with three 640×480 cameras from the login node.
 - After editing `Dockerfile` (`tritonserver:26.08-py3` plus torch 2.14 cu130; CUDA 13 runs in forward-compatibility mode on driver 580, which sm_103 needs), rebuild with `services/ctl.sh up --build`.

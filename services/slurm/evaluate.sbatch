@@ -8,7 +8,7 @@
 # On C01 and C02 the eval client's Kit viewport stopped rendering a frame during the afternoon of
 # 2026-10-08 (first with the ACT policy server beside it, later with the zero-action demo policy too);
 # Isaac Lab then can't place its viewport camera. Identical software, GPU mode and scratch on all four
-# nodes; cause not found. C03 and C04 work.
+# nodes; cause not found.
 #SBATCH --exclude=C2-GB300-02-C01,C2-GB300-02-C02
 #
 # Evaluate a checkpoint of <model> for <embodiment> in simulation and record the result on its MLflow training run.

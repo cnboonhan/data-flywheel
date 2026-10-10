@@ -77,7 +77,7 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 
 ## Environment
 
-- **Credentials and paths:** `ctl.sh up` writes `$STATE_DIR/slurm.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL`/`TRITON_TOKEN`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. The jobs run the code in this checkout (`FLYWHEEL_ROOT`).
+- **Credentials and paths:** `ctl.sh up` writes `$STATE_DIR/slurm.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL`/`TRITON_TOKEN`, `SERVICE_NODE`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. The jobs run the code in this checkout (`FLYWHEEL_ROOT`).
 - **Envs** (RoboDojo eval env, ACT/DP policy envs): built by the Gitea workflow `setup-envs` ([gitea/setup/](../gitea/setup/README.md)).
 - **Data layout:** the checkout holds code only; `lib/xpolicylab.sh` links `XPolicyLab/policy/<P>/{processed_data,checkpoints}`, `policy/DP/data` → `$DATA_ROOT/<P>/`, RoboDojo `eval_result` → `$ROBODOJO_DIR/eval_result`, `data` → `$BUCKETS_DIR/processed/xpolicylab`, `Assets` → `$ROBODOJO_DIR/Assets`.
 
