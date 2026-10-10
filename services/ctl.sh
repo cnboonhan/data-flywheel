@@ -306,10 +306,17 @@ user_add() {
   else
     "${kc[@]}" create users -r flywheel -s "username=$name" -s "email=$email" -s enabled=true -s emailVerified=true >/dev/null
     "${kc[@]}" set-password -r flywheel --username "$name" --new-password "$pw"
-    local gid; gid=$("${kc[@]}" get groups -r flywheel -q search=users --fields id,name 2>/dev/null | python3 -c 'import sys,json; print([g["id"] for g in json.load(sys.stdin) if g["name"]=="users"][0])')
-    local uid; uid=$("${kc[@]}" get users -r flywheel -q "username=$name" --fields id | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["id"])')
-    "${kc[@]}" update "users/$uid/groups/$gid" -r flywheel -n >/dev/null
-    echo "keycloak: created $name (group users)"
+    echo "keycloak: created $name"
+  fi
+  # Every app checks group membership (users or admins); make sure of it even for an account created elsewhere.
+  local gid uid
+  gid=$("${kc[@]}" get groups -r flywheel -q search=users --fields id,name | python3 -c 'import sys,json; print([g["id"] for g in json.load(sys.stdin) if g["name"]=="users"][0])')
+  uid=$("${kc[@]}" get users -r flywheel -q "username=$name" --fields id,username | python3 -c 'import sys,json; print([u["id"] for u in json.load(sys.stdin) if u["username"]==sys.argv[1]][0])' "$name")
+  if "${kc[@]}" get "users/$uid/groups" -r flywheel --fields name | grep -q '"\(users\|admins\)"'; then
+    echo "keycloak: $name is in group users or admins"
+  else
+    "${kc[@]}" update "users/$uid/groups/$gid" -r flywheel -n
+    echo "keycloak: added $name to group users"
   fi
 
   local tok
