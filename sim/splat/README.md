@@ -81,6 +81,11 @@ background shell out to ~1000 km, which in Isaac Sim blocks the dome light: mesh
 `--floor` adds an invisible collision floor at z = 0 under the cameras' footprint (plus 2 m); it needs a text COLMAP model. The splat has no other collision; add proxies or a mesh. To use it as an Arena
 background, see [Splat backgrounds](../isaaclab_arena/README.md#splat-backgrounds).
 
+**Large captures:** with 500 or more images, `train.py` lowers MCMC's opacity and scale penalties to 0.001 (pass
+`loss.lambda_opacity=...` or `loss.lambda_scale=...` to override). At the default 0.01, a 1008-image capture collapsed
+(gaussians died faster than they were relocated; 11 dB held out) and trained normally at 0.001 (18 dB). Detail is then
+capped by `strategy.add.max_n_gaussians` (1M): 3M ran out of memory on a 24 GB GPU.
+
 **Reference results** (RTX 5090 Laptop, this commit): 7k iterations, 24.9 dB PSNR / 0.89 SSIM in ~5 min;
 30k iterations (default), 27.2 dB / 0.92 SSIM in 31 min.
 

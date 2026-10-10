@@ -1,6 +1,7 @@
 """Drive Nav2 through planned viewpoints, capture posed stereo images and lidar, write a COLMAP dataset.
 
-    python3 capture.py --viewpoints /data/<run>/viewpoints.json --out /data/<run>/colmap [--height_range 0.35 1.2 --height_steps 3]
+    python3 capture.py --viewpoints /data/<run>/viewpoints.json --out /data/<run>/colmap \
+        [--height_range 0.35 1.2 --height_steps 3] [--pitches 0 30]
 
 At each viewpoint: Nav2 NavigateToPose (nav2_simple_commander), wait --settle seconds (sim or robot clock), take the
 next left/right images, their poses from TF (map -> camera optical frame at the image stamp) and one lidar cloud in
@@ -12,6 +13,11 @@ Camera heights: with --height_steps N > 1, each viewpoint is captured at N camer
 (std_msgs/Float64, metres) and accepted once TF puts the first optical frame within --height_tolerance of it; the
 camera returns to the lowest height before driving on. In sim, isaac_sim.py moves the stereo rig; on a real robot, an
 adapter turns the topic into a lift or torso command.
+
+Camera pitch: with --pitches, each height is captured at each pitch (degrees, positive looks down), published on
+--pitch_topic (std_msgs/Float64) and accepted once TF tilts the first optical frame within --pitch_tolerance of it;
+the camera returns to the first pitch before driving on. In sim, isaac_sim.py pitches the stereo rig; on a real robot,
+an adapter turns the topic into a head tilt command.
 
 Camera optical frames are parameters because Isaac Sim's Nova Carter stamps images with `<cam>_left_optical` while its
 TF tree calls the optical frame `<cam>_left_rgb`.
@@ -52,11 +58,15 @@ ap.add_argument("--height_range", type=float, nargs=2, metavar=("MIN", "MAX"),
 ap.add_argument("--height_steps", type=int, default=1, help="Heights per viewpoint (1: leave the camera where it is)")
 ap.add_argument("--height_topic", default="/camera_height")
 ap.add_argument("--height_tolerance", type=float, default=0.02, help="(m)")
+ap.add_argument("--pitches", type=float, nargs="+", help="Camera pitches per height (deg, positive looks down)")
+ap.add_argument("--pitch_topic", default="/camera_pitch")
+ap.add_argument("--pitch_tolerance", type=float, default=1.0, help="(deg)")
 ap.add_argument("--nav_retries", type=int, default=2, help="Retries of a failed goal, each after clearing the costmaps")
 args = ap.parse_args()
 if args.height_steps > 1 and not args.height_range:
     ap.error("--height_steps > 1 needs --height_range")
 heights = list(np.linspace(*args.height_range, args.height_steps)) if args.height_steps > 1 else [None]
+pitches = args.pitches or [None]
 
 out = Path(args.out)
 (out / "images").mkdir(parents=True, exist_ok=True)
@@ -73,6 +83,7 @@ for ns in args.cameras:
     nav.create_subscription(CameraInfo, f"{ns}/camera_info", lambda m, k=ns + "#info": latest.__setitem__(k, m), 2)
 nav.create_subscription(PointCloud2, args.lidar, lambda m: latest.__setitem__("lidar", m), 2)
 height_pub = nav.create_publisher(Float64, args.height_topic, 1)
+pitch_pub = nav.create_publisher(Float64, args.pitch_topic, 1)
 nav.waitUntilNav2Active()
 
 
@@ -96,7 +107,23 @@ def go_to_height(h):
     return wait_for(lambda: (z := camera_z()) is not None and abs(z - h) <= args.height_tolerance, timeout=30)
 
 
-def capture(i, h):
+def camera_pitch():
+    """Downward tilt (deg) of the first optical frame's viewing axis (+z) in the map frame."""
+    try:
+        q = tf.lookup_transform("map", args.optical_frames[0], rclpy.time.Time()).transform.rotation
+    except Exception:
+        return None
+    forward_z = Rotation.from_quat([q.x, q.y, q.z, q.w]).apply([0, 0, 1])[2]
+    return math.degrees(math.asin(-forward_z))
+
+
+def go_to_pitch(p):
+    """Command a camera pitch and wait until TF shows it; True when reached."""
+    pitch_pub.publish(Float64(data=float(p)))
+    return wait_for(lambda: (q := camera_pitch()) is not None and abs(q - p) <= args.pitch_tolerance, timeout=30)
+
+
+def capture(i, h, p=None):
     """Settle, then save the next stereo pair (posed by TF) and one lidar cloud in the map frame."""
     v = views[i]
     arrived = nav.get_clock().now()
@@ -123,7 +150,7 @@ def capture(i, h):
     cloud = do_transform_cloud(latest["lidar"], tf.lookup_transform("map", latest["lidar"].header.frame_id,
                                                                      latest["lidar"].header.stamp, Duration(seconds=2)))
     clouds.append(read_points_numpy(cloud, field_names=("x", "y", "z"), skip_nans=True))
-    at = f", camera {h:.2f} m" if h is not None else ""
+    at = (f", camera {h:.2f} m" if h is not None else "") + (f", pitch {p:g} deg" if p is not None else "")
     print(f"[{i + 1}/{len(views)}] captured at ({v['x']}, {v['y']}, yaw {v['yaw']}{at})", flush=True)
 
 
@@ -154,7 +181,14 @@ for i, v in enumerate(views):
             print(f"[{i + 1}/{len(views)}] camera height {h:.2f} m not reached, skipped", flush=True)
             skipped.append(i + 1)
             continue
-        capture(i, h)
+        for p in pitches:
+            if p is not None and not go_to_pitch(p):
+                print(f"[{i + 1}/{len(views)}] camera pitch {p:g} deg not reached, skipped", flush=True)
+                skipped.append(i + 1)
+                continue
+            capture(i, h, p)
+        if pitches[0] is not None:
+            go_to_pitch(pitches[0])
     if heights[0] is not None:
         go_to_height(heights[0])   # drive with the camera lowered
 

@@ -100,6 +100,7 @@ FLOOR = """
     }
 """
 FLOOR_MARGIN = 2.0
+LARGE_CAPTURE = 500   # images; above this, train with weaker opacity and scale penalties (see main)
 
 
 def camera_centres(images_txt: Path) -> list[tuple[float, float, float]]:
@@ -177,6 +178,14 @@ def main() -> None:
         if not (data / "sparse" / "0" / "images.txt").exists():
             sys.exit("--floor needs sparse/0/images.txt (a text COLMAP model, as sensors/real2sim writes)")
         floor = camera_centres(data / "sparse" / "0" / "images.txt")
+    # MCMC's opacity and scale penalties (0.01) kill gaussians faster than they are relocated on large captures: with
+    # 1008 images the relocation rate climbed to 92% and held-out PSNR fell to 11 dB; 0.001 trained normally (18 dB).
+    n_images = sum(1 for p in (data / "images").rglob("*") if p.is_file())
+    penalties = []
+    if n_images >= LARGE_CAPTURE:
+        penalties = [f"loss.{k}=0.001" for k in ("lambda_opacity", "lambda_scale")
+                     if not any(o.startswith(f"loss.{k}=") for o in args.overrides)]
+        print(f"{n_images} images: {' '.join(penalties) or 'penalties as given'}")
     name = args.name or (data.parent.name if data.name == "colmap" else data.name)
 
     to_s3 = args.output.startswith("s3://")
@@ -186,7 +195,7 @@ def main() -> None:
     # The venv's activate script exports its bundled CUDA toolkit, which the tracer's JIT compile needs.
     cmd = ["bash", "-c", 'source .venv/bin/activate && exec python train.py "$@"', "train",
            f"--config-name={args.config}", f"path={data}", f"out_dir={out}", f"experiment_name={name}",
-           "export_usd.enabled=true", *args.overrides]
+           "export_usd.enabled=true", *penalties, *args.overrides]
     env = {k: v for k, v in os.environ.items() if k != "DISPLAY"}
     subprocess.run(cmd, cwd=GRUT, env=env, check=True)
 
