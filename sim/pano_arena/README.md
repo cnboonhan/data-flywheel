@@ -5,6 +5,7 @@ IsaacLab-Arena scenes from a single equirectangular panorama: metric depth, inte
 | Step | Script | Writes |
 |---|---|---|
 | 1. Depth and frame | `depth.py` | `depth/` |
+| 2. Objects | `objects.py` | `objects/` |
 
 ## Sample panoramas
 
@@ -38,3 +39,18 @@ Notes:
 - The frame is Arena's: z up, origin on the floor below the camera, +x towards the middle of the panorama.
 - The scale is MoGe's estimate. When you know the camera height, pass `--camera_height <m>`; it rescales everything.
 - `points.ply` (coloured points in the scene frame) opens in any point-cloud viewer, such as MeshLab or Rerun.
+
+## 2. Objects
+
+Find the objects and mark which are interactable (about 5 min per scene; the models, ~20 GB, download on first use).
+
+```bash
+uv run sim/pano_arena/objects.py datasets/pano_arena/office
+```
+
+Check `objects/labels.jpg`: interactable objects are in colour with their label and distance, everything else grey or background. `objects/objects.json` lists every object with its kind, 3D centre and size (scene frame) and mask.
+
+Notes:
+- Interactable = movable or articulated (Qwen3-VL decides, per view; cabinets, drawers, doors and bins are always searched for), at most `--max_size` (2.2 m) across and at least `--min_thickness` (3 cm) thick. `--max_distance` limits the distance from the camera (none by default); each object's distance and centre are recorded for placing its asset.
+- Detections are cached in `objects/detections.json`, so changing the thresholds reruns only segmentation and merging (about 1 min). Pass `--redetect` to run the detection models again.
+- Expect misses and odd labels; inspect `labels.jpg` before the next step.
