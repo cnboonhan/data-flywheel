@@ -6,7 +6,7 @@ Monorepo for data collection, training and evaluating **action models** (system 
 
 [![Data Flywheel architecture](architecture.svg)](https://htmlpreview.github.io/?https://github.com/cnboonhan/data-flywheel/blob/main/architecture.html)
 
-Click the diagram for the interactive version, with links to each component ([source](architecture.html); `architecture.svg` is generated from it by `tools/architecture_svg.py`).
+Click the diagram for the interactive version, with links to each component ([source](architecture.html); `architecture.svg` is generated from it by `tools/architecture_svg.py`, run by the git hooks in `.githooks/`).
 
 ## Folder structure
 
@@ -29,9 +29,10 @@ Click the diagram for the interactive version, with links to each component ([so
    git -c url."https://github.com/".insteadOf=git@github.com: \
        clone --recurse-submodules --jobs 8 https://github.com/cnboonhan/data-flywheel.git
    ```
-3. Set the push URL (port 22 is blocked on the cluster).
+3. Set the push URL (port 22 is blocked on the cluster) and enable the repo's git hooks (they keep `architecture.svg` in step with `architecture.html`).
    ```bash
    git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git
+   git config core.hooksPath .githooks
    ```
 4. Bring up the services: [services/](services/README.md#run).
 5. Get access and an account: [Access](services/README.md#access), [Users](services/README.md#users), [S3 client](services/versitygw/README.md#client-setup).
