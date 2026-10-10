@@ -32,16 +32,27 @@ NVIDIA's Zurich office lounge from [`nvidia/PhysicalAI-Robotics-NuRec`](https://
 
 `train.py <input> <output> [3DGRUT overrides]` runs upstream's `train.py` with `apps/colmap_3dgut_mcmc.yaml` (`--config` to change it) and USD export on, and unzips `images.zip` when there is no `images/`.
 
+### Robot-posed captures: refine the poses first
+
+Refine poses that come from a robot's localisation (as in [`sensors/real2sim`](../../sensors/real2sim/README.md)) against the images before training; a few cm and about a degree of pose error blur a splat more than any training setting.
+
+```bash
+uv run sim/splat/refine_poses.py datasets/real2sim/run1/colmap datasets/real2sim/run1/colmap_refined   # ~5 min for 1000 images
+uv run sim/splat/train.py datasets/real2sim/run1/colmap_refined datasets/real2sim/run1/runs --floor
+```
+
+`refine_poses.py` matches each image with its nearest views (GPU SIFT), triangulates from the input poses and bundle-adjusts poses and points with the lenses fixed, then maps the result back onto the input camera centres, so it stays in the map frame at metric scale. Check its last lines: reprojection error should be well under 1 px median, and it prints how far the poses moved. It runs on x86_64 only (no aarch64 `pycolmap-cuda12` wheels), so run it on the capture machine and upload the refined model.
+
 ### With the S3 gateway
 
 Set up the S3 client ([versitygw](../../services/versitygw/README.md#client-setup)), then use `s3://` prefixes on either side.
 
 ```bash
 uv run sim/splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
-uv run sim/splat/train.py s3://raw/internal_datasets/real2sim/ridgeback_demo/colmap s3://processed/splats/ridgeback_demo --floor
+uv run sim/splat/train.py s3://raw/internal_datasets/real2sim/ridgeback_demo/colmap_refined s3://processed/splats/ridgeback_demo --floor
 ```
 
-An S3 input is mirrored into `datasets/splat/cache/inputs/` (only changed files are fetched); an S3 output is trained in `datasets/splat/cache/runs/` and uploaded to `<output>/<name>/<run>/`. Captures from [`sensors/real2sim`](../../sensors/real2sim/README.md) go to `s3://raw/internal_datasets/real2sim/<name>/colmap/`; `download-datasets-hf` fetches zh_lounge into `s3://raw/open_datasets/nurec-zh_lounge/`.
+An S3 input is mirrored into `datasets/splat/cache/inputs/` (only changed files are fetched); an S3 output is trained in `datasets/splat/cache/runs/` and uploaded to `<output>/<name>/<run>/`. Captures from [`sensors/real2sim`](../../sensors/real2sim/README.md) go to `s3://raw/internal_datasets/real2sim/<name>/colmap/`, refined ones next to them in `colmap_refined/` (sync its `sparse/` and `images/`, not `work/`); `download-datasets-hf` fetches zh_lounge into `s3://raw/open_datasets/nurec-zh_lounge/`.
 
 ## On the Slurm cluster
 
@@ -50,7 +61,7 @@ Source `slurm.env` ([slurm/](../../services/slurm/README.md)), then submit `trai
 ```bash
 cd $STATE_DIR/slurm-logs
 sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/splat/train.sbatch \
-  s3://raw/internal_datasets/real2sim/<scene>/colmap s3://processed/splats/<scene> --name <scene> --floor
+  s3://raw/internal_datasets/real2sim/<scene>/colmap_refined s3://processed/splats/<scene> --name <scene> --floor
 ```
 
 ## Output
@@ -67,7 +78,7 @@ As an Arena background: [Splat backgrounds](../isaaclab_arena/README.md#splat-ba
 
 ## Notes
 
-- **What to expect:** zh_lounge at 30k iterations scores ~27 dB PSNR / 0.92 SSIM held out, in ~19 min on a GB300 (~31 min on an RTX 5090 Laptop). At 7k iterations expect ~25 dB in ~5 min, plus a few minutes for the tracer's JIT compile on the first run on a machine.
+- **What to expect:** zh_lounge at 30k iterations scores ~27 dB PSNR / 0.92 SSIM held out, in ~19 min on a GB300 (~31 min on an RTX 5090 Laptop). At 7k iterations expect ~25 dB in ~5 min, plus a few minutes for the tracer's JIT compile on the first run on a machine. The real2sim ridgeback_demo capture (1008 images) at 7k iterations: 17.4 dB with a pinhole lens and localisation poses, 18.9 dB with the right lens, 33.1 dB / 0.96 SSIM with refined poses.
 - **Keep the default settings.** 60k iterations, weaker penalties, PPISP and 2-3M gaussians did not improve held-out quality on zh_lounge; more gaussians make renders slightly sharper but worse on new views, and on a large capture most of the extra gaussians go to the background shell beyond the crop. Improve the capture instead (coverage, lens model, poses).
 - **Large captures:** with 500+ images `train.py` lowers MCMC's opacity and scale penalties to 0.001, because the default 0.01 lets a 1000-image capture collapse. Override with `loss.lambda_opacity=` / `loss.lambda_scale=`.
 - **Gaussian cap:** `strategy.add.max_n_gaussians` (1M) only limits growth; a denser starting point cloud (e.g. real2sim's lidar points) keeps its size. On a 24 GB GPU, stay at or below ~2M.

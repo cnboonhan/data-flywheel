@@ -186,7 +186,7 @@ def main() -> None:
         penalties = [f"loss.{k}=0.001" for k in ("lambda_opacity", "lambda_scale")
                      if not any(o.startswith(f"loss.{k}=") for o in args.overrides)]
         print(f"{n_images} images: {' '.join(penalties) or 'penalties as given'}")
-    name = args.name or (data.parent.name if data.name == "colmap" else data.name)
+    name = args.name or (data.parent.name if data.name in ("colmap", "colmap_refined") else data.name)
 
     to_s3 = args.output.startswith("s3://")
     out = args.cache / "runs" / "/".join(split_s3(args.output)) if to_s3 else Path(args.output).resolve()
