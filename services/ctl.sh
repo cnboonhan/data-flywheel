@@ -4,6 +4,7 @@
 #   services/ctl.sh up        start (or update) the stack
 #   services/ctl.sh down      stop it
 #   services/ctl.sh setup     (re)build the Slurm-side environments (Gitea workflow setup-envs)
+#   services/ctl.sh s3-policies  re-apply the S3 bucket policies (after editing versitygw/upload-only.txt)
 #   services/ctl.sh ps|logs|pull|config|<any compose args>
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
@@ -22,7 +23,7 @@ fi
 set -a; source .env; set +a
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 
@@ -237,29 +238,60 @@ bootstrap_grafana() {
     || echo "warning: could not set the Grafana admin email (SSO login as $ADMIN_USER may fail)" >&2
 }
 
-# S3 access: every gateway user (role `user`, from `user add`) reads and writes the shared buckets below; everything
-# else (mlflow, triton) has no policy, so only the root key (ADMIN_USER) reaches it. Rewritten from the user list on
-# every `up` and `user add`.
+# S3 access: every gateway user (role `user`, from `user add`) reads and writes the shared buckets below, except the
+# upload-only users in versitygw/upload-only.txt, who may only upload into their prefix. Everything else (mlflow,
+# triton) has no policy, so only the root key (ADMIN_USER) reaches it. Rewritten on every `up`, `user add` and
+# `s3-policies`.
 S3_SHARED_BUCKETS="raw processed"
 apply_s3_policies() {
   local users
   users=$("${compose[@]}" exec -T versitygw versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 list-users \
           | awk 'NR > 2 && $2 == "user" {print $1}' | paste -sd,)
-  "${compose[@]}" exec -T -e USERS="$users" -e BUCKETS="$S3_SHARED_BUCKETS" -e AWS_ACCESS_KEY_ID="$ADMIN_USER" \
-    -e AWS_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" -e AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}" mlflow python -c '
-import boto3, json, os
+  "${compose[@]}" exec -T -e USERS="$users" -e BUCKETS="$S3_SHARED_BUCKETS" -e UPLOAD_ONLY="$(grep -v '^\s*#' versitygw/upload-only.txt 2>/dev/null)" \
+    -e AWS_ACCESS_KEY_ID="$ADMIN_USER" -e AWS_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" -e AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}" mlflow python -c '
+import boto3, json, os, sys
 s3 = boto3.client("s3", endpoint_url="http://versitygw:7070")
-users = [u for u in os.environ["USERS"].split(",") if u]
-for b in os.environ["BUCKETS"].split():
-    if not users:
+upload = [l.split() for l in os.environ["UPLOAD_ONLY"].splitlines() if l.strip()]   # [user, bucket/prefix]
+restricted = {u for u, _ in upload}
+users = [u for u in os.environ["USERS"].split(",") if u and u not in restricted]
+buckets = set(os.environ["BUCKETS"].split()) | {t.split("/", 1)[0] for _, t in upload}
+for b in sorted(buckets):
+    st = []
+    if users and b in os.environ["BUCKETS"].split():
+        st.append({"Effect": "Allow", "Principal": {"AWS": users},
+                   "Action": ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetObject", "s3:PutObject", "s3:DeleteObject",
+                              "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+                   "Resource": [f"arn:aws:s3:::{b}", f"arn:aws:s3:::{b}/*"]})
+    for u, t in upload:
+        tb, prefix = (t.split("/", 1) + [""])[:2]
+        if tb != b:
+            continue
+        prefix = prefix.strip("/")
+        st.append({"Effect": "Allow", "Principal": {"AWS": [u]},
+                   "Action": ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+                   "Resource": [f"arn:aws:s3:::{b}/{prefix}/*"]})
+        st.append({"Effect": "Allow", "Principal": {"AWS": [u]}, "Action": ["s3:ListBucket"], "Resource": [f"arn:aws:s3:::{b}"],
+                   "Condition": {"StringLike": {"s3:prefix": [prefix, f"{prefix}/*"]}}})
+    if st:
+        s3.put_bucket_policy(Bucket=b, Policy=json.dumps({"Version": "2012-10-17", "Statement": st}))
+    else:
         s3.delete_bucket_policy(Bucket=b)
-        continue
-    s3.put_bucket_policy(Bucket=b, Policy=json.dumps({"Version": "2012-10-17", "Statement": [{
-        "Effect": "Allow", "Principal": {"AWS": users},
-        "Action": ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetObject", "s3:PutObject", "s3:DeleteObject",
-                   "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
-        "Resource": [f"arn:aws:s3:::{b}", f"arn:aws:s3:::{b}/*"]}]}))
-print("s3:", len(users), "users read/write", os.environ["BUCKETS"])'
+print("s3:", len(users), "users read/write", os.environ["BUCKETS"] + ";", len(upload), "upload-only", file=sys.stderr)
+for b in sorted(x["Name"] for x in s3.list_buckets()["Buckets"]):   # what the gateway now holds, for the local copy
+    try:
+        print(b, json.dumps(json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])))
+    except s3.exceptions.ClientError:
+        print(b, "none")' | apply_s3_policies_save
+}
+
+# Keep a copy of every bucket's policy in versitygw/policies/<bucket>.json (gitignored); none = no policy.
+apply_s3_policies_save() {
+  local dir=versitygw/policies b p
+  mkdir -p "$dir" && rm -f "$dir"/*.json
+  while read -r b p; do
+    [[ $p == none ]] || python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]), indent=2))' "$p" > "$dir/$b.json"
+  done
+  echo "s3: policies saved in services/$dir/"
 }
 
 user_add() {
@@ -306,7 +338,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun versitygw/buckets/triton/models; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone keycloak/db keycloak/import versitygw/buckets/processed/rerun versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
     mkdir -p "$STATE_DIR/$d"
   done
   # Keycloak imports the realm (clients, groups, the admin user) on first start.
@@ -336,6 +368,11 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   apply_s3_policies
   "${compose[@]}" up -d "${@:2}"
   setup_envs
+  exit 0
+fi
+
+if [[ $1 == s3-policies ]]; then
+  apply_s3_policies
   exit 0
 fi
 

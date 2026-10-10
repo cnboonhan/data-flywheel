@@ -7,3 +7,5 @@ __pycache__/
 
 # Store stack secrets (see services/.env.example).
 services/.env
+# Copies of the S3 bucket policies ctl.sh applied (name the users; regenerated on every apply).
+services/versitygw/policies/

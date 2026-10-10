@@ -1,0 +1,3 @@
+# Upload-only S3 users: <user> <bucket>/<prefix>. The user may upload into the prefix and list it (so `aws s3 sync`
+# works), nothing else: no reads, no deletes, no other bucket. Applied by `ctl.sh up`, `user add` and `s3-policies`.
+mistral_galaxea_1 raw/internal_datasets/h2rc/mistral
