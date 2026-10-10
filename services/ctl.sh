@@ -98,7 +98,7 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,adapter,clean,validate,mix,serve}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
+  for f in gitea/{setup,ingest,adapter,clean,mix,serve}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in

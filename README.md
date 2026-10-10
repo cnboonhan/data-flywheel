@@ -69,9 +69,9 @@ The diagram reads left to right: data is built, stored raw, processed into train
 
 | Box | Here |
 |---|---|
-| Data Cleaning, Data Validation | stage folders [clean/](services/gitea/clean/README.md), [validate/](services/gitea/validate/README.md); no workflows yet |
+| Data Cleaning | stage folder [clean/](services/gitea/clean/README.md); no workflows yet |
+| Data Conversion | adapter workflows write `s3://processed/xpolicylab/` in XPolicyLab's format: [adapter/](services/gitea/adapter/README.md) |
 | Data Mixing | named mixes at training time (`train.sbatch --mix`, recorded with a data fingerprint); [mix/](services/gitea/mix/README.md) has no workflows yet |
-| (conversion) | adapter workflows write `s3://processed/xpolicylab/` in XPolicyLab's format: [adapter/](services/gitea/adapter/README.md) |
 
 **Architecture Experiments:** every model trained on one robot and mix lands in one MLflow experiment, `train/<embodiment>/<mix>`, for side-by-side comparison.
 

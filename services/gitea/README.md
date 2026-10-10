@@ -6,9 +6,9 @@ Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives
 |---|---|
 | [setup/](setup/README.md) | environments the Slurm jobs need (dispatched by `ctl.sh up`) |
 | [ingest/](ingest/README.md) | Upload and Sync: Hugging Face downloads, FiftyOne mirror of `raw` |
-| [adapter/](adapter/README.md) | conversion into the training format (`processed/xpolicylab/`) |
+| [adapter/](adapter/README.md) | Data Conversion: raw datasets into the training format (`processed/xpolicylab/`) |
 | [serve/](serve/README.md) | MLflow registry → Triton |
-| [clean/](clean/README.md), [validate/](validate/README.md), [mix/](mix/README.md) | Data Cleaning, Validation, Mixing (none yet) |
+| [clean/](clean/README.md), [mix/](mix/README.md) | Data Cleaning, Mixing (none yet) |
 
 ## Run a workflow
 
