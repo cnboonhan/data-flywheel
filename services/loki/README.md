@@ -1,6 +1,6 @@
 # loki
 
-Log store (config `loki.yml`, data in `$STATE_DIR/loki`). No UI of its own: read logs in [Grafana](../grafana/README.md). Nothing ships logs automatically yet.
+Log store (config `loki.yml`). Logs (chunks and index) are kept 30 days in the S3 gateway's `logging` bucket, which only the root key can read ([versitygw/](../versitygw/README.md)); the write-ahead log and compactor files stay in `$STATE_DIR/loki`. No UI of its own: read logs in [Grafana](../grafana/README.md). Nothing ships logs automatically yet.
 
 | Route | Access |
 |---|---|

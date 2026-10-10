@@ -1,4 +1,5 @@
-# Single-binary Loki with filesystem storage under /loki.
+# Single-binary Loki. Chunks and index are stored in the S3 gateway's `logging` bucket (its directory, mounted at
+# /logging; root key only); the WAL and compactor working files stay under /loki.
 auth_enabled: false
 
 server:
@@ -10,7 +11,7 @@ common:
   path_prefix: /loki
   storage:
     filesystem:
-      chunks_directory: /loki/chunks
+      chunks_directory: /logging/chunks
       rules_directory: /loki/rules
   replication_factor: 1
   ring:

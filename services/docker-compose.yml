@@ -104,6 +104,7 @@ services:
     volumes:
       - ./loki/loki.yml:/etc/loki/loki.yml:ro
       - ${STATE_DIR}/loki:/loki
+      - ${STATE_DIR}/versitygw/buckets/logging:/logging   # the logging bucket: chunks and index
 
   grafana:
     <<: *common
