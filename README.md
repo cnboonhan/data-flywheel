@@ -8,79 +8,88 @@ Monorepo for data collection, training and evaluating **action models** (system 
 
 Click the diagram for the interactive version, with links to each component ([source](architecture.html); `architecture.svg` is generated from it by `tools/architecture_svg.py`).
 
-## Clone
-
-```bash
-git -c url."https://github.com/".insteadOf=git@github.com: \
-    clone --recurse-submodules --jobs 8 https://github.com/cnboonhan/data-flywheel.git
-```
-
-- IsaacLab-Arena pins two of its submodules (IsaacLab, Isaac-GR00T) with SSH URLs. The `-c` option fetches them over HTTPS, so no GitHub SSH key is needed.
-- Install [Git LFS](https://git-lfs.com/) (`git lfs install`) first. Several submodules store assets in LFS; without it they check out as pointer files.
-- The full recursive clone is several GB. To fetch one benchmark only, clone without `--recurse-submodules`, then run `git submodule update --init --recursive <path>`, e.g. `eval/system1/RoboDojo`. Keep the same `-c` option when that path is `eval/system2/IsaacLab-Arena`.
+## Folder structure
 
 | Folder | Contents |
 |---|---|
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
-| [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
-| [`services/`](services/README.md) | Store stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Slurm job scripts |
+| [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) and the real2sim capture robot |
+| [`services/`](services/README.md) | Store stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
 | [`sim/`](sim/README.md) | Simulation tooling: IsaacLab-Arena environment generation, Gaussian splats of real scenes |
+| `tools/` | Repo maintenance scripts |
+
+## Setup
+
+1. **Install [Git LFS](https://git-lfs.com/)** and run `git lfs install`. Several submodules store assets in LFS and otherwise check out as pointer files.
+2. **Clone with submodules.** IsaacLab-Arena pins two of its submodules with SSH URLs; the `-c` option fetches them over HTTPS, so no GitHub SSH key is needed. The full clone is several GB; to fetch one benchmark only, clone without `--recurse-submodules` and run `git submodule update --init --recursive <path>` (same `-c` option for `eval/system2/IsaacLab-Arena`).
+   ```bash
+   git -c url."https://github.com/".insteadOf=git@github.com: \
+       clone --recurse-submodules --jobs 8 https://github.com/cnboonhan/data-flywheel.git
+   ```
+3. **Set the push URL** if you will push from the cluster, where port 22 is blocked: `git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`.
+4. **Bring up the services.** Copy `services/.env.example` to `services/.env`, fill in the secrets, and run `services/ctl.sh up`. It provisions every service and dispatches `setup-envs`, which builds the Slurm-side environments and downloads the RoboDojo data: [services/](services/README.md#run) (fresh install included).
+5. **Get access.** Trust the stack's CA and, through a login node, forward its port: [Access](services/README.md#access). Create your account (Keycloak login, MLflow token, S3 keys) with `services/ctl.sh user add <name> <email>` ([Users](services/README.md#users)); set up the S3 client: [versitygw/](services/versitygw/README.md#client-setup).
+6. **Install the simulation tooling you need**, each in its own venv: splat training `bash sim/splat/install.sh` ([sim/splat/](sim/splat/README.md#install-once)), IsaacLab-Arena `bash eval/system2/setup-arena.sh` ([eval/system2/](eval/system2/README.md#install)), the system 1 benchmarks per [eval/system1/](eval/system1/README.md).
+7. **For Slurm jobs,** source the credentials and pick a partition (the cluster has no default): `set -a; . $STATE_DIR/slurm.env; set +a; export SBATCH_PARTITION=<partition>` ([slurm/](services/slurm/README.md)).
 
 ## The flywheel, end to end
 
-The path one dataset takes through the architecture: collect → look → adapt → train → evaluate → serve. Each step links to the README that holds its details.
+The diagram reads left to right: data is built, stored raw, processed into training sets, trained on and evaluated, and evaluation feeds back into what to build next. Below, each box of the diagram and what implements it here. Gitea Actions jobs on the service node do the data work; training and evaluation are Slurm GPU jobs; all state is on `/tier1`, so containers, jobs and your shell see the same bytes.
 
-```
- Collect                 Look                       Adapt                      Train                  Evaluate             Serve
- ───────                 ────                       ─────                      ─────                  ────────             ─────
- public datasets,   ──▶  s3://raw mirrored     ──▶  s3://processed/       ──▶  Slurm GPU job     ──▶  Slurm GPU job   ──▶  Triton, from the
- UMI / teleop /          into FiftyOne,             xpolicylab/<bench>/        (sbatch by hand),      RoboDojo sim,        MLflow registry
- robot bags              bags open in Rerun         (adapter workflows)        MLflow runs, registry  scores on the run    (alias `triton`)
- (s3://raw)
-      └────────────────────────── feedback: what to collect or reprocess next ◀──────────────────────────────┘
-```
+### Build
 
-| Stage | Runs as | Started by |
-|---|---|---|
-| Collect, look, adapt, serve | Gitea Actions jobs on the service node ([gitea/](services/gitea/README.md)) | dispatch, or a schedule |
-| Environments | Gitea workflow `setup-envs` ([setup/](services/gitea/setup/README.md)) | `ctl.sh up` when stale; `ctl.sh setup` |
-| Train, evaluate | Slurm GPU jobs ([slurm/](services/slurm/README.md)) | you, `sbatch` from a login node |
+| Box | Here |
+|---|---|
+| Egocentric UMI | YUBI glove and gripper rigs: [sensors/](sensors/README.md) (`yubi-hw`, `yubi-sw`) |
+| Robot Teleoperation | Galaxea R1 data (public so far) |
+| Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
+| Sim Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/splat/](sim/splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md) |
+| Physical Scenes | not built yet |
+| Inference Compute | Triton on the service node's GPUs: [triton/](services/triton/README.md) |
 
-All state is on `/tier1`, so containers, Slurm jobs and your shell see the same bytes.
+**Upload and Sync:** collections go to `s3://raw/<open|internal>_datasets/<dataset>/` with `aws s3 sync` ([versitygw/](services/versitygw/README.md)) or the download workflows.
 
-### 0. Before you start
+### Store (Raw)
 
-- **Install or update the stack:** [services/README.md](services/README.md#run) (fresh install included).
-- **Reach it and log in:** [Access](services/README.md#access) and [Users](services/README.md#users); one Keycloak login covers every web UI.
-- **S3 from your shell:** [versitygw/](services/versitygw/README.md#client-setup). Gateway users read and write `raw` and `processed`.
-- **Run a workflow:** Gitea `admin/pipelines` → Actions, or the API call in [gitea/](services/gitea/README.md). The repo's copies are what runs: push changes to `$STATE_DIR/pipelines`.
-- **Slurm jobs:** source `$STATE_DIR/slurm.env` and set `SBATCH_PARTITION` ([slurm/](services/slurm/README.md)).
+| Box | Here |
+|---|---|
+| Connectivity | access through Caddy on one port, SSH-tunnelled from a login node ([Access](services/README.md#access)) |
+| Data Storage | Versity S3 gateway, buckets `raw`, `processed`, `mlflow`, `triton` ([versitygw/](services/versitygw/README.md)); `raw` browsable in FiftyOne ([fiftyone/](services/fiftyone/README.md)) and Rerun ([rerun/](services/rerun/README.md)) |
+| Logging | Loki and Grafana ([loki/](services/loki/README.md), [grafana/](services/grafana/README.md)); Prometheus not yet |
+| Model Registry | MLflow: runs, registered models, checkpoints in `s3://mlflow` ([mlflow/](services/mlflow/README.md)) |
 
-### 1. Collect: data lands in `raw`
+### Processed
 
-A dataset is a folder under `s3://raw/open_datasets/<dataset>/` (public) or `s3://raw/internal_datasets/<dataset>/` (ours), in whatever format it was collected in. Upload with `aws s3 sync` ([versitygw/](services/versitygw/README.md)), `mv` on the node for data already on `/tier1`, or the `download-datasets-hf` / `download-models-hf` workflows ([ingest/](services/gitea/ingest/README.md)).
+| Box | Here |
+|---|---|
+| Data Cleaning, Data Validation | stage folders [clean/](services/gitea/clean/README.md), [validate/](services/gitea/validate/README.md); no workflows yet |
+| Data Mixing | named mixes at training time (`train.sbatch --mix`, recorded with a data fingerprint); [mix/](services/gitea/mix/README.md) has no workflows yet |
+| (conversion) | adapter workflows write `s3://processed/xpolicylab/` in XPolicyLab's format: [adapter/](services/gitea/adapter/README.md) |
 
-### 2. Look: `raw` in FiftyOne and Rerun
+**Architecture Experiments:** every model trained on one robot and mix lands in one MLflow experiment, `train/<embodiment>/<mix>`, for side-by-side comparison.
 
-`sync-fiftyone-raw` mirrors `raw` into FiftyOne every 30 minutes without writing data; bags open in Rerun. Layouts, checks and results: [fiftyone/](services/fiftyone/README.md), [rerun/](services/rerun/README.md).
+### Train
 
-### 3. Adapt: `raw` → `processed/xpolicylab/`
+| Box | Here |
+|---|---|
+| Model Training and Pre-Evals | `train.sbatch <model> <embodiment> <data>`, per-model recipes and per-robot configs, tracked in MLflow: [slurm/](services/slurm/README.md) |
+| Inference / Model Optimizations | not built yet |
+| Distillation | not built yet |
 
-One adapter workflow per source writes XPolicyLab's xspark HDF5, incrementally: [adapter/](services/gitea/adapter/README.md).
+**Deploy:** each training run registers a model version (`<model>.<embodiment>.<mix>`). Setting its MLflow alias `triton` serves it on Inference Compute: [triton/](services/triton/README.md).
 
-### 4. Train under Slurm, tracked in MLflow
+### Evaluate
 
-`train.sbatch <model> <embodiment> <bench>/<task>[,...]`. Per-model and per-embodiment layout, MLflow naming (experiment `train/<embodiment>/<mix>`, model `<model>.<embodiment>.<mix>`) and results: [slurm/](services/slurm/README.md). Runs and models are browsed in MLflow ([mlflow/](services/mlflow/README.md)).
+| Box | Here |
+|---|---|
+| Sim Evals | `evaluate.sbatch` runs RoboDojo through XPolicyLab ([slurm/](services/slurm/README.md)); RoboTwin and IsaacLab-Arena in [eval/](eval/README.md) |
+| Physical Evals | not built yet |
 
-### 5. Evaluate and feed back
+**Eval Logs:** scores go onto the training run and its model version in MLflow, so the registry answers "how good is version N".
 
-`evaluate.sbatch` runs XPolicyLab's RoboDojo evaluation and logs `eval/success_rate` and `eval/score` on the training run and its model version, so the registry answers "how good is version N". GB300 specifics and results: [slurm/](services/slurm/README.md#environment). Data without a simulator (Galaxea r1lite) is evaluated physically.
+**Feedback Loop:** by hand for now: the scores and FiftyOne views decide what to collect or reprocess next.
 
-### 6. Serve: registry → Triton
-
-Set the MLflow alias `triton` on a model version; `sync-triton` loads it within 10 minutes and tags the version `triton.status`. Remove the alias to unload: [triton/](services/triton/README.md).
-
-### The same loop for other data
+### Data formats through the loop
 
 | Raw format | Collect | Look | Adapt and train |
 |---|---|---|---|
@@ -90,13 +99,3 @@ Set the MLflow alias `triton` on a model version; `sync-triton` loads it within 
 | ROS 2 mcap (h2rc) | bag directories into `raw` | bags in FiftyOne and Rerun | no recorded actions in the bags; would need derived targets |
 | COLMAP captures (real2sim) | `aws s3 sync` into `raw/internal_datasets/real2sim/` | photos with poses | splats: [sim/splat/](sim/splat/README.md) |
 | anything else | into `raw` | add a layout to `sync-fiftyone-raw` | one `<repo>_to_xpolicylab` adapter |
-
-### Where things are
-
-| Need | Where |
-|---|---|
-| Stack operations, users, state on disk | [services/README.md](services/README.md) |
-| Pipelines code | Gitea `admin/pipelines`, seeded from `services/gitea/`; editing checkout `$STATE_DIR/pipelines` |
-| Slurm jobs, envs, logs | [services/slurm/](services/slurm/README.md) |
-| What Triton serves | [services/triton/](services/triton/README.md#tracking) |
-| Secrets | `services/.env` (gitignored); jobs read `$STATE_DIR/slurm.env` |
