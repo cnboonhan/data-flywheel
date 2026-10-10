@@ -10,15 +10,14 @@ Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule. Not
 
 ## Generate environments
 
+Start the proxy if you need `resolve` or the GUI ([CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), a CLI-authenticated model over the OpenAI API; `build` only needs Isaac Sim), then run `envgen.sh`. Specs go to [`eval/system2/environments/`](../../eval/system2/environments/) unless `--out_dir` is given.
+
 ```bash
+export OPENAI_API_KEY=<proxy client key>
 bash sim/isaaclab_arena/envgen.sh cli --mode resolve --prompt "..."   # write a YAML spec
 bash sim/isaaclab_arena/envgen.sh cli --mode build --env_spec eval/system2/environments/<env>.yaml
 bash sim/isaaclab_arena/envgen.sh gui                                  # live editor on http://localhost:8501
 ```
-
-Specs go to [`eval/system2/environments/`](../../eval/system2/environments/) unless `--out_dir` is given.
-
-Environment variables:
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -26,11 +25,9 @@ Environment variables:
 | `ARENA_PROXY_BASE_URL` | Proxy endpoint | `http://127.0.0.1:8317/v1` |
 | `ARENA_PROXY_MODEL` | Model name the proxy serves | `claude-sonnet-5-5` |
 
-The proxy is [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), which exposes a CLI-authenticated model over the OpenAI API. `build` mode only needs Isaac Sim (it instantiates an existing spec); `resolve` and the GUI need the proxy running.
-
 ## Splat backgrounds
 
-A [`sim/splat`](../splat/README.md) run trained with `--floor` (e.g. from a [`sensors/real2sim`](../../sensors/real2sim/README.md) capture) can be the background of an Arena environment:
+Point `ARENA_SPLAT_SCENE` at a [`sim/splat`](../splat/README.md) run's `scene.usda` (trained with `--floor`, e.g. from a [`sensors/real2sim`](../../sensors/real2sim/README.md) capture), then build or resolve a spec that uses the `splat_scene` background.
 
 ```bash
 export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda
@@ -38,7 +35,10 @@ bash sim/isaaclab_arena/envgen.sh cli --mode build --env_spec eval/system2/envir
 bash sim/isaaclab_arena/envgen.sh cli --mode resolve --prompt "Franka at a table in the splat_scene warehouse ..."
 ```
 
-The hook registers it as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted in x/y so the middle of the capture area is Arena's origin, where the robot spawns. The splat only renders, and its baked lighting doesn't respond to the sim. The only collision is the floor, so anchor on it with an object reference (`parent_id: <background id>`, `prim_path: floor`), then place real assets such as a table `on` it and objects on the table. The floor covers the capture cameras' footprint plus 2 m; an object placed beyond it fails the `on` check and falls. [`franka_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml) pins the table in front of the robot with `at_position`.
+Notes:
+- Registered as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted in x/y so the middle of the capture area is Arena's origin, where the robot spawns.
+- The splat only renders; its baked lighting doesn't respond to the sim.
+- The only collision is the floor (the capture cameras' footprint plus 2 m). Anchor on it with an object reference (`parent_id: <background id>`, `prim_path: floor`), place a table `on` it and objects on the table; an object beyond the floor fails the `on` check and falls. [`franka_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml) pins the table in front of the robot with `at_position`.
 
 ## Mobile manipulator
 
@@ -46,19 +46,15 @@ The hook registers it as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted i
 
 ## Record a demo
 
+Run `envgen.sh record` on a spec; it writes `video_cam/clip_0000.mp4` (fixed camera at `--eye`, looking at `--target`) and `wrist_cam/clip_0000.mp4` at 15 fps.
+
 ```bash
 export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda
 bash sim/isaaclab_arena/envgen.sh record --env_spec eval/system2/environments/ridgeback_mug_to_bowl_splat_scene.yaml \
   --video_dir datasets/videos/ridgeback_demo --num_steps 460 --eye -1.7 0.8 1.6 --target 3.0 -0.1 0.6
 ```
 
-This writes `video_cam/clip_0000.mp4` (a fixed camera at `--eye`, looking at `--target`) and `wrist_cam/clip_0000.mp4` at 15 fps: the
-Ridgeback drives 1.05 m to the table (`--stop_x`), the arm hovers over and dips to the mug, moves over the bowl and
-dips, circles over the table, and the base backs off and turns. It's a scripted sweep for checking a scene, not a
-policy, so nothing is grasped; `franka_ik` specs skip the driving. `record.py` writes the frames itself because Isaac
-Lab's `VideoRecorder` (moviepy 1.0.3) duplicates and drops a frame every ~7. In a splat scene, the floor shimmers in
-the wrist view where it's seen from angles the capture didn't cover.
-
-Camera coordinates are Arena's, whose origin is the centre of the capture area, so a framing only fits one capture
-region. The one above, for `sensors/real2sim`'s `--region -9 -4 -3 2`, looks past the table at a forklift and the
-yellow walls; keep the camera inside the captured area, as splat floaters crowd its edges.
+Notes:
+- A scripted sweep for checking a scene, not a policy: the Ridgeback drives 1.05 m to the table (`--stop_x`), the arm dips to the mug and the bowl, circles over the table, and the base backs off. Nothing is grasped; `franka_ik` specs skip the driving.
+- `record.py` writes frames itself because Isaac Lab's `VideoRecorder` (moviepy 1.0.3) duplicates and drops a frame every ~7.
+- Camera coordinates are Arena's (origin at the capture area's centre), so a framing fits one capture region. The one above is for `sensors/real2sim`'s `--region -9 -4 -3 2`. Keep the camera inside the captured area: floaters crowd its edges, and the floor shimmers where the capture didn't cover the viewing angle.

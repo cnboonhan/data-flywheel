@@ -1,5 +1,5 @@
 # serve
 
-Model serving stage. `sync-triton.yml` keeps Triton in step with the MLflow registry: every registered model whose alias
-`triton` names a version is packaged and loaded, models without it are unloaded. Every 10 minutes and on demand. See
-[../../triton/README.md](../../triton/README.md).
+Model serving stage. `sync-triton` (every 10 min, or dispatch it) loads every registered model whose MLflow alias `triton` names a version into Triton, and unloads the rest.
+
+1. Serve or unload a model: [triton/](../../triton/README.md#serve-a-model).

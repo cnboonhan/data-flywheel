@@ -1,6 +1,6 @@
 # eval
 
-Evaluation benchmarks, all git submodules:
+Evaluation benchmarks, all git submodules. Fetch them:
 
 ```bash
 git submodule update --init --recursive
@@ -15,6 +15,6 @@ git submodule update --init --recursive
 - [`system1/`](system1/README.md): action models (VLA policies)
 - [`system2/`](system2/README.md): agentic models
 
-**Gotchas**
+**Notes**
 - **Driver:** NVIDIA 580-open is required, because Isaac Sim 5.1 crashes on 595. It's held with `apt-mark hold`.
 - **Upstream code:** don't commit inside the submodules. Changes belong on a fork; this repo only records each submodule's commit.

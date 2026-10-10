@@ -54,6 +54,7 @@ XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_
 ## Docs
 
 - **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/splat/README.md`, ...). Overviews (the top-level README and its flywheel walkthrough, `services/README.md`) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
+- **Instructions are an action plus how.** Write each step as "Do X." followed by an executable code block or a link to the README that covers it. Keep explanations to the one clause a reader needs to act (why a step exists, what breaks otherwise); move background into a short notes list after the steps, or drop it. Tables for reference data, not for prose.
 
 ## Git
 

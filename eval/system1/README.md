@@ -1,6 +1,6 @@
 # eval/system1
 
-VLA benchmarks for action models (system 1). Both are git submodules; see each one's upstream README for installation.
+VLA benchmarks for action models (system 1), both git submodules. Install each per its upstream README; on the cluster, `setup-envs` builds the RoboDojo env ([gitea/setup/](../../services/gitea/setup/README.md)) and Slurm jobs run it ([slurm/](../../services/slurm/README.md)).
 
 | Benchmark | Path | Simulator | Env |
 |---|---|---|---|
@@ -9,5 +9,8 @@ VLA benchmarks for action models (system 1). Both are git submodules; see each o
 
 Policies plug in through [XPolicyLab](https://github.com/XPolicyLab/XPolicyLab) at `XPolicyLab/policy/<POLICY>/` inside each benchmark.
 
-**Gotchas**
-- **Submodule versions:** the RoboDojo and RoboTwin installers move XPolicyLab to its latest commit. Run `git submodule update` inside the benchmark afterwards to go back to the pinned version.
+**Notes**
+- **Submodule versions:** the RoboDojo and RoboTwin installers move XPolicyLab to its latest commit. Go back to the pinned version afterwards:
+  ```bash
+  git -C eval/system1/RoboDojo submodule update   # or eval/system1/RoboTwin
+  ```

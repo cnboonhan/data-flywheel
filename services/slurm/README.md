@@ -1,6 +1,6 @@
 # slurm
 
-GPU work (training, evaluation) runs as Slurm jobs, submitted by hand from a login node. Gitea doesn't submit Slurm jobs. The jobs name no partition and the cluster has no default, so pick one when submitting: `export SBATCH_PARTITION=<partition>` (as below) or `sbatch -p <partition>`.
+GPU work (training, evaluation) as Slurm jobs, submitted by hand from a login node; Gitea doesn't submit them.
 
 ```
 slurm/
@@ -10,16 +10,26 @@ slurm/
   lib/                            shared: paths and env setup, MLflow naming, XPolicyLab hooks, RoboDojo shim
 ```
 
-A new model is a new `models/<name>/` folder (plus its env, built by Gitea `setup-envs`); a new robot is a new `embodiments/<name>.yaml` (plus an adapter writing its data). Neither touches the other.
+## Submit jobs
 
-```bash
-set -a; . /tier1/htx_boonhan/services/slurm.env; set +a; export SBATCH_PARTITION=<partition>
-cd /tier1/htx_boonhan/services/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
-sbatch --export=ALL $S/train.sbatch act arx_x5 RoboDojo/stack_bowls -- --num_epochs 30 --save_freq 30
-sbatch --export=ALL $S/train.sbatch mlp arx_x5 'RoboDojo/*,galaxeaOpenWorldDataset/*' --mix arx_x5-all -- --epochs 200
-sbatch --export=ALL $S/evaluate.sbatch act arx_x5 stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 joint 0 5
-squeue -u $USER; tail -f <job>-<id>.log; scancel <id>
-```
+1. Load the credentials and pick a partition (the jobs name none and the cluster has no default).
+   ```bash
+   set -a; . /tier1/htx_boonhan/services/slurm.env; set +a; export SBATCH_PARTITION=<partition>
+   cd /tier1/htx_boonhan/services/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
+   ```
+2. Train.
+   ```bash
+   sbatch --export=ALL $S/train.sbatch act arx_x5 RoboDojo/stack_bowls -- --num_epochs 30 --save_freq 30
+   sbatch --export=ALL $S/train.sbatch mlp arx_x5 'RoboDojo/*,galaxeaOpenWorldDataset/*' --mix arx_x5-all -- --epochs 200
+   ```
+3. Evaluate.
+   ```bash
+   sbatch --export=ALL $S/evaluate.sbatch act arx_x5 stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 joint 0 5
+   ```
+4. Watch or cancel.
+   ```bash
+   squeue -u $USER; tail -f <job>-<id>.log; scancel <id>
+   ```
 
 | Launcher | Arguments |
 |---|---|
@@ -34,11 +44,24 @@ squeue -u $USER; tail -f <job>-<id>.log; scancel <id>
 | `dp` | `dp` | XPolicyLab Diffusion Policy: zarr, `train.py` (Hydra overrides after `--`); one dataset | RoboDojo via XPolicyLab `eval.sh` |
 | `mlp` | `act` | `models/mlp/train.py`: MLP on proprio state → action, reads any mix of hdf5 datasets | none |
 
-**Recipe contract.** `models/<m>/train.sh` sets `ENV` (an env under `ENVS_DIR` with mlflow and pyyaml) and defines `train()`; `eval.sh` sets `ENV` and defines `evaluate()`. The launcher has already set `MODEL`, `MODEL_DIR`, `DATA` (array), `MIX`, `ACTION`, `SEED`, `EXTRA` (array, the args after `--`) for training, or `TASK`, `CKPT`, `ACTION`, `SEED`, `EVAL_NUM` for evaluation, plus `EMB_NAME`, `EMB_DATA_ENV_CFG`, `EMB_XPL_ENV_CFG`, `EMB_EVAL_ENV_CFG` from the embodiment and the paths in `lib/common.sh`. Training code goes through `TrainRun` (`lib/flywheel_mlflow.py`) so the names below hold. For a model that reads hdf5 itself, copy `models/mlp/` and replace the DATA, MODEL and LOOP parts of `train.py`.
+**Add a model:** create `models/<name>/` with `train.sh` and `eval.sh`, and its env (built by Gitea `setup-envs`). For a model that reads hdf5 itself, copy `models/mlp/` and replace the DATA, MODEL and LOOP parts of `train.py`.
+
+**Recipe contract.** `train.sh` sets `ENV` (an env under `ENVS_DIR` with mlflow and pyyaml) and defines `train()`; `eval.sh` sets `ENV` and defines `evaluate()`. The launcher has already set `MODEL`, `MODEL_DIR`, `DATA` (array), `MIX`, `ACTION`, `SEED`, `EXTRA` (array, the args after `--`) for training, or `TASK`, `CKPT`, `ACTION`, `SEED`, `EVAL_NUM` for evaluation, plus `EMB_NAME`, `EMB_DATA_ENV_CFG`, `EMB_XPL_ENV_CFG`, `EMB_EVAL_ENV_CFG` from the embodiment and the paths in `lib/common.sh`. Training code goes through `TrainRun` (`lib/flywheel_mlflow.py`) so the names below hold.
 
 ## Embodiments
 
-`embodiments/<robot>.yaml`: `arms` (xspark key prefixes, e.g. `[left, right]`), `arm_dim`, `ee_dim` (per arm), `cameras`, `data_env_cfg` (the folder the adapter writes) and, for XPolicyLab and RoboDojo, `xpolicylab.env_cfg` (a key of XPolicyLab's `utils/robot/_robot_info.json`) and `xpolicylab.eval_env_cfg` (a RoboDojo env_cfg, empty when RoboDojo can't simulate the robot). `_example.yaml` is the template. Today: `arx_x5`, which Galaxea r1lite data also uses (same 14-D layout). A robot that XPolicyLab or RoboDojo doesn't know can still train with models that read hdf5 directly; a `_robot_info.json` entry or a RoboDojo robot needs a fork of the submodule.
+**Add a robot:** copy `embodiments/_example.yaml` to `embodiments/<robot>.yaml`, and add an adapter that writes its data ([adapter/](../gitea/adapter/README.md)). Models and robots don't touch each other.
+
+| Key | Meaning |
+|---|---|
+| `arms` | xspark key prefixes, e.g. `[left, right]` |
+| `arm_dim`, `ee_dim` | joint and gripper/hand dimensions per arm |
+| `cameras` | camera names |
+| `data_env_cfg` | the folder under `processed/xpolicylab/<bench>/<task>/` the adapter writes |
+| `xpolicylab.env_cfg` | a key of XPolicyLab's `utils/robot/_robot_info.json` (ACT/DP action dimension) |
+| `xpolicylab.eval_env_cfg` | a RoboDojo env_cfg; empty when RoboDojo can't simulate the robot |
+
+Today: `arx_x5`, which Galaxea r1lite data also uses (same 14-D layout). A robot that XPolicyLab or RoboDojo doesn't know can still train with models that read hdf5 directly; a `_robot_info.json` entry or a RoboDojo robot needs a fork of the submodule.
 
 ## Naming in MLflow
 
@@ -54,9 +77,9 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 
 ## Environment
 
-**Credentials and paths.** `ctl.sh up` writes `$STATE_DIR/slurm.env`, readable only by you: MLflow and S3 credentials plus `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. The jobs run the code in this checkout (`FLYWHEEL_ROOT`).
-
-**Envs** (RoboDojo eval env, ACT/DP policy envs) are built by the Gitea workflow `setup-envs` in a job container ([gitea/setup/](../gitea/setup/README.md)). `ctl.sh up` dispatches it when one is missing or was built for another checkout, and `ctl.sh setup` forces it.
+- **Credentials and paths:** `ctl.sh up` writes `$STATE_DIR/slurm.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL`/`TRITON_TOKEN`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. The jobs run the code in this checkout (`FLYWHEEL_ROOT`).
+- **Envs** (RoboDojo eval env, ACT/DP policy envs): built by the Gitea workflow `setup-envs` ([gitea/setup/](../gitea/setup/README.md)).
+- **Data layout:** the checkout holds code only; `lib/xpolicylab.sh` links `XPolicyLab/policy/<P>/{processed_data,checkpoints}`, `policy/DP/data` → `$DATA_ROOT/<P>/`, RoboDojo `eval_result` → `$ROBODOJO_DIR/eval_result`, `data` → `$BUCKETS_DIR/processed/xpolicylab`, `Assets` → `$ROBODOJO_DIR/Assets`.
 
 **Evaluation on the GB300 nodes.** The policy server gets its own GPU (`--gres=gpu:2`). What it took on this hardware:
 
@@ -65,8 +88,6 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 - **RoboDojo assumes CPU tensors** in places (`np.asarray` on a tensor, `.numpy()`): `lib/robodojo-shim/sitecustomize.py`, injected via `PYTHONPATH`, converts CUDA tensors and makes the viewport camera placement best-effort. The proper fix is a RoboDojo fork with a `device` setting.
 - **No `ffmpeg` on the nodes:** `install-robodojo.sh` puts `imageio-ffmpeg`'s static build in `$ROBODOJO_DIR/bin`, on the job's `PATH`. It also covers aarch64 Isaac Sim 5.1 and torch cu128 wheels, `libgomp` and NVRTC 12.9 preloads (torch's 12.8 doesn't know sm_103), user-space GL, curobo from source. The first Isaac Sim start on a node compiles RTX pipelines (minutes); shared caches in `$ROBODOJO_DIR/cache` make later starts 15 s.
 - The policies pin `torch==2.4.1`, which has no CUDA build for aarch64 Blackwell; the envs use the cu128 index.
-
-**Data layout.** The checkout holds code only; `lib/xpolicylab.sh` links `XPolicyLab/policy/<P>/{processed_data,checkpoints}`, `policy/DP/data` → `$DATA_ROOT/<P>/`, RoboDojo `eval_result` → `$ROBODOJO_DIR/eval_result`, `data` → `$BUCKETS_DIR/processed/xpolicylab`, `Assets` → `$ROBODOJO_DIR/Assets`.
 
 ## Results
 
