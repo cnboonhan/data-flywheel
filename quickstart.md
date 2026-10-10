@@ -55,20 +55,7 @@ mkdir -p ~/.flywheel && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o $FLY
 
 For your browser, add it to the system trust store: [Access](services/README.md#access).
 
-## 4. Set up the AWS CLI
-
-```bash
-uv tool install awscli            # or run it without installing: uvx --from awscli aws ...
-aws s3 ls s3://raw/               # check: lists open_datasets/ and internal_datasets/
-```
-
-Upload a collection into `raw` (see [versitygw/](services/versitygw/README.md) for buckets, access and a named profile instead of environment variables):
-
-```bash
-aws s3 sync ./my_capture s3://raw/internal_datasets/<dataset>/
-```
-
-## 5. Use the services
+## 4. Use the services
 
 Open `https://$SERVICE_HOST:$CADDY_PORT/` for links to everything.
 
@@ -111,11 +98,33 @@ Details: [mlflow/](services/mlflow/README.md), naming: [slurm/](services/slurm/R
 
 ![MLflow](assets/quickstart/mlflow.png)
 
-### Browse buckets in the browser (S3 web UI)
+### Store and fetch data (S3)
 
-Open `https://s3.$SERVICE_HOST:$CADDY_PORT/ui/` and sign in with your S3 access key and secret.
+The buckets: `raw` (collected data as it arrived), `processed` (converted datasets, splats, recordings) and admin-only ones ([versitygw/](services/versitygw/README.md)). **Depending on your user, you may not see every bucket, or see none in a list**: your key may only read some buckets, or only upload into one folder. Open the ones you were given by name.
 
-![S3 web UI](assets/quickstart/s3-ui.png)
+In the browser:
+
+1. Open `https://s3.$SERVICE_HOST:$CADDY_PORT/ui/` and sign in with your S3 access key and secret.
+2. Go to **Explorer**. If your bucket isn't listed, type its name (e.g. `raw`) into **Enter bucket name** and click **Open**.
+
+![S3 Explorer](assets/quickstart/s3-ui.png)
+
+From the shell, with the variables from step 1:
+
+1. Install the AWS CLI (or run it without installing: `uvx --from awscli aws ...`).
+   ```bash
+   uv tool install awscli
+   ```
+2. List a bucket you have access to.
+   ```bash
+   aws s3 ls s3://raw/
+   ```
+3. Upload a collection into `raw`.
+   ```bash
+   aws s3 sync ./my_capture s3://raw/internal_datasets/<dataset>/
+   ```
+
+For a named profile instead of environment variables, see [Client setup](services/versitygw/README.md#client-setup).
 
 ### Search logs (Grafana and Loki)
 
