@@ -24,6 +24,7 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro
+      - ../assets/bufo/all-the-bufo:/srv/bufo:ro   # submodule assets/bufo: the landing page's hover images
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
       - ${STATE_DIR}/versitygw/buckets/processed/rerun:/rerun:ro   # episode recordings served on rerun.<host>/data/

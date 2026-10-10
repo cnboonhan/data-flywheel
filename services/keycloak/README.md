@@ -18,8 +18,9 @@ Identity provider (`/auth`, realm `flywheel`) plus oauth2-proxy (`/oauth2`) for 
    services/ctl.sh exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r flywheel --username admin --new-password "$ADMIN_PASSWORD"
    services/ctl.sh exec grafana grafana cli admin reset-admin-password "$ADMIN_PASSWORD"
    ```
-5. To change the login page's tiled background, save the image as `background.png` in `$STATE_DIR/keycloak/login-background/` and restart Keycloak (the image stays out of git; the theme is [`themes/flywheel/`](themes/flywheel/)). Remove the file to go back to a plain dark background.
+5. The login page shows a tiled background (`$STATE_DIR/keycloak/login-background/background.png`, outside git) on 1 load in 42 ([`themes/flywheel/`](themes/flywheel/)). To rebuild it from every bufo in the `assets/bufo` submodule, or to use your own image:
    ```bash
+   uv run --with pillow tools/bufo_mosaic.py && services/ctl.sh restart keycloak
    cp <image>.png $STATE_DIR/keycloak/login-background/background.png && services/ctl.sh restart keycloak
    ```
 

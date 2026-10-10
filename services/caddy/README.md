@@ -4,7 +4,7 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 
 | URL | Upstream |
 |---|---|
-| `/` | landing page (`site/index.html`) |
+| `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/` |
 | `/gitea`, `/mlflow`, `/grafana`, `/loki` | the service |
 | `/auth`, `/oauth2` | Keycloak, oauth2-proxy |
 | `/ca.crt` | root certificate of the local CA |

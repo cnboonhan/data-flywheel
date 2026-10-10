@@ -18,6 +18,7 @@ Click the diagram for the interactive version, with links to each component ([so
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) and the real2sim capture robot |
 | [`services/`](services/README.md) | Store stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
 | [`sim/`](sim/README.md) | Simulation tooling: IsaacLab-Arena environment generation, Gaussian splats of real scenes |
+| `assets/` | The architecture diagram, quickstart screenshots, and the `bufo` image submodule |
 | `tools/` | Repo maintenance scripts |
 
 ## Setup

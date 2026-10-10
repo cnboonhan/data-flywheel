@@ -20,6 +20,8 @@
   a:hover { text-decoration: underline; }
   code { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
   small { display: block; color: var(--muted); }
+  #bufo { position: fixed; z-index: 10; pointer-events: none; display: none; max-width: 160px; max-height: 160px;
+          background: var(--box); border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 8px; padding: 6px; }
 </style>
 </head>
 <body>
@@ -36,5 +38,24 @@
     <li><a href="/auth/admin/flywheel/console/">Keycloak</a> <small>Single sign-on: users and groups</small></li>
   </ul>
 </main>
+<img id="bufo" alt="">
+<script>
+  // Hovering a link pops up a random bufo (assets/bufo), never the same one twice in a row.
+  const bufos = {{listFiles "/bufo" | toJson}}.filter(f => /\.(png|gif|jpe?g)$/i.test(f));
+  const pop = document.getElementById("bufo");
+  let last = -1;
+  document.querySelectorAll("a").forEach(a => {
+    a.addEventListener("mouseenter", e => {
+      if (!bufos.length) return;
+      let i; do { i = Math.floor(Math.random() * bufos.length); } while (bufos.length > 1 && i === last);
+      last = i;
+      pop.src = "/bufo/" + encodeURIComponent(bufos[i]);
+      pop.style.left = (e.clientX + 16) + "px"; pop.style.top = (e.clientY + 16) + "px";
+      pop.style.display = "block";
+    });
+    a.addEventListener("mousemove", e => { pop.style.left = (e.clientX + 16) + "px"; pop.style.top = (e.clientY + 16) + "px"; });
+    a.addEventListener("mouseleave", () => { pop.style.display = "none"; });
+  });
+</script>
 </body>
 </html>

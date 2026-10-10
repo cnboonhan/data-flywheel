@@ -1,7 +1,8 @@
-/* Tile resources/img/background.png behind the login card; without an image the page stays dark so the title reads. */
-body, .pf-v5-c-login, .pf-v5-c-background-image {
+/* Keycloak's own background, except on the 1 load in 42 where js/flywheel.js adds .flywheel-bg: then img/background.png
+   is tiled behind the card (over a dark colour, in case the image is missing). */
+.flywheel-bg body, .flywheel-bg .pf-v5-c-login, .flywheel-bg .pf-v5-c-background-image {
   background-color: #1f2328 !important;
   background-image: url("../img/background.png") !important;
   background-repeat: repeat !important;
-  background-size: 160px auto !important;
+  background-size: auto !important;   /* the image at its own size (tools/bufo_mosaic.py: 48px per bufo) */
 }
