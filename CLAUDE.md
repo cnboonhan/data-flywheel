@@ -53,7 +53,7 @@ XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_
 
 ## Docs
 
-- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/splat/README.md`, ...). Overviews (`docs/flywheel.md`, `services/README.md`, the top-level README) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
+- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/splat/README.md`, ...). Overviews (the top-level README and its flywheel walkthrough, `services/README.md`) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
 
 ## Git
 
