@@ -2,6 +2,8 @@
 
 Monorepo for data collection, training and evaluating **action models** (system 1, VLA policies) and **agentic models** (system 2).
 
+Using the stack (browse data, upload, train, read results)? Start with the [quickstart](quickstart.md).
+
 ## Architecture
 
 [![Data Flywheel architecture](architecture.svg)](https://htmlpreview.github.io/?https://github.com/cnboonhan/data-flywheel/blob/main/architecture.html)
