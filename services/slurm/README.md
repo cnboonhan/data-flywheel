@@ -58,6 +58,17 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 
 **Envs** (RoboDojo eval env, ACT/DP policy envs) are built by the Gitea workflow `setup-envs` in a job container ([gitea/setup/](../gitea/setup/README.md)). `ctl.sh up` dispatches it when one is missing or was built for another checkout, and `ctl.sh setup` forces it.
 
-**Evaluation on the GB300 nodes.** `arx_x5`'s `eval_env_cfg` is `arx_x5_gpu`, derived from the base config with `device: cuda:0`; RoboDojo's CPU device gets no camera frames here. `lib/robodojo-shim/sitecustomize.py` is injected via `PYTHONPATH` so CUDA tensors convert to numpy and a missing viewport camera is tolerated. The job excludes C01 and C02 (viewport never renders there; cause unknown). The policy server gets its own GPU with `--gres=gpu:2`.
+**Evaluation on the GB300 nodes.** The policy server gets its own GPU (`--gres=gpu:2`). What it took on this hardware:
+
+- **Simulation on the GPU device (`env_cfg = *_gpu`).** RoboDojo defaults Isaac Lab's simulation device to CPU, where Isaac Sim 5.1 on these nodes never delivers Replicator camera frames (verified with Isaac Lab's tiled camera: empty buffers on `cpu`, frames on `cuda:0`) and RoboDojo's capture kernel spins forever. `arx_x5`'s `eval_env_cfg` is `arx_x5_gpu`, derived by the job with `device: cuda:0` and the base's evaluation layouts and checkpoints aliased. GPU physics may score slightly differently from the official CPU numbers.
+- **C01 and C02 are excluded.** Their Kit viewport stopped rendering on 2026-10-08 ("Accessed invalid null prim" in the viewport camera controller); software, GPU mode, scratch and extension order match C03/C04; cause not found.
+- **RoboDojo assumes CPU tensors** in places (`np.asarray` on a tensor, `.numpy()`): `lib/robodojo-shim/sitecustomize.py`, injected via `PYTHONPATH`, converts CUDA tensors and makes the viewport camera placement best-effort. The proper fix is a RoboDojo fork with a `device` setting.
+- **No `ffmpeg` on the nodes:** `install-robodojo.sh` puts `imageio-ffmpeg`'s static build in `$ROBODOJO_DIR/bin`, on the job's `PATH`. It also covers aarch64 Isaac Sim 5.1 and torch cu128 wheels, `libgomp` and NVRTC 12.9 preloads (torch's 12.8 doesn't know sm_103), user-space GL, curobo from source. The first Isaac Sim start on a node compiles RTX pipelines (minutes); shared caches in `$ROBODOJO_DIR/cache` make later starts 15 s.
+- The policies pin `torch==2.4.1`, which has no CUDA build for aarch64 Blackwell; the envs use the cu128 index.
 
 **Data layout.** The checkout holds code only; `lib/xpolicylab.sh` links `XPolicyLab/policy/<P>/{processed_data,checkpoints}`, `policy/DP/data` → `$DATA_ROOT/<P>/`, RoboDojo `eval_result` → `$ROBODOJO_DIR/eval_result`, `data` → `$BUCKETS_DIR/processed/xpolicylab`, `Assets` → `$ROBODOJO_DIR/Assets`.
+
+## Results
+
+- **Train.** ACT, 30 epochs on `galaxeaOpenWorldDataset/Arrange_Fruits_20250819_011`: 14 min 28 s, mostly `process_data` decoding 330k JPEGs (the epochs take a minute); `val/loss` 86.1 → 0.754, 336 MB checkpoints. ACT, 3 epochs on `RoboDojo/stack_bowls` (frames already decoded): 32 s, `ACT.arx_x5.RoboDojo.stack_bowls` v1. MLP, 20 epochs on every RoboDojo and Galaxea dataset: 14 s, `MLP.arx_x5.arx_x5-test` v1.
+- **Evaluate.** The 30-epoch ACT on `stack_bowls`, 2 episodes of 800 steps: 10 min 32 s on one GB300, `eval/success_rate 0.0` (not expected to succeed; the point is the plumbing), videos and `_result.json` on the run. The 3-epoch checkpoint, 1 episode: 7 min 10 s on C03, logged to its training run and tagged on `ACT.arx_x5.RoboDojo.stack_bowls` v1.

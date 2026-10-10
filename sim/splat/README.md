@@ -51,7 +51,7 @@ uv run sim/splat/train.py datasets/splat/zh_lounge/zh_lounge/colmap datasets/spl
 
 ### With the S3 gateway
 
-Either side can be an `s3://` prefix. The script uses the services stack's settings ([docs/flywheel.md](../../docs/flywheel.md)):
+Either side can be an `s3://` prefix. The script uses the services stack's settings ([versitygw client setup](../../services/versitygw/README.md#client-setup)):
 
 ```bash
 export S3_ENDPOINT_URL=https://s3.<host>:8443 AWS_ACCESS_KEY_ID=<name> AWS_SECRET_ACCESS_KEY=<secret> \

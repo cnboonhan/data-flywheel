@@ -11,7 +11,7 @@
 <input> is a COLMAP dataset: sparse/0/*.bin plus images/ (or images.zip, unzipped on first use). An s3:// input is
 synced into --cache (only missing or changed files are fetched). The run is written under <output>/<name>/<run>/;
 for an s3:// output it is trained in --cache and then uploaded. S3 settings are the services stack's: S3_ENDPOINT_URL
-plus AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION and AWS_CA_BUNDLE (see docs/flywheel.md).
+plus AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION and AWS_CA_BUNDLE (see services/versitygw/README.md).
 Each run also gets scene.usda: the splat in the COLMAP world frame, Z-up, without gaussians beyond --crop_radius
 (--floor adds a collision floor at z = 0 under the cameras' footprint).
 """

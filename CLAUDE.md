@@ -51,6 +51,10 @@ cd eval/system2/IsaacLab-Arena && OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y \
 
 XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_type> <seed> <policy_gpu> <env_gpu> <policy_env> <sim_env>`.
 
+## Docs
+
+- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/splat/README.md`, ...). Overviews (`docs/flywheel.md`, `services/README.md`, the top-level README) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
+
 ## Git
 
 - Push goes over SSH on port 443, because port 22 is blocked from the cluster: `remote.origin.pushurl` is `ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`. Fetch uses HTTPS. On a fresh clone, set the pushurl with `git config remote.origin.pushurl ssh://git@ssh.github.com:443/cnboonhan/data-flywheel.git`.

@@ -29,7 +29,18 @@ services/ctl.sh setup                      # rebuild the policy and RoboDojo env
 services/ctl.sh down
 ```
 
-`ctl.sh` runs `docker compose` on `$SERVICE_NODE` (over ssh from anywhere else). Run it a second time if MLflow was still starting when the job token was minted (it says so). Fresh install step by step: [docs/flywheel.md](../docs/flywheel.md#0-before-you-start).
+`ctl.sh` runs `docker compose` on `$SERVICE_NODE` (over ssh from anywhere else). Run it a second time if MLflow was still starting when the job token was minted (it says so).
+
+### Fresh install
+
+Done from zero on 2026-10-08 (containers and service state wiped; raw bucket, policy envs, RoboDojo assets and caches kept), with the checkout in `$HOME` and the state on `/tier1`:
+
+1. **Clone and configure.** `git clone --recurse-submodules https://github.com/cnboonhan/data-flywheel.git ~/workspaces/data-flywheel`; set the push URL (CLAUDE.md). IsaacLab-Arena's nested submodules use SSH URLs the cluster can't reach: `git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive eval/system2/IsaacLab-Arena`. Copy `services/.env` (or fill in `.env.example`).
+2. **`ctl.sh up`.** On a clean state it starts Caddy alone and waits for its CA, then everything else, then provisions Gitea ([gitea/](gitea/README.md)), Keycloak, Grafana, the MLflow job token, `$STATE_DIR/slurm.env` and the `$STATE_DIR/pipelines` checkout. About 5 minutes.
+3. **Trust the CA** ([Access](#access)).
+4. **Environments and assets:** `up` dispatches `setup-envs` ([gitea/setup/](gitea/setup/README.md)); ~1 h for the envs on a cold cache, up to a day for the RoboDojo data.
+
+What the fresh run caught, all fixed in `ctl.sh` or the scripts: dockerd creating a directory where Caddy's CA file would be (Caddy now starts first), the pipelines checkout not being recreated, the `mlflow` bucket not being created (artifact uploads then fail with 500), the MLflow token minted before the plugin had migrated its database (rerun `up`), and the installers skipping editable installs that pointed at the old checkout (now path-aware).
 
 ## Access
 
