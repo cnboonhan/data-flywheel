@@ -41,8 +41,6 @@ The **Store** column of the [architecture diagram](../README.md#architecture): D
 
 ### Fresh install
 
-Verified from zero on 2026-10-08 (containers and service state wiped; raw bucket, envs, RoboDojo assets and caches kept).
-
 1. Clone and set the push URL: [Setup](../README.md#setup). For IsaacLab-Arena's nested submodules (SSH URLs the cluster can't reach):
    ```bash
    git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive eval/system2/IsaacLab-Arena
