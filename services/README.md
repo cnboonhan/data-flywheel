@@ -49,12 +49,6 @@ The **Store** column of the [architecture diagram](../README.md#architecture): D
 3. Trust the CA: [Access](#access).
 4. Wait for `setup-envs`, which `up` dispatches: ~1 h for the envs on a cold cache, up to a day for the RoboDojo data ([gitea/setup/](gitea/setup/README.md)).
 
-**Notes** (what the fresh run caught, all fixed in `ctl.sh` or the scripts)
-- dockerd created a directory where Caddy's CA file would be; Caddy now starts first.
-- The pipelines checkout wasn't recreated, and the `mlflow` bucket wasn't created (artifact uploads then fail with 500).
-- The MLflow token was minted before the plugin had migrated its database: rerun `up`.
-- Installers skipped editable installs that pointed at the old checkout; they are now path-aware.
-
 ## Access
 
 1. Reach the stack. From a machine that can reach the node, open `https://$SERVICE_HOST:$CADDY_PORT/`. Otherwise tunnel through a login node and map the names on your laptop (no wildcard there, so list all five):
