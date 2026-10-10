@@ -42,6 +42,8 @@ jobs:
                                                 into the root's videos and parquet
             xspark    */data/episode_*.hdf5     one group per episode, a slice per
                                                 preview_video/<episode>_<camera>.mp4
+            colmap    images/ + sparse/0/         one image sample per photo, with its COLMAP pose
+                                                (camera centre, quaternion) and intrinsics
             mcap      *.mcap, *.bag             one sample per bag (FiftyOne's MCAP viewer), rerun_url opens it in Rerun
             archive   *.tar, *.tar.gz, *.zip    one sample per archive (catalog only)
 
@@ -176,6 +178,90 @@ jobs:
                       print(f"  + {len(samples)} slices", flush=True)
 
 
+          class Colmap:
+              """COLMAP models (sparse/0 as text or binary) with their photos in images/ beside sparse/, e.g. sensors/real2sim
+              captures. A model folder is one unit; its signature covers the model files, so a re-run reconstruction re-ingests."""
+              name = "colmap"
+              MODELS = {0: ("SIMPLE_PINHOLE", 3), 1: ("PINHOLE", 4), 2: ("SIMPLE_RADIAL", 4), 3: ("RADIAL", 5), 4: ("OPENCV", 8),
+                        5: ("OPENCV_FISHEYE", 8), 6: ("FULL_OPENCV", 12), 7: ("FOV", 5), 8: ("SIMPLE_RADIAL_FISHEYE", 4),
+                        9: ("RADIAL_FISHEYE", 5), 10: ("THIN_PRISM_FISHEYE", 12)}
+
+              @staticmethod
+              def model_files(sparse):
+                  for ext in ("txt", "bin"):
+                      fs = [os.path.join(sparse, f"{n}.{ext}") for n in ("cameras", "images")]
+                      if all(os.path.exists(f) for f in fs):
+                          return ext, fs
+                  return None, []
+
+              def roots(self, top):
+                  out = []
+                  for root, dirs, files in os.walk(top):
+                      dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                      if "sparse" in dirs and "images" in dirs and self.model_files(os.path.join(root, "sparse", "0"))[0]:
+                          out.append(root)
+                          dirs[:] = []
+                  return out
+
+              def scan(self, top):
+                  return {os.path.relpath(r, top): sig(*self.model_files(os.path.join(r, "sparse", "0"))[1]) for r in self.roots(top)}
+
+              def read(self, sparse):
+                  """cameras {id: (model, w, h, params)}, images [(name, camera_id, qwxyz, txyz, n_points3d)]."""
+                  import struct
+                  ext, (cams_f, imgs_f) = self.model_files(sparse)
+                  cams, imgs = {}, []
+                  if ext == "txt":
+                      for line in open(cams_f):
+                          f = line.split()
+                          if f and not line.startswith("#"):
+                              cams[int(f[0])] = (f[1], int(f[2]), int(f[3]), [float(x) for x in f[4:]])
+                      lines = [l for l in open(imgs_f) if not l.startswith("#")]
+                      for head, pts in zip(lines[0::2], lines[1::2]):
+                          f = head.split()
+                          ids = pts.split()[2::3]
+                          imgs.append((" ".join(f[9:]), int(f[8]), [float(x) for x in f[1:5]], [float(x) for x in f[5:8]],
+                                       sum(i != "-1" for i in ids)))
+                      return cams, imgs
+                  with open(cams_f, "rb") as b:
+                      for _ in range(struct.unpack("<Q", b.read(8))[0]):
+                          cid, mid, w, h = struct.unpack("<iiQQ", b.read(24))
+                          model, n = self.MODELS[mid]
+                          cams[cid] = (model, w, h, list(struct.unpack(f"<{n}d", b.read(8 * n))))
+                  with open(imgs_f, "rb") as b:
+                      for _ in range(struct.unpack("<Q", b.read(8))[0]):
+                          v = struct.unpack("<i4d3di", b.read(64))
+                          name = b""
+                          while (c := b.read(1)) != b"\0":
+                              name += c
+                          n2d = struct.unpack("<Q", b.read(8))[0]
+                          ids = struct.unpack(f"<{3 * n2d}q", b.read(24 * n2d))[2::3] if n2d else ()
+                          imgs.append((name.decode(), v[8], list(v[1:5]), list(v[5:8]), sum(i != -1 for i in ids)))
+                  return cams, imgs
+
+              def add(self, ds, top, units):
+                  import numpy as np
+                  for unit, s in units.items():
+                      root = os.path.join(top, unit)
+                      cams, imgs = self.read(os.path.join(root, "sparse", "0"))
+                      samples, missing = [], 0
+                      for name, cid, q, t, npts in imgs:
+                          path = os.path.join(root, "images", name)
+                          if not os.path.exists(path):
+                              missing += 1
+                              continue
+                          w, x, y, z = q   # world-to-camera rotation; camera centre C = -R^T t
+                          R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+                                        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+                                        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+                          model, cw, ch, params = cams[cid]
+                          samples.append(fo.Sample(filepath=path, raw_unit=unit, raw_sig=s, scene=unit, image_name=name,
+                                                   camera_id=cid, camera_model=model, width=cw, height=ch, intrinsics=params,
+                                                   position=(-R.T @ np.array(t)).tolist(), quaternion_wxyz=q, n_points3d=npts))
+                      ds.add_samples(samples, progress=False)
+                      print(f"  + {unit}: {len(samples)} images, {len(cams)} cameras" + (f", {missing} listed but missing" if missing else ""), flush=True)
+
+
           class Files:
               """One sample per matching file: bags (multimodal) or archives (catalog)."""
 
@@ -220,6 +306,8 @@ jobs:
           def layout_for(top):
               if LeRobot.roots(top):
                   return LeRobot()
+              if Colmap().roots(top):
+                  return Colmap()
               names = list(walk(top))
               if any(XSpark.pat.search(os.path.relpath(p, top)) for p in names):
                   return XSpark()
@@ -249,7 +337,7 @@ jobs:
               new = {u: s for u, s in on_disk.items() if have.get(u) != s}
               if max_units:
                   new = dict(list(new.items())[:max_units])
-              skipped = sorted({os.path.splitext(p)[1] or os.path.basename(p) for p in walk(top)} - {".json", ".parquet", ".mp4", ".hdf5", ".yaml", ".md", ".gz", ".mcap", ".bag", ".tar", ".tgz", ".zip"})
+              skipped = sorted({os.path.splitext(p)[1] or os.path.basename(p) for p in walk(top)} - {".json", ".parquet", ".mp4", ".hdf5", ".yaml", ".md", ".gz", ".mcap", ".bag", ".tar", ".tgz", ".zip", ".txt", ".bin", ".png", ".jpg", ".jpeg", ".JPG"})
               print(f"{name} [{layout.name}]: {len(on_disk)} units on disk, {len(have)} in FiftyOne; "
                     f"-{len(stale)} +{len(new)}" + (f" (other file types: {', '.join(skipped[:8])})" if skipped else ""), flush=True)
               if dry_run:
@@ -268,7 +356,7 @@ jobs:
               if stale:
                   ds.delete_samples(all_samples(ds).match(F("raw_unit").is_in(stale)))
               layout.add(ds, top, new)
-              if layout.name == "xspark":
+              if layout.name in ("xspark", "colmap"):
                   all_samples(ds).exists("metadata", False).compute_metadata(progress=False)
               return ds
 
