@@ -4,8 +4,15 @@ Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket
 
 ## Client setup
 
-Keys from `ctl.sh user add`; `flywheel-ca.crt` from `https://$SERVICE_HOST:$CADDY_PORT/ca.crt` ([Access](../README.md#access)).
-The CLI: `uvx --from awscli aws ...` (no install), or `uv tool install awscli`.
+Keys from `ctl.sh user add`. The CLI: `uvx --from awscli aws ...` (no install), or `uv tool install awscli`. The
+gateway's certificate is from the stack's own CA; fetch its root once ([Access](../README.md#access) for the port forward):
+
+```bash
+mkdir -p ~/.aws && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o ~/.aws/flywheel-ca.crt
+```
+
+On cluster nodes, use `$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt` instead (`slurm.env` sets
+`AWS_CA_BUNDLE` to it). Point `ca_bundle` / `AWS_CA_BUNDLE` below at the absolute path.
 
 Either a profile, once per machine:
 
@@ -14,7 +21,7 @@ Either a profile, once per machine:
 [profile flywheel]
 region = us-east-1
 endpoint_url = https://s3.<SERVICE_HOST>:<CADDY_PORT>
-ca_bundle = /abs/path/flywheel-ca.crt
+ca_bundle = /home/<you>/.aws/flywheel-ca.crt
 
 # ~/.aws/credentials (chmod 600)
 [flywheel]
@@ -26,7 +33,7 @@ then `export AWS_PROFILE=flywheel`. Or environment variables only:
 
 ```bash
 export AWS_ACCESS_KEY_ID=<key> AWS_SECRET_ACCESS_KEY=<secret> AWS_DEFAULT_REGION=us-east-1 \
-       AWS_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT AWS_CA_BUNDLE=/abs/path/flywheel-ca.crt
+       AWS_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT AWS_CA_BUNDLE=$HOME/.aws/flywheel-ca.crt
 ```
 
 The aws CLI and boto3 (>= 1.28) read both, so repo scripts such as `sim/splat/train.py` need nothing more
