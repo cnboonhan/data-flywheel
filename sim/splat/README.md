@@ -66,7 +66,13 @@ sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/splat/train.sbatc
 
 ## Output
 
-`<output>/<name>/<run>/`: `export_last_lightfield.usdz` (one `ParticleField3DGaussianSplat` prim), `splat.usdc`, `scene.usda`, `metrics.json` (held-out PSNR/SSIM/LPIPS), checkpoints.
+`<output>/<name>/<run>/`: `export_last_lightfield.usdz` (one `ParticleField3DGaussianSplat` prim), `splat.usdc`, `scene.usda`, `export_last.ply` (the standard 3DGS PLY, for other splat viewers and tools; uncropped), `metrics.json` (held-out PSNR/SSIM/LPIPS), checkpoints.
+
+To write the PLY for a run trained before PLY export was on, run this on a GPU node:
+
+```bash
+cd sim/splat/3dgrut && source .venv/bin/activate && python ../export_ply.py <run dir>
+```
 
 Open or reference **`scene.usda`**, not the USDZ:
 - It places the splat in the COLMAP world frame, Z-up. The USDZ has the exporter's normalizing transform (cameras centred, Y-up) and cameras with a wrong field of view.

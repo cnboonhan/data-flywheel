@@ -195,7 +195,7 @@ def main() -> None:
     # The venv's activate script exports its bundled CUDA toolkit, which the tracer's JIT compile needs.
     cmd = ["bash", "-c", 'source .venv/bin/activate && exec python train.py "$@"', "train",
            f"--config-name={args.config}", f"path={data}", f"out_dir={out}", f"experiment_name={name}",
-           "export_usd.enabled=true", *penalties, *args.overrides]
+           "export_usd.enabled=true", "export_ply.enabled=true", *penalties, *args.overrides]
     env = {k: v for k, v in os.environ.items() if k != "DISPLAY"}
     subprocess.run(cmd, cwd=GRUT, env=env, check=True)
 
