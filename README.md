@@ -2,7 +2,7 @@
 
 Monorepo for data collection, training and evaluating **action models** (system 1, VLA policies) and **agentic models** (system 2).
 
-**Architecture:** [Data Flywheel diagram](https://cnboonhan.github.io/data-flywheel/architecture.html) ([source](architecture.html)). How data moves through it: [The flywheel, end to end](#the-flywheel-end-to-end).
+**Architecture:** [Data Flywheel diagram](https://htmlpreview.github.io/?https://github.com/cnboonhan/data-flywheel/blob/main/architecture.html) ([source](architecture.html)). How data moves through it: [The flywheel, end to end](#the-flywheel-end-to-end).
 
 ## Clone
 
