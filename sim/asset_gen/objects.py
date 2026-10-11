@@ -33,11 +33,9 @@ import cv2
 import numpy as np
 import trimesh
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services" / "triton"))
-from triton_endpoint import Endpoint  # noqa: E402
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pano_ideate"))
-from models import Triton  # noqa: E402
+from models import Triton  # noqa: E402  (VLM, EDIT, SEGMENT; it puts services/triton on the path)
+from triton_endpoint import Endpoint  # noqa: E402
 
 DENSITY = 400.0          # kg/m^3 of the convex hull: household objects are mostly hollow or light
 IDENTIFY = ("This is one object, cut out of a photo of a room (it may be small, blurry or partly hidden); it was "
@@ -50,40 +48,23 @@ DRAW = ("Picture 1 shows a {name}. Draw a new, complete, clean {name}: {descript
 BACK = "<sks> back view elevated shot medium shot"   # the camera-angle LoRA's prompt (services/triton/README.md)
 
 
-def crop(png: bytes, size: int = 512) -> bytes:
-    """An RGBA cutout cropped square around the object (alpha), with a margin: the editor redraws an object framed
-    small in a large view poorly."""
-    img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+def on_white(png: bytes, size: int = 512) -> np.ndarray:
+    """An RGBA cutout cropped square around the object with a margin (the editor redraws an object framed small in a
+    large view poorly), on white, RGB."""
+    img = cv2.cvtColor(cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
     ys, xs = np.nonzero(img[..., 3] > 128)
-    if not len(xs):
-        return png
-    half = int(0.65 * max(np.ptp(xs), np.ptp(ys))) + 1
-    cy, cx = (ys.min() + ys.max()) // 2, (xs.min() + xs.max()) // 2
-    padded = cv2.copyMakeBorder(img, half, half, half, half, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
-    square = padded[cy:cy + 2 * half, cx:cx + 2 * half]
-    return cv2.imencode(".png", cv2.resize(square, (size, size), interpolation=cv2.INTER_AREA))[1].tobytes()
-
-
-def on_white(png: bytes) -> np.ndarray:
-    """An RGBA cutout (cropped around the object) composited on white, BGR."""
-    img = cv2.imdecode(np.frombuffer(crop(png), np.uint8), cv2.IMREAD_UNCHANGED)
+    if len(xs):
+        half = int(0.65 * max(np.ptp(xs), np.ptp(ys))) + 1
+        cy, cx = (ys.min() + ys.max()) // 2, (xs.min() + xs.max()) // 2
+        img = cv2.copyMakeBorder(img, half, half, half, half, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
+        img = cv2.resize(img[cy:cy + 2 * half, cx:cx + 2 * half], (size, size), interpolation=cv2.INTER_AREA)
     a = img[..., 3:] / 255.0
     return (img[..., :3] * a + 255 * (1 - a)).astype(np.uint8)
 
 
-def edit(editor: Endpoint, images: list[np.ndarray], prompt: str, seed: int = 0, lora: str = "",
-         lora_scale: float = 1.4) -> np.ndarray:
-    """The image editor's result (BGR) for BGR pictures; lora "angles" turns on its camera-angle LoRA (at 1.0 it barely
-    moves the camera off a studio shot's own view)."""
-    out = editor.infer({"images": [cv2.imencode(".png", i)[1].tobytes() for i in images], "prompt": [prompt.encode()],
-                        "seed": np.array([seed], np.int32), "lora": [lora.encode()],
-                        "lora_scale": np.array([lora_scale], np.float32)}, ["image"])["image"]
-    return cv2.imdecode(np.frombuffer(np.ravel(out)[0], np.uint8), cv2.IMREAD_COLOR)
-
-
-def identify(vlm: Triton, cutout: np.ndarray, label: str) -> dict:
-    """What the object most likely is and a typical one's look ({"name", "description"}), from a BGR cutout."""
-    answer = vlm.vlm(IDENTIFY.format(label=label), cutout[..., ::-1], 300)
+def identify(triton: Triton, cutout: np.ndarray, label: str) -> dict:
+    """What the object most likely is and a typical one's look ({"name", "description"}), from an RGB cutout."""
+    answer = triton.vlm(IDENTIFY.format(label=label), cutout, 300)
     try:
         found = json.loads(answer[answer.index("{"):answer.rindex("}") + 1])
         return {"name": str(found["name"]), "description": str(found["description"])}
@@ -93,33 +74,32 @@ def identify(vlm: Triton, cutout: np.ndarray, label: str) -> dict:
 
 def generate(generator: Endpoint, rgba: np.ndarray, seed: int = 0) -> trimesh.Trimesh:
     """TripoSG's mesh (shape only) of an RGBA cutout, z up."""
-    out = generator.infer({"image": [cv2.imencode(".png", rgba)[1].tobytes()], "seed": np.array([seed], np.int32),
+    png = cv2.imencode(".png", cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA))[1].tobytes()
+    out = generator.infer({"image": [png], "seed": np.array([seed], np.int32),
                            "faces": np.array([60000], np.int32)}, ["mesh"])["mesh"]
     mesh = trimesh.load(io.BytesIO(np.ravel(out)[0]), file_type="glb", force="mesh")
     mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))   # glTF y up -> z up
     return mesh
 
 
-def model(vlm, editor, segmenter, generator, cutouts: list[bytes], label: str, seed: int = 0, log=print):
-    """The object's mesh (z up, TripoSG's units) with vertex colours, and the images made on the way (name -> BGR)."""
+def model(triton: Triton, generator: Endpoint, cutouts: list[bytes], label: str, seed: int = 0, log=print):
+    """The object's mesh (z up, TripoSG's units) with vertex colours, and the images made on the way (name -> RGB)."""
     cutout = on_white(cutouts[-1])                                    # the latest view: where it was last seen
-    what = identify(vlm, cutout, label)
+    what = identify(triton, cutout, label)
     log(f"  a {what['name']}: {what['description']}")
-    front = edit(editor, [cutout], DRAW.format(**what), seed)
-    back = edit(editor, [front], BACK, seed, lora="angles")
-    rgba = matte(segmenter, front)
+    front = triton.edit([cutout], DRAW.format(**what), seed=seed)
+    back = triton.edit([front], BACK, seed=seed, lora="angles", lora_scale=1.4)   # at 1.0 the camera barely moves
+    rgba = matte(triton, front)
     mesh = generate(generator, rgba, seed)
     log(f"  generated: {len(mesh.faces)} faces")
-    paint(mesh, [(front, rgba[..., 3] > 128, None), (back, matte(segmenter, back)[..., 3] > 128, 180.0)], log)
+    paint(mesh, [(front, rgba[..., 3] > 128, None), (back, matte(triton, back)[..., 3] > 128, 180.0)], log)
     return mesh, {"cutout": cutout, "front": front, "back": back}, what
 
 
-def matte(segmenter: Endpoint, img: np.ndarray) -> np.ndarray:
-    """The object in a studio view as RGBA: SAM 2.1 on the box around what is not white (no ground shadow)."""
+def matte(triton: Triton, img: np.ndarray) -> np.ndarray:
+    """The object in an RGB studio view as RGBA: SAM 2.1 on the box around what is not white (no ground shadow)."""
     ys, xs = np.nonzero(np.abs(img.astype(int) - 255).max(-1) > 18)
-    box = np.array([[xs.min(), ys.min(), xs.max(), ys.max()]], np.float32)
-    jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes()
-    mask = segmenter.infer({"image": [jpg], "boxes": box}, ["masks"])["masks"].reshape(-1, *img.shape[:2])[0]
+    mask = triton.segment(img, [[xs.min(), ys.min(), xs.max(), ys.max()]]).reshape(-1, *img.shape[:2])[0]
     return np.dstack([img, mask.astype(np.uint8) * 255])
 
 
@@ -162,7 +142,7 @@ def pose(mesh: trimesh.Trimesh, mask: np.ndarray, azimuths, elevations):
 
 
 def paint(mesh: trimesh.Trimesh, views: list, log=print):
-    """Vertex colours from drawn views (BGR image, mask, azimuth relative to the first view or None) where each sees
+    """Vertex colours from drawn views (RGB image, mask, azimuth relative to the first view or None) where each sees
     the mesh; the rest from the nearest coloured vertex."""
     from scipy.spatial import cKDTree
     colour, weight = np.zeros((len(mesh.vertices), 3)), np.zeros(len(mesh.vertices))
@@ -188,7 +168,7 @@ def paint(mesh: trimesh.Trimesh, views: list, log=print):
         inner = cv2.erode(mask.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)   # edges blend with white
         v, x, y = v[inner[y, x]], x[inner[y, x]], y[inner[y, x]]
         wgt = np.clip(-(mesh.vertex_normals[v] @ R[2]), 0.05, 1) * iou
-        colour[v] += img[y, x, ::-1] * wgt[:, None]
+        colour[v] += img[y, x] * wgt[:, None]
         weight[v] += wgt
     have = weight > 0
     colour[have] /= weight[have, None]
@@ -286,7 +266,8 @@ def write(out: Path, local: trimesh.Trimesh, info: dict, what: dict, yaw: float,
           images: dict):
     (out / "views").mkdir(parents=True, exist_ok=True)
     for name, img in images.items():
-        cv2.imwrite(str(out / "views" / f"{name}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        cv2.imwrite(str(out / "views" / f"{name}.jpg"), cv2.cvtColor(img, cv2.COLOR_RGB2BGR),
+                    [cv2.IMWRITE_JPEG_QUALITY, 92])
     mass = float(np.clip(DENSITY * local.convex_hull.volume, 0.02, 50.0))
     gltf = local.copy()
     gltf.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))         # z up -> y up
@@ -302,9 +283,8 @@ def write(out: Path, local: trimesh.Trimesh, info: dict, what: dict, yaw: float,
 
 
 def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: int = 0, log=print) -> list[Path]:
-    vlm, editor = Triton(), Endpoint("EDIT", "Qwen-Image-Edit-2511")
-    segmenter, generator = Endpoint("SEGMENT", "sam2.1-hiera-large"), Endpoint("MESH", "TripoSG")
-    log(f"{vlm.vlm_}\n{editor}\n{segmenter}\n{generator}")
+    triton, generator = Triton(), Endpoint("MESH", "TripoSG")
+    log(f"{triton.vlm_}\n{triton.edit_}\n{triton.segment_}\n{generator}")
     with zipfile.ZipFile(session) as z:
         scene = json.loads(z.read("scene.json"))
         h = scene["frame"]["camera_height"]
@@ -319,8 +299,7 @@ def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: in
                 continue
             log(f"{name}: {len(views)} views")
             shape = dict(np.load(io.BytesIO(z.read(f"objects/{name}/shape.npz"))))
-            mesh, images, what = model(vlm, editor, segmenter, generator, [z.read(v) for v in views], info["label"],
-                                       seed, log)
+            mesh, images, what = model(triton, generator, [z.read(v) for v in views], info["label"], seed, log)
             local, yaw, base, overlap = fit(mesh, shape, h, info.get("size_m"), log)
             out = out_root / scene["scene"] / "objects" / name
             write(out, local, info, what, yaw, base, overlap, images)

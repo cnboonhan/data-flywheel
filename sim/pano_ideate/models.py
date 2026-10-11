@@ -63,11 +63,13 @@ class Triton:
         return self.vlm_.generate(body)["text_output"].strip()
 
     def edit(self, images: list[np.ndarray], prompt: str, steps: int = 40, seed: int = 0, cfg: float = 4.0,
-             negative: str = " ") -> np.ndarray:
-        """Qwen-Image-Edit: picture 1 edited as the prompt says (pictures 2 and 3 for reference); RGB."""
+             negative: str = " ", lora: str = "", lora_scale: float = 1.0) -> np.ndarray:
+        """Qwen-Image-Edit: picture 1 edited as the prompt says (pictures 2 and 3 for reference); RGB. lora "angles"
+        turns on the camera-angle LoRA (services/triton/README.md)."""
         out = self.edit_.infer({"images": [png(i) for i in images], "prompt": [prompt.encode()],
                                 "negative_prompt": [negative.encode()], "steps": np.array([steps], np.int32),
-                                "seed": np.array([seed], np.int32), "true_cfg_scale": np.array([cfg], np.float32)},
+                                "seed": np.array([seed], np.int32), "true_cfg_scale": np.array([cfg], np.float32),
+                                "lora": [lora.encode()], "lora_scale": np.array([lora_scale], np.float32)},
                                ["image"])["image"]
         raw = np.frombuffer(np.ravel(out)[0], np.uint8)
         return cv2.cvtColor(cv2.imdecode(raw, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
