@@ -5,8 +5,9 @@ Desired state is the MLflow registry: every registered model whose alias `triton
 as a Triton model with the registered model's name and the MLflow version number as Triton version. Each sync
 
   1. packages new or changed versions into s3://triton/models/<name>/ (Triton's model repository), using the packager
-     for the run's `model` param (PACKAGERS below; a Hugging Face model registered by download-models-hf gets the vLLM
-     packager), and removes models whose alias is gone;
+     for the run's `model` param (PACKAGERS below; a Hugging Face model registered by download-models-hf gets the
+     Python backend that HF_BACKENDS or its tag triton.backend names, else the vLLM packager), and removes models whose
+     alias is gone;
   2. loads or unloads them in Triton (explicit model control) and runs one zero-input inference on each;
   3. records the outcome where people look:
        - MLflow model version tags   triton.status (ready | failed | unsupported | unloaded), triton.model,
@@ -24,6 +25,7 @@ FLYWHEEL_ROOT (the checkout: XPolicyLab code for ACT, models/mlp for MLP).
 
 import argparse
 import datetime
+import functools
 import json
 import os
 import re
@@ -150,7 +152,58 @@ def package_vllm(mv, run, ckpt, dst, params):
     return "\n".join(lines + param_lines(params)) + "\n"
 
 
-PACKAGERS = {"ACT": package_act, "MLP": package_mlp, "vllm": package_vllm}   # keyed by the training run's param `model`
+# Hugging Face models served by a Python backend (services/triton/backends/<name>.py) instead of vLLM, keyed by repo;
+# a model version's tag triton.backend names one for any other repo. Each loads its weights in place from /mlflow, on
+# one GPU (tag triton.gpu, default TRITON_PYTHON_GPU), takes encoded images as BYTES and has no batch dimension.
+# (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG).
+HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
+               "Ruicheng/moge-2-vitl-normal": "moge", "iSEE-Laboratory/llmdet_large": "llmdet",
+               "facebook/sam2.1-hiera-large": "sam2"}
+PYTHON_GPU = os.environ.get("TRITON_PYTHON_GPU", "2")
+PYTHON_IO = {
+    "qwen_image_edit": ([("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
+                         ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True)],
+                        [("image", "STRING", [1])]),
+    "moge": ([("image", "STRING", [1]), ("fov_x", "FP32", [1]), ("view_size", "INT32", [1], True),
+              ("merge_width", "INT32", [1], True)],
+             [("distance", "FP32", [-1, -1]), ("mask", "BOOL", [-1, -1])]),
+    "llmdet": ([("image", "STRING", [1]), ("labels", "STRING", [-1]), ("box_threshold", "FP32", [1], True),
+                ("text_threshold", "FP32", [1], True), ("nms", "FP32", [1], True)],
+               [("boxes", "FP32", [-1, 4]), ("scores", "FP32", [-1]), ("names", "STRING", [-1])]),
+    "sam2": ([("image", "STRING", [1]), ("boxes", "FP32", [-1, 4])], [("masks", "BOOL", [-1, -1, -1])]),
+}
+SMOKE = {"qwen_image_edit": {"images": ["image"], "prompt": ["Keep the image as it is."], "steps": [2]},
+         "moge": {"image": ["image"], "fov_x": [60.0]},
+         "llmdet": {"image": ["image"], "labels": ["chair"]},
+         "sam2": {"image": ["image"], "boxes": [[8.0, 8.0, 56.0, 56.0]]}}
+
+
+def hf_kind(mv, run):
+    return mv.tags.get("triton.backend") or HF_BACKENDS.get(run.data.params.get("hf_repo", ""), "vllm")
+
+
+def package_python(backend, mv, run, ckpt, dst, params):
+    """A Hugging Face model on its Python backend: model.py (+ _common.py), weights read in place from /mlflow."""
+    if not mv.source.startswith("mlflow-artifacts:/"):
+        raise ValueError(f"source {mv.source} is not in the mlflow bucket")
+    v = os.path.join(dst, mv.version)
+    os.makedirs(v)
+    shutil.copy(os.path.join(HERE, "backends", f"{backend}.py"), os.path.join(v, "model.py"))
+    shutil.copy(os.path.join(HERE, "backends", "_common.py"), v)
+    t = lambda kind, n, ty, d, opt=False: (f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ]'
+                                           + (" optional: true" if opt else "") + " }")
+    ins, outs = PYTHON_IO[backend]
+    gpu = int(mv.tags.get("triton.gpu", PYTHON_GPU))
+    lines = ['backend: "python"', "max_batch_size: 0"] + [t("input", *i) for i in ins] + [t("output", *o) for o in outs]
+    lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]")
+    params = {**params, "weights": "/mlflow/" + mv.source.removeprefix("mlflow-artifacts:/").lstrip("/"),
+              "hf_repo": run.data.params.get("hf_repo", "")}
+    return "\n".join(lines + param_lines(params)) + "\n"
+
+
+PACKAGERS = {"ACT": package_act, "MLP": package_mlp, "vllm": package_vllm,   # keyed by the training run's param `model`
+             **{b: functools.partial(package_python, b) for b in PYTHON_IO}}
+IN_PLACE = {"vllm", *PYTHON_IO}   # packagers that read the weights from /mlflow instead of downloading them
 
 
 # ---- S3 ----------------------------------------------------------------------------------------------------------
@@ -229,6 +282,9 @@ def smoke_test(name):
             return out.get("error", f"HTTP {code}")
         print(f"  {name}: generate ok, {out.get('text_output', '')!r}")
         return None
+    kind = cfg.get("parameters", {}).get("model", {}).get("string_value")
+    if kind in SMOKE:
+        return smoke_python(name, kind)
     inputs = []
     for i in cfg["input"]:
         dims = [64 if d == -1 else int(d) for d in i["dims"]]
@@ -242,6 +298,32 @@ def smoke_test(name):
         return out.get("error", f"HTTP {code}")
     shape = out["outputs"][0]["shape"]
     print(f"  {name}: inference ok, {out['outputs'][0]['name']} {shape}")
+    return None
+
+
+def smoke_python(name, kind):
+    """One small request to a Hugging Face Python-backend model (binary tensors, so tritonclient)."""
+    import io
+    import numpy as np
+    import tritonclient.http as th
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (128, 128, 128)).save(buf, format="PNG")
+    types = {n: t for n, t, *_ in PYTHON_IO[kind][0]}
+    np_type = {"STRING": object, "FP32": np.float32, "INT32": np.int32}
+    inputs = []
+    for n, v in SMOKE[kind].items():
+        a = np.array([buf.getvalue() if x == "image" else x.encode() if isinstance(x, str) else x for x in v],
+                     dtype=np_type[types[n]])
+        t = th.InferInput(n, list(a.shape), "BYTES" if types[n] == "STRING" else types[n])
+        t.set_data_from_numpy(a)
+        inputs.append(t)
+    try:
+        out = th.InferenceServerClient(TRITON.split("://")[-1], network_timeout=600).infer(name, inputs)
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+    first = PYTHON_IO[kind][1][0][0]
+    print(f"  {name}: inference ok, {first} {list(out.as_numpy(first).shape)}")
     return None
 
 
@@ -289,7 +371,7 @@ def sync(args):
             status.append({"model": name, "version": mv.version, "status": "failed", "error": mv.tags["triton.error"]})
             continue   # packaging failed before; retried only with --force (or a new version)
         run = client.get_run(mv.run_id) if mv.run_id else None
-        kind = run and (run.data.params.get("model") or ("vllm" if "hf_repo" in run.data.params else None))
+        kind = run and (run.data.params.get("model") or (hf_kind(mv, run) if "hf_repo" in run.data.params else None))
         packager = PACKAGERS.get(kind)
         if packager is None:
             msg = f"no packager for model '{kind}' (have: {', '.join(PACKAGERS)})"
@@ -308,7 +390,7 @@ def sync(args):
                   "data_fingerprint": p.get("data_fingerprint", ""), "git_commit": p.get("git_commit", ""), "synced_at": NOW}
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                ckpt = None if kind == "vllm" else mlflow.artifacts.download_artifacts(   # vLLM reads them in place
+                ckpt = None if kind in IN_PLACE else mlflow.artifacts.download_artifacts(   # read in place
                     artifact_uri=mv.source, dst_path=os.path.join(tmp, "ckpt"))
                 dst = os.path.join(tmp, "repo")
                 os.makedirs(dst)

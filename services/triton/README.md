@@ -42,13 +42,47 @@ answer = r.json()["text_output"]
 
 Send many requests at once: vLLM batches them on the GPU.
 
+Call the image and geometry models (Python backends, below) with `tritonclient.http`: images go as encoded bytes (JPEG or PNG), results come back as binary tensors. From a laptop, open the tunnel and set `TRITON_URL`, `TRITON_TOKEN` and the CA as in the [quickstart](../../quickstart.md).
+
+```python
+import os, numpy as np, tritonclient.http as th
+c = th.InferenceServerClient(os.environ["TRITON_URL"], ssl=True, ssl_options={"ca_certs": os.environ["AWS_CA_BUNDLE"]},
+                             network_timeout=900)
+
+def tensor(name, values, dtype):   # dtype: BYTES, FP32 or INT32
+    a = np.asarray(values, dtype={"BYTES": object, "FP32": np.float32, "INT32": np.int32}[dtype])
+    t = th.InferInput(name, list(a.shape), dtype)
+    t.set_data_from_numpy(a)
+    return t
+
+jpg = open("view.jpg", "rb").read()
+auth = lambda: {"authorization": "Bearer " + os.environ["TRITON_TOKEN"]}   # a fresh dict per call
+r = c.infer("moge-3-vitg", [tensor("image", [jpg], "BYTES"), tensor("fov_x", [90.0], "FP32")], headers=auth())
+distance = r.as_numpy("distance")                                          # metres, [H, W]
+r = c.infer("Qwen-Image-Edit-2511", [tensor("images", [jpg], "BYTES"), tensor("prompt", [b"Remove the bucket."], "BYTES")],
+            headers=auth())
+png = r.as_numpy("image")[0]                                               # the edited image, PNG bytes
+```
+
+The sim tools ([pano_ideate](../../sim/pano_ideate/README.md), [asset_gen](../../sim/asset_gen/README.md), [colmap_splat](../../sim/colmap_splat/README.md#from-a-pano_ideate-session)) call models through `triton_endpoint.py`: one `Endpoint(role, default_model)` per model they need, configured by `<ROLE>_ENDPOINT` (a model name on this Triton, or a full `https://<host:port>/v2/models/<model>` on any Triton), `<ROLE>_TOKEN` (else `TRITON_TOKEN`) and `<ROLE>_CA` (else `AWS_CA_BUNDLE`). Each tool's README lists its roles.
+
+```python
+from triton_endpoint import Endpoint                  # services/triton on sys.path
+depth = Endpoint("DEPTH", "moge-3-vitg")              # DEPTH_ENDPOINT overrides
+distance = depth.infer({"image": [jpg], "fov_x": np.array([90.0], np.float32)}, ["distance"])["distance"]
+```
+
 | Run param `model` | Backend | Inputs | Output |
 |---|---|---|---|
 | `ACT` | Python (`backends/xpolicylab_act.py`) | `state` FP32 `[B, D]`, one UINT8 `[B, H, W, 3]` RGB per camera | `action` `[B, chunk, D]` |
 | `MLP` | ONNX Runtime | `state` FP32 `[B, D]` | `action` `[B, 1, D]` |
 | Hugging Face model (`download-models-hf`) | vLLM | `text_input`, optional `image` (base64), `sampling_parameters` (JSON) | `text_output` |
+| `Qwen-Image-Edit-2511` | Python (`backends/qwen_image_edit.py`) | `images` BYTES `[1-3]` (picture 1 first), `prompt` BYTES `[1]`; optional `negative_prompt`, `steps` INT32 (40), `seed` INT32 (0), `true_cfg_scale` FP32 (4.0) | `image` BYTES `[1]` (PNG) |
+| `moge-3-vitg` | Python (`backends/moge.py`) | `image` BYTES `[1]`, `fov_x` FP32 `[1]` (degrees; 0 = equirectangular panorama); optional `view_size` INT32 (1024), `merge_width` INT32 (0 = full width) | `distance` FP32 `[H, W]` (metres), `mask` BOOL `[H, W]` |
+| `llmdet_large` | Python (`backends/llmdet.py`) | `image` BYTES `[1]`, `labels` BYTES `[N]`; optional `box_threshold` (0.35), `text_threshold` (0.25), `nms` (0.7) FP32 | `boxes` FP32 `[K, 4]` (pixels), `scores` FP32 `[K]`, `names` BYTES `[K]` |
+| `sam2.1-hiera-large` | Python (`backends/sam2.py`) | `image` BYTES `[1]`, `boxes` FP32 `[K, 4]` (pixels) | `masks` BOOL `[K, H, W]` |
 
-Other models are tagged `unsupported`; to add one, write a `package_<model>` function in `sync.py`.
+A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` names for its repo (or its version's tag `triton.backend`), otherwise to vLLM. Other models are tagged `unsupported`; to add one, write a `package_<model>` function in `sync.py`, or a backend in `backends/` with its inputs and outputs in `PYTHON_IO`.
 
 ## Tracking
 
@@ -66,6 +100,8 @@ Other models are tagged `unsupported`; to add one, write a `package_<model>` fun
 - Expect about 40 ms per ACT call with three 640×480 cameras from the login node.
 - After editing `Dockerfile` (`tritonserver:26.08-vllm-python-py3`, vLLM 0.27 and torch 2.14 built for sm_103, plus the ONNX Runtime backend from `tritonserver:26.08-py3`), rebuild with `services/ctl.sh up --build`.
 - A vLLM model runs as one instance on one whole GPU, GPU 1 unless the model version's tag `triton.gpu` names another; don't split one across GPUs (the 122B hit uncorrectable NVLink errors). Its engine arguments are `VLLM_ENGINE` in `sync.py` (32k context, 90% of the GPU, up to 4 images per prompt); tag `triton.vllm` with a JSON object to override them for one version.
+- The Python-backend Hugging Face models run as one instance each on GPU 2 (`TRITON_PYTHON_GPU`, or tag `triton.gpu`), about 100 GB together (the image editor 68 GB). They run with cuDNN off: in this image it makes Qwen-Image-Edit return noise and has no kernel for MoGe's transposed convolutions on GB300.
+- Expect on the Python backends: an image edit at 1024×1024 in ~16 s (40 steps), MoGe on one 1024 px view in ~0.6 s and on a 4096×2048 panorama in ~110 s (its 20 views, then the merge on the CPU), LLMDet and SAM in well under a second per view.
 - vLLM models read their weights in place from the `mlflow` bucket (mounted read-only at `/mlflow`), so nothing is copied into the `triton` bucket. Expect about 4 min to load the 122B (230 GiB of weights, then compilation), so a sync that loads it takes that long.
 - Expect about 1.7 s for 17 concurrent requests with one 1024×1024 image and ~90 output tokens each on the 122B (~900 tokens/s together); the first request after a load takes ~20 s.
 - `sync.py` is the reconciler. It runs in the same image with the checkout mounted, so a change to it takes effect on the next sync without a rebuild. After changing `backends/` or a packager, dispatch `sync-triton` with `force` set to the affected models to repackage them.
