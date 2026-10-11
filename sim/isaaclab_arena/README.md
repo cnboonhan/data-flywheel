@@ -6,7 +6,7 @@ Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule. Not
 |---|---|
 | `envgen.sh` | Runs Arena's agentic environment generation (CLI runner or Streamlit GUI) through a local OpenAI-compatible proxy |
 | `record.py` | `envgen.sh record`: a scripted demo of a spec, recorded from a scene camera and the wrist camera |
-| `hooks/sitecustomize.py` | Import hooks loaded via `PYTHONPATH` by `envgen.sh` (so they also apply inside the GUI's separate process): a `cliproxy` inference endpoint, a `ridgeback_franka_ik` mobile manipulator, and a `splat_scene` background when `ARENA_SPLAT_SCENE` is set |
+| `hooks/sitecustomize.py` | Import hooks loaded via `PYTHONPATH` by `envgen.sh` (so they also apply inside the GUI's separate process): a `cliproxy` inference endpoint, a `ridgeback_franka_ik` mobile manipulator, a `splat_scene` background when `ARENA_SPLAT_SCENE` is set, and no DLSS on GPUs without it (below) |
 
 ## Generate environments
 
@@ -24,6 +24,18 @@ bash sim/isaaclab_arena/envgen.sh gui                                  # live ed
 | `OPENAI_API_KEY` | The proxy's client key (required) | |
 | `ARENA_PROXY_BASE_URL` | Proxy endpoint | `http://127.0.0.1:8317/v1` |
 | `ARENA_PROXY_MODEL` | Model name the proxy serves | `claude-sonnet-5-5` |
+
+## Which GPU
+
+| GPU | Meshes (robot, objects, cameras) | Splat backgrounds |
+|---|---|---|
+| RTX (e.g. the 5090 laptop) | yes | yes |
+| GB300 nodes (C03: `CUDA_VISIBLE_DEVICES` = a GPU Triton leaves free) | yes, path traced (~2 min for 60 steps incl. start-up) | no: `Ray query is not supported` (no RT cores) |
+
+On data-centre GPUs (GB300, B200, H100, A100: no NGX) every frame fails in DLSS (`NGX CreateFeature failed`) and the camera read then crashes, so the hook switches the renderer to FXAA, no DL denoiser and path tracing denoised by OptiX. It detects these GPUs by name; `ARENA_NO_DLSS=1` or `0` forces it, and `ARENA_NO_DLSS_RENDER=rtpt` keeps the real-time path tracer instead (grainier, no OptiX). Run it on a GB300 over SSH, one Isaac Sim at a time:
+```bash
+ssh $SERVICE_NODE "bash -lc 'cd ~/workspaces/data-flywheel && CUDA_VISIBLE_DEVICES=3 bash sim/isaaclab_arena/envgen.sh record --env_spec <spec.yaml> --video_dir <dir> --kit_args --/crashreporter/enabled=false'"
+```
 
 ## Splat backgrounds
 

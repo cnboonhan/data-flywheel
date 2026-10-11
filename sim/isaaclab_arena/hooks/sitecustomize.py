@@ -10,6 +10,9 @@ made by an import hook: right after Arena imports the target module, the additio
   sim/colmap_splat/train.py. The splat stays metric and Z-up; it is shifted in x/y so the centre of its collision floor
   (the capture area) is Arena's origin, where embodiments spawn. Reference the floor as `prim_path: floor` to place
   objects on it.
+- No DLSS (isaac_rtx_renderer_utils) on GPUs without NGX (GB300 and other data-centre GPUs; ARENA_NO_DLSS=1/0 forces
+  it): every frame there fails in DLSS ("NGX CreateFeature failed") and the camera read later crashes. After Isaac
+  Lab's render settings: FXAA, no DL denoiser, path tracing denoised by OptiX (CUDA, no NGX).
 """
 
 import importlib.abc
@@ -91,7 +94,39 @@ def _register_ridgeback_franka(module) -> None:
     register_asset(RidgebackFrankaIKEmbodiment)
 
 
+# Data-centre GPUs, which have no NGX for DLSS. Path tracing at 16 samples a frame, OptiX-denoised: on a GB300 the
+# real-time path tracer without DLSS was grainy even at 16 samples, the path tracer with OptiX clean (untuned beyond).
+NO_NGX = re.compile(r"\b(G?B[0-9]00|H[0-9]00|A100)\b")
+NO_DLSS = {"/rtx/post/aa/op": 2, "/rtx-transient/post/aa/limitedOps": False, "/rtx-transient/dldenoiser/enabled": False,
+           "/rtx/rendermode": "PathTracing", "/rtx/pathtracing/spp": 16, "/rtx/pathtracing/totalSpp": 16,
+           "/rtx/pathtracing/optixDenoiser/enabled": True}
+
+
+def _no_ngx() -> bool:
+    if os.getenv("ARENA_NO_DLSS") in ("0", "1"):
+        return os.environ["ARENA_NO_DLSS"] == "1"
+    import glob
+    models = " ".join(open(f).read() for f in glob.glob("/proc/driver/nvidia/gpus/*/information"))
+    return bool(NO_NGX.search(models))
+
+
+def _no_dlss(module) -> None:
+    if not _no_ngx():
+        return
+    apply = module._apply_isaac_rtx_global_settings
+
+    def apply_without_dlss(global_settings, settings):
+        apply(global_settings, settings)
+        for key, value in NO_DLSS.items():
+            settings.set(key, value)
+        if os.getenv("ARENA_NO_DLSS_RENDER") == "rtpt":                 # the real-time path tracer, for splats
+            settings.set("/rtx/rendermode", "RealTimePathTracing")
+            settings.set("/rtx/rtpt/spp", 16)
+    module._apply_isaac_rtx_global_settings = apply_without_dlss
+
+
 _HOOKS = {
+    "isaaclab_physx.renderers.isaac_rtx_renderer_utils": _no_dlss,
     "isaaclab_arena.agentic_environment_generation.inference_backend": _register_cliproxy,
     "isaaclab_arena.embodiments.franka.franka": _register_ridgeback_franka,
 }
