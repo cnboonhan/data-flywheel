@@ -1,65 +1,40 @@
 # sim/isaaclab_arena
 
-Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule. Nothing here modifies the submodule; everything hooks in from outside.
+Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule: generate environments with an LLM, put them in captured or generated rooms, record scripted demos. Nothing here modifies the submodule; `hooks/sitecustomize.py` adds to it from outside.
 
-| Path | Purpose |
-|---|---|
-| `envgen.sh` | Runs Arena's agentic environment generation (CLI runner or Streamlit GUI) through a local OpenAI-compatible proxy |
-| `record.py` | `envgen.sh record`: a scripted demo of a spec, recorded from a scene camera and the wrist camera |
-| `hooks/sitecustomize.py` | Import hooks loaded via `PYTHONPATH` by `envgen.sh` (so they also apply inside the GUI's separate process): a `cliproxy` inference endpoint, a `ridgeback_franka_ik` mobile manipulator, a `splat_scene` background when `ARENA_SPLAT_SCENE` is set, and no DLSS on GPUs without it (below) |
+![The office in Arena on a GB300: the generated objects, the mesh room, a Franka at the capture point](../../assets/isaaclab_arena/office.gif)
 
-## Generate environments
+```mermaid
+flowchart LR
+  L["envgen.sh cli --mode resolve<br/>(an LLM writes the spec)"] --> Y["environment spec (YAML)"]
+  A["sim/asset_gen arena.py<br/>(a pano session's objects)"] --> Y
+  B["background: colmap_splat scene.usda<br/>or asset_gen mesh room"] -.ARENA_SPLAT_SCENE.-> E
+  Y --> E["envgen.sh build / gui / record"]
+  E --> V["Isaac Sim 6.1<br/>video_cam, wrist_cam"]
+```
 
-Start the proxy if you need `resolve` or the GUI ([CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), a CLI-authenticated model over the OpenAI API; `build` only needs Isaac Sim), then run `envgen.sh`. Specs go to [`eval/system2/environments/`](../../eval/system2/environments/) unless `--out_dir` is given.
+## Run
+
+The office above, end to end from a [pano_ideate](../pano_ideate/README.md) session (`asset_gen` objects, its [mesh room](../asset_gen/README.md#in-isaaclab-arena)):
+
+```bash
+uv run sim/asset_gen/background.py datasets/pano_ideate/office/session.zip
+uv run sim/asset_gen/arena.py datasets/asset_gen/office --pick 04_cup --place 03_book   # prints the exports below
+export ARENA_SPLAT_SCENE=$PWD/datasets/asset_gen/office/background/scene.usda ARENA_ASSET_DIR=$PWD/datasets/asset_gen/office/objects ARENA_SPLAT_ORIGIN='0 0'
+bash sim/isaaclab_arena/envgen.sh record --env_spec datasets/asset_gen/office/arena.yaml --video_dir datasets/videos/office \
+  --num_steps 150 --eye -1.2 -1.0 1.6 --target 1.0 0.8 0.6 --kit_args --/crashreporter/enabled=false
+```
+
+Generate an environment with an LLM ([CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) for `resolve` and the GUI; `build` needs only Isaac Sim). Specs go to [`eval/system2/environments/`](../../eval/system2/environments/) unless `--out_dir` is given.
 
 ```bash
 export OPENAI_API_KEY=<proxy client key>
-bash sim/isaaclab_arena/envgen.sh cli --mode resolve --prompt "..."   # write a YAML spec
-bash sim/isaaclab_arena/envgen.sh cli --mode build --env_spec eval/system2/environments/<env>.yaml
-bash sim/isaaclab_arena/envgen.sh gui                                  # live editor on http://localhost:8501
-```
-
-| Variable | Meaning | Default |
-|---|---|---|
-| `OPENAI_API_KEY` | The proxy's client key (required) | |
-| `ARENA_PROXY_BASE_URL` | Proxy endpoint | `http://127.0.0.1:8317/v1` |
-| `ARENA_PROXY_MODEL` | Model name the proxy serves | `claude-sonnet-5-5` |
-
-## Which GPU
-
-| GPU | Meshes (robot, objects, cameras) | Splat backgrounds |
-|---|---|---|
-| RTX (e.g. the 5090 laptop) | yes | yes |
-| GB300 nodes (C03: `CUDA_VISIBLE_DEVICES` = a GPU Triton leaves free) | yes, path traced (~2 min for 60 steps incl. start-up) | no: `Ray query is not supported` (no RT cores) |
-
-On data-centre GPUs (GB300, B200, H100, A100: no NGX) every frame fails in DLSS (`NGX CreateFeature failed`) and the camera read then crashes, so the hook switches the renderer to FXAA, no DL denoiser and path tracing denoised by OptiX. It detects these GPUs by name; `ARENA_NO_DLSS=1` or `0` forces it, and `ARENA_NO_DLSS_RENDER=rtpt` keeps the real-time path tracer instead (grainier, no OptiX). Run it on a GB300 over SSH, one Isaac Sim at a time:
-```bash
-ssh $SERVICE_NODE "bash -lc 'cd ~/workspaces/data-flywheel && CUDA_VISIBLE_DEVICES=3 bash sim/isaaclab_arena/envgen.sh record --env_spec <spec.yaml> --video_dir <dir> --kit_args --/crashreporter/enabled=false'"
-```
-
-## Splat backgrounds
-
-Point `ARENA_SPLAT_SCENE` at a [`sim/colmap_splat`](../colmap_splat/README.md) run's `scene.usda` (trained with `--floor`, e.g. from a [`sensors/real2sim`](../../sensors/real2sim/README.md) capture), then build or resolve a spec that uses the `splat_scene` background.
-
-```bash
-export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda
-bash sim/isaaclab_arena/envgen.sh cli --mode build --env_spec eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml
 bash sim/isaaclab_arena/envgen.sh cli --mode resolve --prompt "Franka at a table in the splat_scene warehouse ..."
+bash sim/isaaclab_arena/envgen.sh cli --mode build --env_spec eval/system2/environments/<env>.yaml
+bash sim/isaaclab_arena/envgen.sh gui        # live editor on http://localhost:8501
 ```
 
-Notes:
-- Registered as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted in x/y so the middle of the capture area is Arena's origin, where the robot spawns; `ARENA_SPLAT_ORIGIN="x y"` picks another point of the capture's frame.
-- [`sim/asset_gen`](../asset_gen/README.md#in-isaaclab-arena) writes a mesh-room background in the same layout (for GPUs without RT cores) and registers a session's generated objects as `gen_<asset>` (`ARENA_ASSET_DIR`).
-- The splat only renders; its baked lighting doesn't respond to the sim.
-- The only collision is the floor (the capture cameras' footprint plus 2 m). Anchor on it with an object reference (`parent_id: <background id>`, `prim_path: floor`), place a table `on` it and objects on the table; an object beyond the floor fails the `on` check and falls. [`franka_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml) pins the table in front of the robot with `at_position`.
-
-## Mobile manipulator
-
-`ridgeback_franka_ik` is `franka_ik` on Isaac Lab's holonomic Clearpath Ridgeback (`isaaclab_assets` `RIDGEBACK_FRANKA_PANDA_CFG`). Its action is `franka_ik`'s 7 values (relative IK delta, gripper), then base velocity `vx, vy` (m/s) and `wz` (rad/s). The base moves on joints anchored at the spawn pose, so base velocity and IK deltas are in that fixed frame, not the robot's heading. Place the table far enough away for the base to drive up to it, as [`ridgeback_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/ridgeback_mug_to_bowl_splat_scene.yaml) does.
-
-## Record a demo
-
-Run `envgen.sh record` on a spec; it writes `video_cam/clip_0000.mp4` (fixed camera at `--eye`, looking at `--target`) and `wrist_cam/clip_0000.mp4` at 15 fps.
+Record a real2sim splat scene with the mobile manipulator (an RTX GPU):
 
 ```bash
 export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda
@@ -67,7 +42,32 @@ bash sim/isaaclab_arena/envgen.sh record --env_spec eval/system2/environments/ri
   --video_dir datasets/videos/ridgeback_demo --num_steps 460 --eye -1.7 0.8 1.6 --target 3.0 -0.1 0.6
 ```
 
-Notes:
-- A scripted sweep for checking a scene, not a policy: the Ridgeback drives 1.05 m to the table (`--stop_x`), the arm dips to the mug and the bowl, circles over the table, and the base backs off. Nothing is grasped; `franka_ik` specs skip the driving.
-- `record.py` writes frames itself because Isaac Lab's `VideoRecorder` (moviepy 1.0.3) duplicates and drops a frame every ~7.
-- Camera coordinates are Arena's (origin at the capture area's centre), so a framing fits one capture region. The one above is for `sensors/real2sim`'s `--region -9 -4 -3 2`. Keep the camera inside the captured area: floaters crowd its edges, and the floor shimmers where the capture didn't cover the viewing angle.
+`record` writes `video_cam/clip_0000.mp4` (fixed at `--eye`, looking at `--target`) and `wrist_cam/clip_0000.mp4` at 15 fps: a scripted sweep for checking a scene, not a policy (the arm dips to the task's pick and place objects and circles; nothing is grasped).
+
+## Which GPU
+
+| GPU | Meshes: robot, objects, mesh rooms | Gaussian splat backgrounds |
+|---|---|---|
+| RTX (e.g. the 5090 laptop) | yes | yes |
+| GB300 nodes (`CUDA_VISIBLE_DEVICES` = a GPU Triton leaves free) | yes, path traced (~3 min for 150 steps with start-up) | no: `Ray query is not supported` (no RT cores) |
+
+On a GB300, run it over SSH, one Isaac Sim at a time:
+```bash
+ssh $SERVICE_NODE "bash -lc 'cd ~/workspaces/data-flywheel && CUDA_VISIBLE_DEVICES=3 bash sim/isaaclab_arena/envgen.sh record --env_spec <spec.yaml> --video_dir <dir> --kit_args --/crashreporter/enabled=false'"
+```
+
+## Variables
+
+| Variable | Does | Default |
+|---|---|---|
+| `OPENAI_API_KEY`, `ARENA_PROXY_BASE_URL`, `ARENA_PROXY_MODEL` | the LLM proxy (`cliproxy` endpoint) | (required), `http://127.0.0.1:8317/v1`, `claude-sonnet-5-5` |
+| `ARENA_SPLAT_SCENE` | a background `scene.usda` ([colmap_splat](../colmap_splat/README.md) splat or [asset_gen](../asset_gen/README.md) mesh room), registered as `splat_scene` (`ARENA_SPLAT_NAME` renames it) | none |
+| `ARENA_SPLAT_ORIGIN` | `"x y"` in the background's frame where the robot spawns (Arena's origin) | the centre of its floor |
+| `ARENA_ASSET_DIR` | an asset_gen `objects/` folder, each object registered as `gen_<asset>` | none |
+| `ARENA_NO_DLSS` | `1`/`0` forces the no-DLSS renderer (FXAA, no DL denoiser, path tracing with OptiX), which the hook picks itself on GPUs without NGX (GB300, B200, H100, A100: every frame otherwise fails, `NGX CreateFeature failed`, and the camera read crashes); `ARENA_NO_DLSS_RENDER=rtpt` keeps the real-time path tracer (grainier) | by GPU name |
+
+## Notes
+
+- **Backgrounds:** a splat or mesh room only renders, its lighting baked. Its collision is an invisible floor (the capture's footprint plus 2 m; a mesh room is also a collider). Anchor on it with an object reference (`parent_id: <background id>`, `prim_path: floor`), place a table `on` it and objects on the table; [`franka_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml) pins the table with `at_position`. Camera coordinates are Arena's, so a framing fits one background; keep the camera inside the captured area (floaters crowd its edges).
+- **Mobile manipulator:** `ridgeback_franka_ik` is `franka_ik` on Isaac Lab's holonomic Ridgeback (`RIDGEBACK_FRANKA_PANDA_CFG`): `franka_ik`'s 7 action values, then base `vx, vy` (m/s) and `wz` (rad/s), on joints anchored at the spawn pose (so in that fixed frame). `record` drives it `--stop_x` (1.05 m) towards the table first; `franka_ik` specs skip the driving.
+- `record.py` writes its frames itself: Isaac Lab's `VideoRecorder` (moviepy 1.0.3) duplicates and drops a frame every ~7.

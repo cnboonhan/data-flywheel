@@ -1,6 +1,6 @@
 # sim/asset_gen
 
-The objects of a [`pano_ideate`](../pano_ideate/README.md) session as textured rigid bodies, generated rather than reconstructed: a typical object of its kind in the session's colours, at the session's size and place. The room around them is [`colmap_splat`](../colmap_splat/README.md#from-a-pano_ideate-session)'s.
+The objects of a [`pano_ideate`](../pano_ideate/README.md) session as textured rigid bodies, generated rather than reconstructed: a typical object of its kind in the session's colours, at the session's size and place. The room around them is [`colmap_splat`](../colmap_splat/README.md#train)'s.
 
 ![Generated objects: the session's view, the drawing, the textured mesh from four sides](../../assets/asset_gen/objects.jpg)
 
@@ -46,7 +46,7 @@ flowchart LR
    ```bash
    uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 04_cup --place 03_book
    ```
-3. Record it ([isaaclab_arena](../isaaclab_arena/README.md#record-a-demo); on a GB300, see [Which GPU](../isaaclab_arena/README.md#which-gpu)).
+3. Record it ([isaaclab_arena](../isaaclab_arena/README.md#run); on a GB300, see [Which GPU](../isaaclab_arena/README.md#which-gpu)).
    ```bash
    bash sim/isaaclab_arena/envgen.sh record --env_spec datasets/asset_gen/<scene>/arena.yaml --video_dir <dir>
    ```
