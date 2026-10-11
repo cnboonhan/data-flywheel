@@ -1,15 +1,13 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["moge @ git+https://github.com/microsoft/MoGe.git@74fbce054ebe", "diffusers>=0.36", "transformers>=4.57", "accelerate", "torchvision"]
-# [tool.uv]
-# override-dependencies = ["moderngl; sys_platform == 'never'"]   # MoGe's renderer, unused here; no aarch64 wheel
+# dependencies = ["numpy", "opencv-python-headless", "tritonclient[http]", "transformers", "jinja2"]
 # ///
 """Render the end state of an action on the panorama: what the scene looks like after it, without the steps between.
 
-    uv run sim/pano_splat/act.py datasets/pano_splat/<scene> "pick up the cup on the counter and open the fridge"
+    uv run sim/pano_ideate/act.py datasets/pano_ideate/<scene> "pick up the cup on the counter and open the fridge"
 
-Needs steps 1 and 2. Source slurm.env first to use the VLM on Triton. The VLM (Qwen3.5-122B-A10B) reads the action, the panorama and step 2's object list, and names
-the objects the action changes, with what each looks like afterwards: taken away ("remove": picked up, carried off,
+Needs steps 1 and 2, and Triton (models.py). The VLM (Qwen3.5-122B-A10B) reads the action, the panorama and step 2's
+object list, and names the objects the action changes, with what each looks like afterwards: taken away ("remove": picked up, carried off,
 thrown away) or a new state ("the fridge door open"). For each, a perspective view around the object goes to
 Qwen-Image-Edit-2511 (Apache-2.0) with a second copy that outlines the object in red, and only the edit near that
 object goes back onto the panorama: for a removal, the object's surroundings (shading-matched, with its contact
@@ -23,16 +21,14 @@ editor's output, after). serve.py uses the same functions for edits made in the 
 
 import argparse
 import json
-import os
 import re
 from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
-from PIL import Image
 
 import common
+import models
 
 PLAN = (
     "This is a 360-degree panorama of a room. Direction 0 deg is the middle of the image; directions grow to the left "
@@ -96,61 +92,7 @@ class Scene:
         self._labels = value
 
 
-class Models:
-    """The VLM, the image editor and MoGe, each loaded on first use and kept. The VLM is the one on Triton (named
-    after the repo, services/triton/README.md) when TRITON_URL is set (slurm.env) and local is False."""
-
-    def __init__(self, vlm: str, editor: str, moge: str, vlm_device: str = "auto", editor_device: str = "cuda",
-                 local: bool = False):
-        self.names = {"vlm": vlm, "editor": editor, "moge": moge}
-        self.vlm_device, self.editor_device = vlm_device, editor_device   # editor_device also runs MoGe
-        self.triton = None if local else os.environ.get("TRITON_URL")
-        self._vlm = self._editor = self._template = self._moge = None
-
-    def ask_triton(self, text: str, image: np.ndarray | None, max_new_tokens: int) -> str:
-        from transformers import AutoProcessor
-        if self._template is None:                    # only the chat template: the model runs on Triton
-            self._template = AutoProcessor.from_pretrained(self.names["vlm"])
-        return common.triton_ask(self._template, self.names["vlm"], text, image, max_new_tokens)
-
-    def ask(self, text: str, image: np.ndarray | None = None, max_new_tokens: int = 1000) -> str:
-        if self.triton:
-            return self.ask_triton(text, image, max_new_tokens)
-        from transformers import AutoModelForImageTextToText, AutoProcessor
-        if self._vlm is None:
-            self._vlm = (AutoProcessor.from_pretrained(self.names["vlm"]),
-                         AutoModelForImageTextToText.from_pretrained(self.names["vlm"], dtype=torch.bfloat16,
-                                                                     device_map=self.vlm_device))
-        proc, vlm = self._vlm
-        content = ([{"type": "image", "image": Image.fromarray(image)}] if image is not None else []) + \
-                  [{"type": "text", "text": text}]
-        x = proc.apply_chat_template([{"role": "user", "content": content}], tokenize=True, add_generation_prompt=True,
-                                     return_dict=True, return_tensors="pt", enable_thinking=False).to(vlm.device)
-        with torch.no_grad():
-            y = vlm.generate(**x, max_new_tokens=max_new_tokens, do_sample=False)
-        return proc.decode(y[0, x["input_ids"].shape[1]:], skip_special_tokens=True).strip()
-
-    def drop_vlm(self):
-        self._vlm = None
-        torch.cuda.empty_cache()
-
-    @property
-    def editor(self):
-        if self._editor is None:
-            from diffusers import QwenImageEditPlusPipeline
-            self._editor = QwenImageEditPlusPipeline.from_pretrained(self.names["editor"], dtype=torch.bfloat16)
-            self._editor.to(self.editor_device)
-            self._editor.set_progress_bar_config(disable=True)
-        return self._editor
-
-    @property
-    def moge(self):
-        if self._moge is None:
-            self._moge = common.load_moge(self.names["moge"]).to(self.editor_device)
-        return self._moge
-
-
-def plan(models: Models, scene: Scene, action: str) -> list[dict]:
+def plan(triton: models.Triton, scene: Scene, action: str) -> list[dict]:
     """The objects a free-text action changes, and how, picked by the VLM from step 2's list."""
     lines = []
     for k, o in scene.objects.items():
@@ -159,9 +101,9 @@ def plan(models: Models, scene: Scene, action: str) -> list[dict]:
                      f"{np.hypot(x, y):.1f} m, {z:.1f} m")
     text = PLAN.format(objects="\n".join(lines), action=action)
     image = cv2.resize(scene.pano, (2048, 1024), interpolation=cv2.INTER_AREA)
-    changes = parse_plan(scene, models.ask(text, image))
+    changes = parse_plan(scene, triton.vlm(text, image))
     if not changes:                                   # now and then the answer uses other keys: ask once more
-        answer = models.ask(text + "\n\nUse exactly the keys ids, object, after, state_before and state_after.", image)
+        answer = triton.vlm(text + "\n\nUse exactly the keys ids, object, after, state_before and state_after.", image)
         changes = parse_plan(scene, answer)
         if not changes:
             raise ValueError(f"no object to change; the VLM answered: {answer}")
@@ -184,15 +126,10 @@ def parse_plan(scene: Scene, answer: str) -> list[dict]:
 
 
 def crop_camera(scene: Scene, mask: np.ndarray, margin: float, least: float = 40):
-    """A view centred on the mask, its fov `margin` times the mask's angular extent (plus 10 deg), at least `least`."""
-    return camera_for(scene.dirs[mask][:: max(1, mask.sum() // 20000)] @ scene.R.T, margin, least)
-
-
-def camera_for(d: np.ndarray, margin: float, least: float = 40):
-    """A view centred on scene-frame directions d, its fov `margin` times their angular extent (plus 10 deg)."""
-    d = d / np.linalg.norm(d, axis=-1, keepdims=True)
-    c = d.mean(0)
-    c /= np.linalg.norm(c)
+    """A view centred on the mask: yaw, pitch and a fov of `margin` times its angular extent plus 10 deg (at least
+    `least`), in degrees."""
+    d = scene.dirs[mask][:: max(1, mask.sum() // 20000)] @ scene.R.T
+    c = d.mean(0) / np.linalg.norm(d.mean(0))
     extent = np.degrees(np.percentile(np.arccos(np.clip(d @ c, -1, 1)), 98))
     return (float(np.degrees(np.arctan2(c[1], c[0]))), float(np.degrees(np.arcsin(c[2]))),
             float(np.clip(margin * extent + 10, least, 120)))
@@ -206,16 +143,14 @@ def outline(img: np.ndarray, obj: np.ndarray) -> np.ndarray:
     return np.where(line[..., None] > 0, np.array([255, 0, 0], np.uint8), img)
 
 
-def edit(models: Models, images: list, prompt: str, img: np.ndarray, obj: np.ndarray, ref: np.ndarray, steps: int,
-         log, name: str):
+def edit(triton: models.Triton, images: list, prompt: str, img: np.ndarray, obj: np.ndarray, ref: np.ndarray,
+         steps: int, log, name: str):
     """The editor's result for the view img (colour-matched on ref, a copied red outline painted over), its raw
     output and where it differs from img. A second seed when the object barely changed."""
     S = img.shape[0]
     for seed in (0, 1):
-        res = models.editor(image=[Image.fromarray(i) for i in images], prompt=prompt, negative_prompt=" ",
-                            true_cfg_scale=4.0, num_inference_steps=steps,
-                            generator=torch.Generator(models.editor_device).manual_seed(seed)).images[0]
-        res = np.array(res.resize((S, S), Image.LANCZOS)).astype(np.float32)
+        res = cv2.resize(triton.edit(images, prompt, steps, seed), (S, S), interpolation=cv2.INTER_LANCZOS4)
+        res = res.astype(np.float32)
         raw = res.astype(np.uint8)
         res += (img[ref].astype(np.float32) - res[ref]).mean(0)       # the editor shifts colours slightly
         res = res.clip(0, 255)
@@ -249,30 +184,41 @@ def changed_near(diff: np.ndarray, zone: np.ndarray, obj: np.ndarray) -> np.ndar
     return np.isin(part, np.unique(part[obj > 0])) & (part > 0)
 
 
+def around(scene: Scene, view: tuple, near: np.ndarray) -> np.ndarray:
+    """The panorama pixels (flat indices) in the box that the view's pixels `near` come from."""
+    mx, my = view[:2]
+    py, px = np.nonzero(near)
+    u, v = mx[py, px], my[py, px]
+    rows = np.arange(max(int(v.min()) - 2, 0), min(int(v.max()) + 3, scene.H))
+    cols = (np.arange(scene.W) if u.max() - u.min() > scene.W / 2      # across the seam: every column
+            else np.arange(max(int(u.min()) - 2, 0), min(int(u.max()) + 3, scene.W)))
+    return (rows[:, None] * scene.W + cols[None]).ravel()
+
+
+def lookup(scene: Scene, view: tuple, idx: np.ndarray, images: list[np.ndarray]):
+    """The panorama pixels idx that the view sees, and each view image's values there (bilinear)."""
+    yaw, pitch, fov = view[2:]
+    S = images[0].shape[0]
+    vx, vy, front = common.project(scene.frame, scene.dirs.reshape(-1, 3)[idx], yaw, pitch, S, fov)
+    ok = front & (vx >= 0) & (vx < S - 1) & (vy >= 0) & (vy < S - 1)
+    idx, n = idx[ok], ok.sum()
+    pad = -n % 4096                           # remap takes at most 32767 rows: sample through a 4096-wide grid
+    grid = [np.pad(a[ok], (0, pad)).reshape(-1, 4096) for a in (vx, vy)]
+    return idx, [cv2.remap(im, *grid, cv2.INTER_LINEAR).reshape(n + pad, -1)[:n] for im in images]
+
+
 def paste(scene: Scene, res: np.ndarray, alpha: np.ndarray, view: tuple) -> np.ndarray:
     """Blend the view res onto scene.pano with alpha; the panorama pixels that changed (alpha > 0.5)."""
-    mx, my, yaw, pitch, fov = view
-    H, W, S = scene.H, scene.W, res.shape[0]
-    py, px = np.nonzero(cv2.dilate((alpha > 0.01).astype(np.uint8), np.ones((9, 9), np.uint8)))
-    u, v = mx[py, px], my[py, px]
-    rows = np.arange(max(int(v.min()) - 2, 0), min(int(v.max()) + 3, H))
-    cols = np.arange(W) if u.max() - u.min() > W / 2 else np.arange(max(int(u.min()) - 2, 0), min(int(u.max()) + 3, W))
-    idx = (rows[:, None] * W + cols[None]).ravel()
-    vx, vy, front = common.project(scene.frame, scene.dirs.reshape(-1, 3)[idx], yaw, pitch, S, fov)
-    inside = front & (vx > 0) & (vx < S - 1) & (vy > 0) & (vy < S - 1)
-    idx, vx, vy = idx[inside], vx[inside], vy[inside]
-    pad = -len(idx) % 4096                    # remap takes at most 32767 rows: sample through a 4096-wide grid
-    grid = [np.pad(a, (0, pad)).reshape(-1, 4096) for a in (vx, vy)]
-    a = cv2.remap(alpha, *grid, cv2.INTER_LINEAR).reshape(-1)[:len(idx), None]
-    rgb = cv2.remap(res.astype(np.uint8), *grid, cv2.INTER_LINEAR).reshape(-1, 3)[:len(idx)]
+    near = cv2.dilate((alpha > 0.01).astype(np.uint8), np.ones((9, 9), np.uint8))
+    idx, (a, rgb) = lookup(scene, view, around(scene, view, near), [alpha, res.astype(np.uint8)])
     flat = scene.pano.reshape(-1, 3)
     flat[idx] = (flat[idx] * (1 - a) + rgb * a).astype(np.uint8)
-    changed = np.zeros((H, W), bool)
+    changed = np.zeros((scene.H, scene.W), bool)
     changed.reshape(-1)[idx] = a[:, 0] > 0.5
     return changed
 
 
-def render(models: Models, scene: Scene, c: dict, size: int = 1024, steps: int = 40, log=print):
+def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps: int = 40, log=print):
     """Apply one change to scene.pano in place. Returns the panorama pixels that changed and the crop panels (view
     before, marked, the editor's output, after)."""
     S = size
@@ -292,7 +238,7 @@ def render(models: Models, scene: Scene, c: dict, size: int = 1024, steps: int =
     zone = box_zone(obj, 0.2 if remove else 1.0)
     core = cv2.dilate(obj, np.ones((15, 15), np.uint8)) > 0
     ref = ~zone if (~zone).mean() > 0.05 else cv2.dilate(obj, np.ones((61, 61), np.uint8)) == 0   # for the colours
-    res, raw, diff = edit(models, [img, marked], prompt, img, obj, ref, steps, log, c["object"])
+    res, raw, diff = edit(triton, [img, marked], prompt, img, obj, ref, steps, log, c["object"])
     if remove:
         lab = cv2.remap(scene.labels, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
         keep = (zone | core) & ~((lab > 0) & ~np.isin(lab, np.array(c["ids"]) + 1) & ~core)   # other objects stay
@@ -337,29 +283,26 @@ def shape(scene: Scene, ids: list[int]) -> dict:
     return {"xyz": xyz.astype(np.float32), "rgb": scene.pano[mask][keep], "base": base.astype(np.float32)}
 
 
-def splat(scene: Scene, xyz: np.ndarray, rgb: np.ndarray):
-    """Points drawn onto the panorama where they are in front of what is there: colour, distance and mask, with
-    small gaps between the points closed."""
+def splat(scene: Scene, xyz: np.ndarray):
+    """Points drawn onto the panorama, gaps between them closed: their distance, and where they show (in front of
+    what is there)."""
     H, W, h = scene.H, scene.W, scene.frame["camera_height"]
     rays = xyz - [0, 0, h]
     d = np.linalg.norm(rays, axis=1)
     x, y = common.to_pixels(rays @ scene.R, H, W)                    # scene frame -> panorama frame -> pixels
     xi, yi = np.round(x).astype(int) % W, np.clip(np.round(y).astype(int), 0, H - 1)
     order = np.argsort(-d)                                            # far first: the nearest point wins
-    colour, depth = np.zeros((H, W, 3), np.uint8), np.full((H, W), np.inf, np.float32)
-    colour[yi[order], xi[order]], depth[yi[order], xi[order]] = rgb[order], d[order]
-    hit = np.isfinite(depth)
+    depth = np.zeros((H, W), np.float32)
+    depth[yi[order], xi[order]] = d[order]
+    hit = depth > 0
     whole = cv2.morphologyEx(hit.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
-    gaps = (whole & ~hit).astype(np.uint8)
-    if gaps.any():
-        colour = cv2.inpaint(colour, gaps, 3, cv2.INPAINT_TELEA)
-        depth = cv2.inpaint(np.where(hit, depth, 0).astype(np.float32), gaps, 3, cv2.INPAINT_TELEA)
-    mask = whole & (depth < scene.distance - 0.02)                    # hidden behind what is nearer
-    return colour, depth, mask
+    if (whole & ~hit).any():
+        depth = cv2.inpaint(depth, (whole & ~hit).astype(np.uint8), 3, cv2.INPAINT_TELEA)
+    return depth, whole & (depth < scene.distance - 0.02)
 
 
-def place(models: Models, scene: Scene, label: str, shp: dict, rgba: np.ndarray, u: float, v: float, note: str = "",
-          size: int = 1024, steps: int = 40, log=print):
+def place(triton: models.Triton, scene: Scene, label: str, shp: dict, rgba: np.ndarray, u: float, v: float,
+          note: str = "", size: int = 1024, steps: int = 40, log=print):
     """Put an object back, from its 3D shape, standing on the surface at panorama position (u, v) (both 0-1). Its
     points, moved there and drawn from the capture point (hidden where something is in front), give where it goes, how
     large and what covers it, as an outline; the editor draws it there from its cutout (rgba), in the scene's lighting
@@ -369,7 +312,7 @@ def place(models: Models, scene: Scene, label: str, shp: dict, rgba: np.ndarray,
     y, x = min(int(v * scene.H), scene.H - 1), min(int(u * scene.W), scene.W - 1)
     target = scene.R @ (scene.dirs[y, x] * scene.distance[y, x]) + [0, 0, scene.frame["camera_height"]]
     xyz = shp["xyz"] + (target - shp["base"]).astype(np.float32)
-    _, depth, mask = splat(scene, xyz, shp["rgb"])
+    depth, mask = splat(scene, xyz)
     if not mask.any():
         raise ValueError(f"the {label} would be hidden there; pick a spot in view")
 
@@ -396,7 +339,7 @@ def place(models: Models, scene: Scene, label: str, shp: dict, rgba: np.ndarray,
               + "Keep everything else exactly as it is. Do not draw the red outline.")
     zone = box_zone(obj, 0.5)
     ref = ~zone if (~zone).mean() > 0.05 else cv2.dilate(obj, np.ones((61, 61), np.uint8)) == 0
-    res, raw, diff = edit(models, [img, marked, thing.astype(np.uint8)], prompt, img, obj, ref, steps, log, label)
+    res, raw, diff = edit(triton, [img, marked, thing.astype(np.uint8)], prompt, img, obj, ref, steps, log, label)
     keep = changed_near(diff, zone, obj) & ~front                     # the object and its shadow
     core = keep & (obj > 0)
     alpha = np.maximum(cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 3.0), core.astype(np.float32))
@@ -413,25 +356,14 @@ def place(models: Models, scene: Scene, label: str, shp: dict, rgba: np.ndarray,
 
 def view_to_pano(scene: Scene, m: np.ndarray, view: tuple) -> np.ndarray:
     """A view's mask on the panorama."""
-    mx, my, yaw, pitch, fov = view
-    S = m.shape[0]
-    ys, xs = np.nonzero(m > 0.5)
     out = np.zeros((scene.H, scene.W), bool)
-    if not len(xs):
-        return out
-    u, v = mx[ys, xs], my[ys, xs]
-    rows = np.arange(max(int(v.min()) - 2, 0), min(int(v.max()) + 3, scene.H))
-    cols = (np.arange(scene.W) if u.max() - u.min() > scene.W / 2
-            else np.arange(max(int(u.min()) - 2, 0), min(int(u.max()) + 3, scene.W)))
-    idx = (rows[:, None] * scene.W + cols[None]).ravel()
-    vx, vy, front = common.project(scene.frame, scene.dirs.reshape(-1, 3)[idx], yaw, pitch, S, fov)
-    inside = front & (vx >= 0) & (vx < S - 0.5) & (vy >= 0) & (vy < S - 0.5)
-    idx, vx, vy = idx[inside], np.round(vx[inside]).astype(int), np.round(vy[inside]).astype(int)
-    out.reshape(-1)[idx[m[vy, vx] > 0.5]] = True
+    if m.any():
+        idx, (v,) = lookup(scene, view, around(scene, view, m > 0.5), [m.astype(np.float32)])
+        out.reshape(-1)[idx[v[:, 0] > 0.5]] = True
     return out
 
 
-def update_depth(models: Models, scene: Scene, changed: np.ndarray, size: int = 768):
+def update_depth(triton: models.Triton, scene: Scene, changed: np.ndarray, size: int = 768):
     """scene.distance for the changed pixels: per changed region, MoGe on one perspective view around it (not the
     whole panorama), scaled to the old depth on the unchanged ring around the region."""
     H, W = scene.H, scene.W
@@ -444,18 +376,9 @@ def update_depth(models: Models, scene: Scene, changed: np.ndarray, size: int = 
         yaw, pitch, fov = crop_camera(scene, region | ring, 1.2, least=30)
         mx, my = common.view(scene.frame, H, W, yaw, pitch, size, fov)
         img = cv2.remap(scene.pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-        with torch.no_grad():
-            x = torch.tensor(img / 255, dtype=torch.float32, device=models.editor_device).permute(2, 0, 1)
-            new = models.moge.infer(x, fov_x=fov, apply_mask=False)["points"].norm(dim=-1).float().cpu().numpy()
-        # The region's and ring's panorama pixels, sampled from the view.
-        ys, xs = np.nonzero(region | ring)
-        idx = ys * W + xs
-        vx, vy, front = common.project(scene.frame, scene.dirs.reshape(-1, 3)[idx], yaw, pitch, size, fov)
-        ok = front & (vx >= 0) & (vx < size - 1) & (vy >= 0) & (vy < size - 1)
-        idx, vx, vy = idx[ok], vx[ok], vy[ok]
-        pad = -len(idx) % 4096                        # remap takes at most 32767 rows: sample through a 4096-wide grid
-        d = cv2.remap(new, *[np.pad(a, (0, pad)).reshape(-1, 4096) for a in (vx, vy)], cv2.INTER_LINEAR)
-        d = d.reshape(-1)[:len(idx)]
+        new = triton.depth(img, fov)[0]
+        idx, (d,) = lookup(scene, (mx, my, yaw, pitch, fov), np.flatnonzero(region | ring), [new])
+        d = d[:, 0]
         inring = ring.reshape(-1)[idx]
         if not inring.any():
             continue
@@ -473,14 +396,10 @@ def main():
     p.add_argument("--replan", action="store_true", help="ask the VLM again instead of reusing plan.json")
     p.add_argument("--size", type=int, default=1024, help="view size in pixels")
     p.add_argument("--steps", type=int, default=40)
-    p.add_argument("--vlm", default="Qwen/Qwen3.5-122B-A10B", help="on Triton if TRITON_URL is set (slurm.env)")
-    p.add_argument("--local_vlm", action="store_true", help="load the VLM here instead (bf16, ~245 GB: one B300)")
-    p.add_argument("--editor", default="Qwen/Qwen-Image-Edit-2511", help="bf16, ~60 GB")
-    p.add_argument("--model", default="Ruicheng/moge-3-vitg", help="depth of the changed pixels (MIT)")
     args = p.parse_args()
     out = args.scene / "act" / (args.out or re.sub(r"[^a-z0-9]+", "_", args.action.lower()).strip("_")[:60] or "action")
     (out / "crops").mkdir(parents=True, exist_ok=True)
-    scene, models = Scene(args.scene, args.input), Models(args.vlm, args.editor, args.model, local=args.local_vlm)
+    scene, triton = Scene(args.scene, args.input), models.Triton()
     original = scene.pano.copy()
 
     plan_file = out / "plan.json"
@@ -488,22 +407,19 @@ def main():
         changes = json.loads(plan_file.read_text())["changes"]
     else:
         try:
-            changes = plan(models, scene, args.action)
+            changes = plan(triton, scene, args.action)
         except ValueError as e:
             raise SystemExit(str(e))
         plan_file.write_text(json.dumps({"action": args.action, "changes": changes}, indent=1))
-    models.drop_vlm()
     for c in changes:
         print(f"{c['object']} ({', '.join(map(str, c['ids']))}): {c['after']}", flush=True)
 
     changed = np.zeros((scene.H, scene.W), bool)
     for n, c in enumerate(changes):
-        mask, panels = render(models, scene, c, args.size, args.steps, log=lambda s: print(s, flush=True))
+        mask, panels = render(triton, scene, c, args.size, args.steps, log=lambda s: print(s, flush=True))
         changed |= mask
         cv2.imwrite(str(out / "crops" / f"{n}.jpg"), cv2.cvtColor(panels, cv2.COLOR_RGB2BGR))
-    models._editor = None
-    torch.cuda.empty_cache()
-    update_depth(models, scene, changed)
+    update_depth(triton, scene, changed)
 
     np.save(out / "distance.npy", scene.distance)
     cv2.imwrite(str(out / "pano.jpg"), cv2.cvtColor(scene.pano, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])

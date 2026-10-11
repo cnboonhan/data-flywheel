@@ -1,40 +1,44 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["moge @ git+https://github.com/microsoft/MoGe.git@74fbce054ebe", "diffusers>=0.36", "transformers>=4.57", "accelerate", "torchvision"]
-# [tool.uv]
-# override-dependencies = ["moderngl; sys_platform == 'never'"]   # MoGe's renderer, unused here; no aarch64 wheel
+# dependencies = ["numpy", "opencv-python-headless", "trimesh", "tritonclient[http]", "transformers", "jinja2"]
 # ///
 """Walk around a panorama in the browser and change its objects: click one, say what happens to it, and the
-panorama shows the end state.
+panorama shows the end state. Runs anywhere that reaches Triton, a laptop included: every model runs on the server
+(models.py), this process only does the geometry and keeps the scenes.
 
-    uv run sim/pano_splat/serve.py datasets/pano_splat --port 8000
+    uv run sim/pano_ideate/serve.py datasets/pano_ideate        # then open http://localhost:8765
 
-Needs steps 1 and 2. Serves viewer.html and, per scene, the current panorama, its depth and a map of the movable and
-articulated objects. The viewer builds a mesh from the depth (leaving out triangles across depth jumps) and keeps the
-eye within --radius of the capture point, at the capture height, marked by a circle on the floor: a single panorama
-shows nothing behind objects, so further away holes and stretched surfaces appear. Hovering highlights an object;
-clicking it asks for an action. The edit is act.py's, with its models: Qwen3.5-122B-A10B plans it from the action
-and the clicked object (which objects change, all ids of each, their end state, and an articulated object's state
-before and after), Qwen-Image-Edit-2511 renders it and MoGe-3 updates the depth (~30 s per edit). The VLM is the one on
-Triton (source slurm.env first); the editor and MoGe load here at start and stay, on one GPU (~60 GB).
+Serves viewer.html and, per scene in the folder (steps 1 and 2 done), the current panorama, its depth and a map of
+the movable and articulated objects. Add a panorama from the viewer: it runs steps 1 and 2 (depth.py, objects.py; a
+few minutes, mostly on the server) and opens it. The viewer builds a mesh from the depth (leaving out triangles across
+depth jumps, a far sphere of the panorama behind them) and keeps the eye within --radius of the capture point, at the
+capture height, marked by a circle on the floor: a single panorama shows nothing behind objects, so further away holes
+and stretched surfaces appear. Hovering highlights an object; clicking it asks for an action. The edit is act.py's:
+the VLM plans it from the action and the clicked object (which objects change, all ids of each, their end state, and
+an articulated object's state before and after), the image editor renders it and MoGe updates the depth (~30 s).
+Long operations run as jobs whose progress the viewer shows.
 
 Each edit's result is the new current panorama. Every object has a memory of how it was last seen, in 3D, per mode.
 A movable object has one: its coloured points, saved when it is picked up (it then waits in the inventory); placing
-it moves those points onto the surface clicked, draws them from the capture point (hidden where something is in
-front), and the editor blends it in; it stays the same object, so picking it up again updates its memory. An
-articulated object has one mode per state (closed, open): its area's pixels, depth and objects, contents included;
-going back to a state it has been in restores that instead of rendering (open the fridge, put a bowl in, close it,
-open it: the bowl is there). Edits stack; Undo and Reset go back. The state is saved to <scene>/edits/ after every
-edit and picked up again on restart (pano.png, distance.npy, labels.npy, state.json, memory/, inventory/, masks/,
-crops/, and steps/<n>/: the viewer's files after each edit, so its Edits list can show any step).
+it moves those points onto the surface clicked, draws their outline from the capture point (hidden where something is
+in front), and the editor draws the object there; it stays the same object, so picking it up again updates its
+memory. An articulated object has one mode per state (closed, open): its area's pixels, depth and objects, contents
+included; going back to a state it has been in restores that instead of rendering (open the fridge, put a bowl in,
+close it, open it: the bowl is there). Edits stack; Undo and Reset go back. The state is saved to <scene>/edits/
+after every edit and picked up again on restart (pano.png, distance.npy, labels.npy, state.json, memory/, inventory/,
+masks/, crops/, and steps/<n>/: the viewer's files after each edit, so its Edits list can show any step).
+Download session packs it for the assets (session.py): the interacted objects, the room without them, the
+interactions in order; sim/asset_gen makes the objects from it, sim/colmap_splat the background.
 """
 
 import argparse
 import json
+import re
 import shutil
 import threading
 import time
 import traceback
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -42,35 +46,120 @@ import cv2
 import numpy as np
 
 import act
+import depth as depth_step
+import models
+import objects as objects_step
+import session
 
 p = argparse.ArgumentParser()
-p.add_argument("root", type=Path, help="folder of scenes (datasets/pano_splat)")
-p.add_argument("--port", type=int, default=8000)
+p.add_argument("root", type=Path, nargs="?", default=Path("datasets/pano_ideate"),
+               help="folder of scenes, one folder each (source.jpg, then depth/ and objects/)")
+p.add_argument("--port", type=int, default=8765)
 p.add_argument("--radius", type=float, default=0.4, help="m: how far the eye may move from the capture point")
 p.add_argument("--grid", type=int, default=1024, help="mesh vertices around the panorama")
 p.add_argument("--jump", type=float, default=0.1, help="leave out triangles whose corner distances differ by more "
                                                      "than this fraction (edges of objects)")
 p.add_argument("--steps", type=int, default=40, help="image edit steps")
-p.add_argument("--vlm", default="Qwen/Qwen3.5-122B-A10B", help="on Triton if TRITON_URL is set (slurm.env)")
-p.add_argument("--local_vlm", action="store_true", help="load the VLM here instead (bf16, ~245 GB: a whole GPU)")
-p.add_argument("--vlm_gpu", type=int, default=1, help="with --local_vlm: its GPU (one whole GPU: split, it hit "
-                                                     "NVLink errors)")
-p.add_argument("--editor_gpu", type=int, default=0, help="the image editor's and MoGe's GPU")
-p.add_argument("--editor", default="Qwen/Qwen-Image-Edit-2511")
-p.add_argument("--model", default="Ruicheng/moge-3-vitg")
+p.add_argument("--host", default="127.0.0.1", help="address to listen on (0.0.0.0: reachable from other machines)")
 args = p.parse_args()
 VIEWER = Path(__file__).with_name("viewer.html")
 KIND = {"movable": 1, "articulated": 2}
 SAME = {"opened": "open", "shut": "closed", "close": "closed"}
-models = act.Models(args.vlm, args.editor, args.model, vlm_device=f"cuda:{args.vlm_gpu}",
-                    editor_device=f"cuda:{args.editor_gpu}", local=args.local_vlm)
-gpu = threading.Lock()
+triton = models.Triton()
+locks: dict[str, threading.Lock] = {}
+lock = lambda name: locks.setdefault(name, threading.Lock())         # one edit at a time per scene
 states: dict[str, dict] = {}
 log = lambda s: print(s, flush=True)
 
 
+# --- Jobs: long operations run in the background and report progress ------------------------------------------------
+# A job is a list of phases; a phase reports done/total when it can count, otherwise its progress is its elapsed time
+# over how long it took before (EXPECTED, seconds, updated as jobs run).
+EXPECTED = {"plan": 3, "edit": 30, "restore": 2, "depth": 3, "save": 3, "place": 35, "erase": 40, "pack": 10,
+            "pano_depth": 120, "list": 25, "detect": 15, "segment": 15, "merge": 80, "check": 8, "save_objects": 20}
+OBJECT_PHASES = {"Listing the objects in each view": "list", "Looking for missed objects": "detect",
+                 "Outlining the objects": "segment", "Merging views": "merge", "Checking each object": "check",
+                 "Saving the objects": "save_objects"}
+jobs: dict[str, "Job"] = {}
+
+
+class Job:
+    def __init__(self, title: str, phases: list[str]):
+        self.id, self.title, self.phases = uuid.uuid4().hex[:12], title, list(phases)
+        self.state, self.label, self.result, self.error = "running", "", None, None
+        self.at, self.done, self.total, self.since = 0, None, None, time.time()
+        jobs[self.id] = self
+
+    def enter(self, key: str, label: str, done: int | None = None, total: int | None = None):
+        """Start phase key (or update its count)."""
+        if key not in self.phases:
+            self.phases.insert(self.at + 1, key)
+        k = self.phases.index(key)
+        if k != self.at or self.label != label:
+            if k > self.at and self.total is None:          # learn how long timed phases take
+                key0 = self.phases[self.at]
+                EXPECTED[key0] = 0.7 * EXPECTED.get(key0, 10) + 0.3 * (time.time() - self.since)
+            if k != self.at:
+                self.since = time.time()
+            self.at, self.label = k, label
+        self.done, self.total = done, total
+
+    def progress(self) -> float:
+        weights = [EXPECTED.get(k, 10) for k in self.phases]
+        here = (self.done / self.total if self.total else
+                min(0.95, (time.time() - self.since) / EXPECTED.get(self.phases[self.at], 10)))
+        return min(0.99, (sum(weights[:self.at]) + weights[self.at] * here) / sum(weights))
+
+    def snapshot(self) -> dict:
+        return {"id": self.id, "title": self.title, "state": self.state, "label": self.label,
+                "progress": 1.0 if self.state == "done" else round(self.progress(), 3),
+                "result": self.result, "error": self.error}
+
+
+def start(title: str, phases: list[str], work) -> Job:
+    """Run work(job) in the background as a job."""
+    job = Job(title, phases)
+
+    def go():
+        try:
+            job.result = work(job)
+            job.state = "done"
+        except Exception as e:
+            traceback.print_exc()
+            job.state, job.error = "error", str(e)
+    threading.Thread(target=go, daemon=True).start()
+    return job
+
+
+def add_scene(name: str, image: bytes) -> Job:
+    """A new scene from a panorama: steps 1 and 2."""
+    folder = args.root / name
+    pano = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+    if pano is None:
+        raise ValueError("That file is not an image.")
+    if abs(pano.shape[1] - 2 * pano.shape[0]) > 2:
+        raise ValueError(f"The image is {pano.shape[1]}x{pano.shape[0]}; a 360-degree panorama is twice as wide as tall.")
+    folder.mkdir(parents=True)
+    cv2.imwrite(str(folder / "source.jpg"), pano, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+    def work(job):
+        try:
+            with lock(name):
+                job.enter("pano_depth", "Estimating depth on the server")
+                depth_step.run(folder, triton, log=log)
+                objects_step.run(folder, triton, log=log,
+                                 progress=lambda stage, done, total: job.enter(OBJECT_PHASES.get(stage, stage), stage,
+                                                                               done, total if total > 1 else None))
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)      # so the name can be used again
+            raise
+        return {"scene": name}
+    return start(f"Adding {name}", ["pano_depth", *dict.fromkeys(OBJECT_PHASES.values())], work)
+
+
 def scene_names():
-    return sorted(d.name for d in args.root.iterdir() if (d / "depth").is_dir() and (d / "objects").is_dir())
+    return sorted(d.name for d in args.root.iterdir()
+                  if (d / "depth" / "frame.json").exists() and (d / "objects" / "objects.json").exists())
 
 
 # --- State: the scene, what was removed, the inventory, the history, and each object's memory -----------------------
@@ -145,6 +234,30 @@ def memory_of(st, ids, kind, label, size=None):
     return len(st["memory"]) - 1, st["memory"][-1]
 
 
+def remember_view(st, n, e, ids):
+    """Keep how a movable object looks now: its 3D points (its memory's one mode, replaced) and its cutout, added to
+    the views seen so far (the inventory shows the latest; the session export carries all of them to asset_gen)."""
+    sc = st["scene"]
+    e["saved"] = {"shape": act.shape(sc, ids)}
+    out = sc.path / "edits" / "inventory"
+    out.mkdir(parents=True, exist_ok=True)
+    cut = cv2.cvtColor(act.cutout(sc, ids), cv2.COLOR_RGBA2BGRA)
+    e["views"] = e.get("views", []) + [f"{n}_{len(e.get('views', []))}.png"]
+    cv2.imwrite(str(out / e["views"][-1]), cut)
+    cv2.imwrite(str(out / f"{n}.png"), cut)
+
+
+def export_session(name, job):
+    """The session zip (session.py): the interactions, the interacted objects, the room without them."""
+    st = state(name)
+    with lock(name):
+        save(st)
+        stages = {"Erasing the interacted objects": "erase", "Packing the session": "pack"}
+        f = session.export(st["scene"].path, triton, log=log,
+                           progress=lambda stage, done, total: job.enter(stages[stage], stage, done, total))
+    return {"file": f.name}
+
+
 def interactable(st):
     lab = set(np.unique(st["scene"].labels).tolist()) - {0}
     return {k: o for k, o in st["scene"].objects.items() if k + 1 in lab and k not in st["removed"]}
@@ -216,17 +329,16 @@ def word(s):
     return SAME.get(s, s) or None
 
 
-def act_on(name, k, action):
+def act_on(name, k, action, job):
     st = state(name)
     sc = st["scene"]
     o = sc.objects[k]
     x, y, _ = o["center"]
     where = (f"{action} (this is about object {k}, the {o['label']} at {np.degrees(np.arctan2(y, x)):.0f} deg, "
              f"{np.hypot(x, y):.1f} m; change other objects only if the action itself changes them)")
-    with gpu:
-        t0 = time.time()
-        changes = act.plan(models, sc, where)
-        t1 = time.time()
+    with lock(name):
+        job.enter("plan", "Working out what changes")
+        changes = act.plan(triton, sc, where)
         keep_step(st, len(st["history"]))
         st["undo"].append(snapshot(st))
         crops = []
@@ -239,23 +351,24 @@ def act_on(name, k, action):
             first = sc.objects[c["ids"][0]]
             remove = c["after"].strip().lower().rstrip(".") == "remove"
             before, after = word(c.get("state_before")), word(c.get("state_after"))
+            job.enter("edit", f"Rendering {c['object']}")
             if remove:
                 # Its last look in 3D, then into the inventory.
                 n, e = memory_of(st, c["ids"], "movable", first["label"], first["size"])
-                e["saved"] = {"shape": act.shape(sc, c["ids"])}
+                remember_view(st, n, e, c["ids"])
                 e["current"] = "picked up"
-                (sc.path / "edits" / "inventory").mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(str(sc.path / "edits" / "inventory" / f"{n}.png"),
-                            cv2.cvtColor(act.cutout(sc, c["ids"]), cv2.COLOR_RGBA2BGRA))
+                c["memory"], c["position"] = n, [round(float(v), 3) for v in e["saved"]["shape"]["base"]]
                 st["inventory"] = [i for i in st["inventory"] if i != n] + [n]
             elif after:
                 n, e = memory_of(st, c["ids"], "articulated", first["label"])
                 now = e["current"] or before
+                c["memory"], c["state_before"], c["state_after"] = n, now, after
                 if now == after:                          # already so: nothing to do
                     c["restored"] = True
                     log(f"  {c['object']}: already {after}")
                     continue
                 if after in e["saved"]:
+                    job.enter("restore", f"Restoring {c['object']} as {after}")
                     # Been in that state before: put back how its area looked, keeping the state it leaves.
                     if now:
                         e["saved"][now] = area(sc, e["saved"][after]["idx"])
@@ -265,7 +378,7 @@ def act_on(name, k, action):
                     log(f"  {c['object']}: restored as {after}")
                     continue
                 old = (sc.pano.copy(), sc.distance.copy(), sc.labels.copy())   # the changed area is known only after
-            mask, panels = act.render(models, sc, c, steps=args.steps, log=log)
+            mask, panels = act.render(triton, sc, c, steps=args.steps, log=log)
             changed |= mask
             if remove:
                 st["removed"] |= set(c["ids"])
@@ -279,15 +392,17 @@ def act_on(name, k, action):
                 new_modes.append((e, after, idx))
             crops.append(f"{len(st['history']) + 1}_{c['ids'][0]}.jpg")
             cv2.imwrite(str(sc.path / "edits" / "crops" / crops[-1]), cv2.cvtColor(panels, cv2.COLOR_RGB2BGR))
-        t2 = time.time()
+        job.enter("depth", "Updating the depth")
         if changed.any():
-            act.update_depth(models, sc, changed)
-        log(f"  plan {t1 - t0:.1f} s, edit {t2 - t1:.1f} s, depth {time.time() - t2:.1f} s")
+            act.update_depth(triton, sc, changed)
         for e, after, idx in new_modes:                  # with its new depth
             e["saved"][after] = area(sc, idx)
+        job.enter("save", "Saving")
         st["history"].append({"what": "act", "id": k, "label": o["label"], "action": action,
                               "changes": [{"object": c["object"], "ids": c["ids"], "after": c["after"],
-                                           "restored": c.get("restored", False)} for c in changes],
+                                           "restored": c.get("restored", False),
+                                           **{f: c[f] for f in ("memory", "position", "state_before", "state_after")
+                                              if f in c}} for c in changes],
                               "crops": crops})
         keep_step(st, len(st["history"]))
         st["version"] += 1
@@ -295,16 +410,17 @@ def act_on(name, k, action):
     return st["history"][-1]
 
 
-def place_item(name, n, u, v, note):
+def place_item(name, n, u, v, note, job):
     st = state(name)
     sc = st["scene"]
     e = st["memory"][n]
-    with gpu:
+    with lock(name):
         keep_step(st, len(st["history"]))
         st["undo"].append(snapshot(st))
+        job.enter("place", f"Placing the {e['label']}")
         rgba = cv2.cvtColor(cv2.imread(str(sc.path / "edits" / "inventory" / f"{n}.png"), cv2.IMREAD_UNCHANGED),
                             cv2.COLOR_BGRA2RGBA)
-        changed, mask, panels = act.place(models, sc, e["label"], e["saved"]["shape"], rgba, u, v, note,
+        changed, mask, panels = act.place(triton, sc, e["label"], e["saved"]["shape"], rgba, u, v, note,
                                                steps=args.steps, log=log)
         if not mask.any():
             restore(st, st["undo"].pop())
@@ -318,12 +434,14 @@ def place_item(name, n, u, v, note):
                                         "center": None, "size": e["size"],
                                         "mask": str(path)}}
         sc.labels[mask] = k + 1
+        job.enter("save", "Saving")
         e["ids"].add(k)                                  # the same object, back in the room
         e["saved"] = {"shape": act.shape(sc, [k])}       # as it looks now
         sc.objects[k]["center"] = (e["saved"]["shape"]["base"] + [0, 0, e["size"][2] / 2]).round(3).tolist()
         e["current"] = "placed"
         st["inventory"] = [i for i in st["inventory"] if i != n]
-        st["history"].append({"what": "place", "id": k, "label": e["label"],
+        st["history"].append({"what": "place", "id": k, "label": e["label"], "memory": n,
+                              "position": [round(float(v), 3) for v in e["saved"]["shape"]["base"]],
                               "action": "place it here" + (f" ({note})" if note else ""), "changes": [],
                               "crops": [f"{len(st['history']) + 1}_{k}.jpg"]})
         (sc.path / "edits" / "crops").mkdir(parents=True, exist_ok=True)
@@ -337,7 +455,7 @@ def place_item(name, n, u, v, note):
 
 def back(name, reset):
     st = state(name)
-    with gpu:
+    with lock(name):
         if reset:
             restore(st, st["original"])
             st["original"] = snapshot(st)
@@ -369,12 +487,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(VIEWER.read_bytes(), "text/html; charset=utf-8")
             if path == ["api", "scenes"]:
                 return self.reply(json.dumps(scene_names()).encode(), "application/json")
+            if len(path) == 3 and path[:2] == ["api", "jobs"] and path[2] in jobs:
+                return self.reply(json.dumps(jobs[path[2]].snapshot()).encode(), "application/json")
             if len(path) >= 3 and path[0] == "api" and path[1] in scene_names():
                 st = state(path[1])
                 edits = st["scene"].path / "edits"
                 if len(path) == 4 and path[2] == "item":
                     f = edits / "inventory" / f"{int(path[3].split('.')[0])}.png"
                     return self.reply(f.read_bytes(), "image/png")
+                if path[2:] == ["session.zip"]:
+                    data = (st["scene"].path / "session.zip").read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/zip")
+                    self.send_header("Content-Disposition", f'attachment; filename="{path[1]}_session.zip"')
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    return self.wfile.write(data)
                 if len(path) == 4 and path[2] == "crop" and "/" not in path[3] and path[3].endswith(".jpg"):
                     return self.reply((edits / "crops" / path[3]).read_bytes(), "image/jpeg")
                 if len(path) == 5 and path[2] == "step" and path[4] in ("pano.jpg", "depth.png", "ids.png"):
@@ -390,9 +518,15 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(e)
 
     def do_POST(self):
-        path = self.path.strip("/").split("/")
+        path = self.path.split("?")[0].strip("/").split("/")
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            if len(path) == 3 and path[:2] == ["api", "upload"]:      # a new panorama: the body is the image file
+                name = re.sub(r"[^a-z0-9_-]+", "_", path[2].lower()).strip("_")[:40]
+                if not name or (args.root / name).exists():
+                    return self.fail(f"Pick another name: {name or 'empty'} is taken or empty.", 400)
+                return self.reply(json.dumps({"job": add_scene(name, raw).id}).encode(), "application/json")
+            body = json.loads(raw or b"{}")
             if len(path) != 3 or path[0] != "api" or path[1] not in scene_names():
                 return self.fail("not found", 404)
             name, what = path[1], path[2]
@@ -400,13 +534,19 @@ class Handler(BaseHTTPRequestHandler):
                 k, action = int(body["id"]), str(body["action"]).strip()
                 if not action or k not in interactable(state(name)):
                     return self.fail("Pick an object and describe what happens to it.", 400)
-                return self.reply(json.dumps(act_on(name, k, action)).encode(), "application/json")
+                job = start(f"{state(name)['scene'].objects[k]['label']}: {action}", ["plan", "edit", "depth", "save"],
+                            lambda job: act_on(name, k, action, job))
+                return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
+            if what == "export":
+                job = start(f"Session of {name}", ["erase", "pack"], lambda job: export_session(name, job))
+                return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what == "place":
                 n, u, v = int(body["item"]), float(body["u"]), float(body["v"])
                 if n not in state(name)["inventory"]:
                     return self.fail("That item is no longer in the inventory.", 400)
-                return self.reply(json.dumps(place_item(name, n, u, v, str(body.get("note", "")))).encode(),
-                                  "application/json")
+                job = start("Placing", ["place", "save"],
+                            lambda job: place_item(name, n, u, v, str(body.get("note", "")), job))
+                return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what in ("undo", "reset"):
                 back(name, what == "reset")
                 return self.reply(b"{}", "application/json")
@@ -420,15 +560,7 @@ class Handler(BaseHTTPRequestHandler):
             log(fmt % a)
 
 
-def preload():
-    """Load the models now, so the first edit doesn't wait for them."""
-    with gpu:
-        models.ask("Say ok.", max_new_tokens=2)
-        models.editor
-        models.moge
-    log("models loaded")
-
-
-threading.Thread(target=preload, daemon=True).start()
-log(f"serving {', '.join(scene_names())} on port {args.port}")
-ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()
+args.root.mkdir(parents=True, exist_ok=True)
+log(f"scenes in {args.root}: {', '.join(scene_names()) or 'none yet'}; models: {triton}")
+log(f"open http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}")
+ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()

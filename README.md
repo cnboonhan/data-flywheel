@@ -53,7 +53,7 @@ The diagram reads left to right: data is built, stored raw, processed into train
 | Egocentric UMI | YUBI glove and gripper rigs: [sensors/](sensors/README.md) (`yubi-hw`, `yubi-sw`) |
 | Robot Teleoperation | Galaxea R1 data (public so far) |
 | Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
-| Sim Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/colmap_splat/](sim/colmap_splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md) |
+| Sim Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/colmap_splat/](sim/colmap_splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md), scenes and assets from one panorama ([sim/pano_ideate/](sim/pano_ideate/README.md), [sim/asset_gen/](sim/asset_gen/README.md)) |
 | Physical Scenes | not built yet |
 | Inference Compute | Triton on the service node's GPUs: [triton/](services/triton/README.md) |
 

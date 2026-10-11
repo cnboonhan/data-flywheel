@@ -79,7 +79,19 @@ body.placing canvas { cursor: crosshair; }
 #zoom img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 #zoom p { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; margin: 0; }
 #busy { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 16, 0.45); }
-#busy div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; }
+#busy .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px;
+  width: min(420px, calc(100vw - 48px)); display: grid; gap: 8px; }
+#busyTitle { font-weight: 600; }
+#busyText { color: var(--muted); font-size: 13px; }
+.bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width 0.4s; }
+.bar.unknown span { width: 30%; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .bar.unknown span { animation: none; width: 100%; opacity: 0.4; } }
+#add input[type=file] { max-width: 100%; font-size: 12px; color: var(--muted); }
+#add input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
+  border-radius: 7px; padding: 4px 8px; min-width: 0; flex: 1; }
+#addHint { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -93,6 +105,13 @@ body.placing canvas { cursor: crosshair; }
   <div><label>Inventory</label><div id="inventory"></div></div>
   <div><label>Edits</label><ol id="history"></ol></div>
   <div class="row"><button id="undo">Undo</button><button id="reset">Reset</button></div>
+  <div><label>Session</label>
+    <div class="row"><button id="export" title="The interacted objects, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
+    <div id="exportHint" class="meter"></div></div>
+  <div id="add"><label for="file">Add a panorama</label>
+    <input type="file" id="file" accept="image/jpeg,image/png">
+    <div class="row"><input type="text" id="newName" placeholder="name" aria-label="Scene name"><button id="addBtn" disabled>Add</button></div>
+    <div id="addHint">An equirectangular 360° image, twice as wide as tall. Takes a few minutes.</div></div>
 </div>
 <div id="tip" hidden></div>
 <div id="card" class="panel" hidden>
@@ -111,7 +130,10 @@ body.placing canvas { cursor: crosshair; }
   <div id="stepCrops"></div>
 </div>
 <div id="zoom" hidden><img alt="The edit up close: before, outlined, the editor's output, after"><p>Before · outlined · editor's output · after</p></div>
-<div id="busy" hidden><div id="busyText"></div></div>
+<div id="busy" hidden><div class="box" role="status" aria-live="polite">
+  <div id="busyTitle"></div><div id="busyText"></div>
+  <div class="bar" id="busyBarBox"><span id="busyBar"></span></div><div id="busyPct" class="meter"></div>
+</div></div>
 <div id="help">Drag to look · WASD or arrows to move · scroll to zoom · click an object to change it · click an edit, or [ and ], to step through them</div>
 <div id="pad"><span></span><button data-k="KeyW" aria-label="Forward">▲</button><span></span>
   <button data-k="KeyA" aria-label="Left">◀</button><button data-k="KeyS" aria-label="Back">▼</button><button data-k="KeyD" aria-label="Right">▶</button></div>
@@ -417,9 +439,30 @@ function setStatus(t, error) { $("status").textContent = t; $("status").classNam
 $("cancel").onclick = closeCard;
 $("action").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("apply").click(); } });
 
+// Waiting: an overlay with a progress bar; its fraction from a job on the server, or moving while unknown.
+function showBusy(title, text = "", progress = null) {
+  $("busy").hidden = false;
+  $("busyTitle").textContent = title; $("busyText").textContent = text;
+  $("busyBarBox").classList.toggle("unknown", progress === null);
+  $("busyBar").style.width = progress === null ? "" : `${Math.round(progress * 100)}%`;
+  $("busyPct").textContent = progress === null ? "" : `${Math.round(progress * 100)}%`;
+}
 async function busy(text, work) {
-  $("busyText").textContent = text; $("busy").hidden = false;
+  showBusy(text);
   try { return await work(); } finally { $("busy").hidden = true; }
+}
+async function waitJob(id, title) {
+  const t0 = Date.now();
+  try {
+    for (;;) {
+      const j = await (await fetch(`api/jobs/${id}`, { cache: "no-store" })).json();
+      const secs = Math.round((Date.now() - t0) / 1000);
+      showBusy(title, `${j.label || "Starting"} · ${secs} s`, j.progress);
+      if (j.state === "done") return j.result;
+      if (j.state === "error") throw new Error(j.error);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  } finally { $("busy").hidden = true; }
 }
 async function post(path, body) {
   const r = await fetch(`api/${S.name}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -432,11 +475,10 @@ $("apply").onclick = async () => {
     const it = placing, note = $("action").value.trim();
     $("apply").disabled = true;
     try {
-      await busy(`Placing the ${it.label}. This takes a minute or two.`, async () => {
-        await post("place", { item: it.item, u: target.u, v: target.v, note });
-        startPlacing(null);
-        await load(S.name, true);
-      });
+      const { job } = await post("place", { item: it.item, u: target.u, v: target.v, note });
+      await waitJob(job, `Placing the ${it.label}`);
+      startPlacing(null);
+      await busy("Loading the result…", () => load(S.name, true));
       closeCard();
     } catch (err) { setStatus(`Placing failed: ${err.message}`, true); }
     finally { $("apply").disabled = false; }
@@ -446,13 +488,24 @@ $("apply").onclick = async () => {
   if (!o) return;
   $("apply").disabled = true;
   try {
-    await busy(`Editing the ${o.label}: "${action}". This takes a minute or two.`, async () => {
-      await post("act", { id: selected - 1, action });
-      await load(S.name, true);
-    });
+    const { job } = await post("act", { id: selected - 1, action });
+    await waitJob(job, `${o.label}: ${action}`);
+    await busy("Loading the result…", () => load(S.name, true));
     closeCard();
   } catch (err) { setStatus(`The edit failed: ${err.message}`, true); }
   finally { $("apply").disabled = false; }
+};
+$("export").onclick = async () => {
+  $("export").disabled = true;
+  try {
+    const { job } = await post("export");
+    await waitJob(job, `Session of ${S.name}`);
+    const a = document.createElement("a");
+    a.href = `api/${S.name}/session.zip`; a.download = `${S.name}_session.zip`;
+    document.body.append(a); a.click(); a.remove();
+    $("exportHint").textContent = `Downloaded ${S.name}_session.zip: its objects go to sim/asset_gen, its background to sim/colmap_splat.`;
+  } catch (err) { $("exportHint").textContent = `The export failed: ${err.message}`; }
+  finally { $("export").disabled = false; }
 };
 $("undo").onclick = () => busy("Undoing the last edit…", async () => { await post("undo"); await load(S.name, true); });
 $("reset").onclick = () => busy("Going back to the original…", async () => { await post("reset"); await load(S.name, true); });
@@ -486,13 +539,39 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
-(async () => {
+// Adding a panorama: upload it, wait for steps 1 and 2, open it.
+$("file").onchange = () => {
+  const f = $("file").files[0];
+  if (f && !$("newName").value) $("newName").value = f.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  $("addBtn").disabled = !f;
+};
+$("addBtn").onclick = async () => {
+  const f = $("file").files[0], name = $("newName").value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  if (!f || !name) return;
+  $("addBtn").disabled = true;
+  try {
+    showBusy(`Adding ${name}`, "Uploading the panorama");
+    const r = await fetch(`api/upload/${encodeURIComponent(name)}`, { method: "POST", body: f });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    await waitJob(j.job, `Adding ${name}`);
+    await scenes(name);
+    $("file").value = ""; $("newName").value = "";
+    $("addHint").textContent = `Added ${name}.`;
+  } catch (err) { $("busy").hidden = true; $("addHint").textContent = `Adding failed: ${err.message}`; }
+  finally { $("addBtn").disabled = !$("file").files[0]; }
+};
+
+async function scenes(pick) {
   const names = await (await fetch("api/scenes")).json();
+  $("scene").innerHTML = "";
   for (const n of names) $("scene").append(new Option(n, n));
-  const start = names.includes(location.hash.slice(1)) ? location.hash.slice(1) : names[0];
-  $("scene").value = start;
+  if (!names.length) { $("meter").textContent = "No scenes yet: add a panorama below."; return; }
+  const start = names.includes(pick) ? pick : names.includes(location.hash.slice(1)) ? location.hash.slice(1) : names[0];
+  $("scene").value = start; location.hash = start;
   await busy("Loading the scene…", () => load(start));
-})();
+}
+scenes();
 </script>
 </body>
 </html>

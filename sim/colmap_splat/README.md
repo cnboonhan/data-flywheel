@@ -54,16 +54,6 @@ uv run sim/colmap_splat/train.py s3://raw/internal_datasets/real2sim/ridgeback_d
 
 An S3 input is mirrored into `datasets/colmap_splat/cache/inputs/` (only changed files are fetched); an S3 output is trained in `datasets/colmap_splat/cache/runs/` and uploaded to `<output>/<name>/<run>/`. Captures from [`sensors/real2sim`](../../sensors/real2sim/README.md) go to `s3://raw/internal_datasets/real2sim/<name>/colmap/`, refined ones next to them in `colmap_refined/` (sync its `sparse/` and `images/`, not `work/`); `download-datasets-hf` fetches zh_lounge into `s3://raw/open_datasets/nurec-zh_lounge/`.
 
-## On the Slurm cluster
-
-Source `slurm.env` ([slurm/](../../services/slurm/README.md)), then submit `train.sbatch` with `train.py`'s arguments. It runs on one GPU; exclude the service node (`SERVICE_NODE` in `services/.env`), whose GPUs Triton holds.
-
-```bash
-cd $STATE_DIR/slurm-logs
-sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/colmap_splat/train.sbatch \
-  s3://raw/internal_datasets/real2sim/<scene>/colmap_refined s3://processed/splats/<scene> --name <scene> --floor
-```
-
 ## Output
 
 `<output>/<name>/<run>/`: `export_last_lightfield.usdz` (one `ParticleField3DGaussianSplat` prim), `splat.usdc`, `scene.usda`, `export_last.ply` (the standard 3DGS PLY, for other splat viewers and tools; uncropped), `metrics.json` (held-out PSNR/SSIM/LPIPS), checkpoints.
@@ -97,7 +87,26 @@ Capture any COLMAP dataset (`images/` + `sparse/0/`):
 - no people or moving objects; clear what the robot will manipulate (added as separate assets);
 - a few markers of known size for metric scale.
 
-Poses come from COLMAP or GLOMAP (not set up here yet), or from [`sensors/real2sim`](../../sensors/real2sim/README.md).
+Poses come from COLMAP or GLOMAP (not set up here yet), or from [`sensors/real2sim`](../../sensors/real2sim/README.md), or from a single panorama (next section).
+
+## From a pano_ideate session
+
+Train the background of a [`pano_ideate`](../pano_ideate/README.md) session (its room with the interacted objects erased; [`asset_gen`](../asset_gen/README.md) makes the objects) like any capture:
+
+1. Write its COLMAP dataset.
+   ```bash
+   uv run sim/colmap_splat/from_pano.py <scene>_session.zip datasets/colmap_splat/<scene>
+   ```
+2. Train it on any machine with an NVIDIA GPU and the 3DGRUT install ([Install](#install-once)), a laptop's included; no cluster needed.
+   ```bash
+   uv run sim/colmap_splat/train.py datasets/colmap_splat/<scene> datasets/colmap_splat/<scene>/runs --floor
+   ```
+
+The model is in the session's scene frame (metric, z up, origin on the floor below the capture point), so `--floor` and Arena placement work as for a real2sim capture.
+
+Notes:
+- Views: 26 from the capture point, cut from the panorama, and 288 from 24 points up to 0.6 m around it, drawn from its depth. What the panorama never saw is filled by OpenCV; `--fill editor` fills views with more than 1% missing with Qwen-Image-Edit instead (~10 s a view; endpoint `EDIT_ENDPOINT`, default `Qwen-Image-Edit-2511` on the flywheel Triton, set up as in [asset_gen](../asset_gen/README.md#model-endpoint)). Starting points: 600k from the depth.
+- Expect ~29 dB held-out PSNR at 7k iterations (`n_iterations=7000`): ~3 min on a GB300. Writing the dataset takes ~7 min of CPU. The splat looks right within ~0.6 m of the capture point; further out, what the panorama never saw shows.
 
 ## Planned: automated workcell capture
 

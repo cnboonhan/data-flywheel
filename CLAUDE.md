@@ -9,7 +9,9 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
 - `sensors/real2sim/`: Isaac Sim robot (Arena venv, bundled ROS 2 Jazzy, `ROS_DOMAIN_ID=42`) + Nav2 in Docker on a known map; goals via `/goal_pose`. A real robot shares the LAN on domain 0: never publish to `/hdas/*` or `/motion_target/*` from sim.
 - `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy and scripted demo recording (`envgen.sh`, `record.py`, `hooks/` import hooks: `cliproxy` endpoint, `ridgeback_franka_ik` mobile manipulator, `splat_scene` background from `ARENA_SPLAT_SCENE`).
-- `sim/pano_splat/`: Arena scenes from a single panorama, one uv script per step (`depth.py` first); `serve.py` walks a scene in the browser and edits its objects. The VLM is Qwen3.5-122B on Triton (source `slurm.env`). Data in `datasets/pano_splat/` (gitignored).
+- `sim/pano_ideate/`: works out a scene's interactions from one panorama in a browser viewer (`serve.py`: upload, walk, act on objects) and exports them as a session zip (`session.py`). Every model runs on Triton (`models.py`, endpoints per role); no local GPU. Data in `datasets/pano_ideate/` (gitignored).
+- `sim/asset_gen/`: objects of a session zip as simulation assets (`objects.py`: mesh, USD with physics). Its background becomes a splat via `sim/colmap_splat/from_pano.py`. Data in `datasets/asset_gen/` (gitignored).
+- `services/triton/triton_endpoint.py`: the client the sim tools use for Triton models; each role's endpoint is a `<ROLE>_ENDPOINT` variable.
 - `sim/colmap_splat/`: Gaussian-splat training of real scenes (`refine_poses.py` first for robot-posed captures); `sim/colmap_splat/3dgrut` is the 3DGRUT trainer (uv venv inside it, CUDA 12.8 bundled). Data in `datasets/colmap_splat/` (gitignored).
 - Everything under `eval/`, `sensors/yubi-*` and `sim/colmap_splat/3dgrut` is an **upstream git submodule**.
 
