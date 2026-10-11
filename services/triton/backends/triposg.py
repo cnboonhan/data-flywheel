@@ -96,7 +96,11 @@ class TritonPythonModel:
         if v is None:
             raise RuntimeError("no surface found")
         mesh = trimesh.Trimesh(v.astype(np.float32), np.ascontiguousarray(f))
-        mesh = max(mesh.split(only_watertight=False), key=lambda m: len(m.faces))     # drop floating bits
+        # Drop floating bits, not parts: a chair's base is a separate piece from its seat, and keeping only the largest
+        # piece dropped it. Pieces under 2% of the faces go (untuned).
+        parts = mesh.split(only_watertight=False)
+        mesh = trimesh.util.concatenate([m for m in parts if len(m.faces) >= 0.02 * len(mesh.faces)] or
+                                        [max(parts, key=lambda m: len(m.faces))])
         if 0 < faces < len(mesh.faces):
             import fast_simplification
             v2, f2 = fast_simplification.simplify(mesh.vertices, mesh.faces, target_count=faces)

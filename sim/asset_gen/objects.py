@@ -45,15 +45,14 @@ import texture  # noqa: E402
 
 DENSITY = 400.0          # kg/m^3 of the convex hull: household objects are mostly hollow or light
 # The label comes from seeing the whole room; the cutout may show only part of the object (a chair behind a table was
-# once named a fence panel), so the VLM keeps the label's kind and only refines it. The example names no material: one
-# that did ("a wooden dining chair") made a wooden blender and a wooden cup.
+# once named a fence panel), so the VLM keeps the label's kind and only refines it. No example kind: the VLM copies it
+# ("a wooden dining chair" made a wooden blender and cup; "a dining chair", a chair with a keyboard on it).
 IDENTIFY = ("This is one object, cut out of a photo of a room; it may be small, blurry or partly hidden, so the "
             "picture may show only part of it. It is a {label} (named from the whole room): keep that kind of object. "
             "Say what kind of {label} it most likely is, as a shopper would name it, and describe a clean, new, "
             "typical, complete one that fits: overall shape, proportions (height to width), parts (lid, handle, legs, "
-            "...), material, colours. No labels, dirt or residue. The name ends with the word {label}, naming a kind "
-            "of {label} (for a chair: a dining chair, not a bench). Answer JSON: {{\"name\": ..., \"description\": "
-            "one sentence}}.")
+            "...), material, colours. No labels, dirt or residue. The name ends with the word {label} and names a kind"
+            " of {label}, not another object. Answer JSON: {{\"name\": ..., \"description\": one sentence}}.")
 DRAW = ("Picture 1 shows a {name}. Draw a new, complete, clean {name}: {description} Product photo, the whole object "
         "centred and filling about two thirds of the frame, three-quarter view from slightly above, plain pure white "
         "background, soft even studio light, no shadow, no other objects.")
@@ -144,8 +143,16 @@ def model(triton: Triton, generator: Endpoint, cutouts: list[bytes], label: str,
         if fit >= texture.MIN_FIT:
             views.append((painted, R, scale, offset(R), ids, z))
     if not views:
-        raise RuntimeError("no painted view fits the mesh: see views/paint_*.jpg")
+        raise Failed("no painted view fits the mesh: see views/paint_*.jpg", images)
     return texture.bake(mesh, views, log), images, {**what, "colours": colours}
+
+
+class Failed(RuntimeError):
+    """An object that couldn't be generated, with the images made so far (written to views/ for a look)."""
+
+    def __init__(self, message: str, images: dict):
+        super().__init__(message)
+        self.images = images
 
 
 def matte(triton: Triton, img: np.ndarray) -> np.ndarray:
@@ -353,7 +360,7 @@ def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: in
     with zipfile.ZipFile(session) as z:
         scene = json.loads(z.read("scene.json"))
         h = scene["frame"]["camera_height"]
-        written = []
+        written, failed = [], []
         for name in scene["assets"]["objects"]:
             info = json.loads(z.read(f"objects/{name}/info.json"))
             if assets and not {name, info["label"]} & set(assets):
@@ -364,12 +371,21 @@ def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: in
                 continue
             log(f"{name}: {len(views)} views")
             shape = dict(np.load(io.BytesIO(z.read(f"objects/{name}/shape.npz"))))
-            mesh, images, what = model(triton, generator, [z.read(v) for v in views], info["label"], seed, log)
-            local, yaw, base, overlap = fit(mesh, shape, h, info.get("size_m"), log)
             out = out_root / scene["scene"] / "objects" / name
+            try:
+                mesh, images, what = model(triton, generator, [z.read(v) for v in views], info["label"], seed, log)
+            except Failed as e:                                       # the others still get made
+                log(f"{name}: FAILED: {e} (another --seed may work)")
+                (out / "views").mkdir(parents=True, exist_ok=True)
+                for n, img in e.images.items():
+                    cv2.imwrite(str(out / "views" / f"{n}.jpg"), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                failed.append(name)
+                continue
+            local, yaw, base, overlap = fit(mesh, shape, h, info.get("size_m"), log)
             write(out, local, info, what, yaw, base, overlap, images)
             written.append(out)
-    log(f"{len(written)} objects -> {out_root / scene['scene'] / 'objects'}")
+    log(f"{len(written)} objects -> {out_root / scene['scene'] / 'objects'}"
+        + (f"; failed: {', '.join(failed)}" if failed else ""))
     return written
 
 
