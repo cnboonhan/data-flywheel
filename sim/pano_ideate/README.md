@@ -2,7 +2,7 @@
 
 Turn one 360° photo of a room into a simulation scene: act on its objects in the browser, then generate them as textured rigid bodies and the room around them as a Gaussian splat.
 
-![pano_ideate end to end: pick up the cup, open the bin lid, put the cup in the bin, close the bin lid, download the session](../../assets/pano_ideate/e2e.gif)
+![pano_ideate end to end: walk to the cup and pick it up, walk to the bin, open its lid, put the cup in, close the lid, download the session](../../assets/pano_ideate/e2e.gif)
 
 ```mermaid
 flowchart LR
@@ -35,7 +35,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
    ```bash
    uv run sim/asset_gen/objects.py <scene>_session.zip
    ```
-5. Generate the background on a machine with an NVIDIA GPU (~7 + 3 min; [colmap_splat](../colmap_splat/README.md#from-a-pano_ideate-session)).
+5. Generate the background on a machine with an NVIDIA GPU (~7 + 3 min; [colmap_splat](../colmap_splat/README.md#train)).
    ```bash
    uv run sim/colmap_splat/from_pano.py <scene>_session.zip datasets/colmap_splat/<scene>
    uv run sim/colmap_splat/train.py datasets/colmap_splat/<scene> datasets/colmap_splat/<scene>/runs --floor
@@ -45,7 +45,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
 |---|---|---|
 | Objects | `datasets/asset_gen/<scene>/objects/<asset>/model.usda` | a textured rigid body, origin at the centre of its base |
 | Layout | `layout.json` in the zip | each object's x, y now (null if picked up and not put back) |
-| Interactions | `interactions.json` in the zip | pick-ups, placements, state changes, in order, each with its action and director prompt |
+| Interactions | `interactions.json` in the zip | pick-ups, placements, state changes, in order, each with its action, director prompt and where the agent (the viewer's eye) stood: `agent` x, y, z, yaw, pitch |
 | Background | `datasets/colmap_splat/<scene>/runs/.../scene.usda` | the room without the objects |
 
 All in the scene frame: z up, metres, origin on the floor below the capture point.

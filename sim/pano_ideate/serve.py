@@ -384,9 +384,9 @@ def direct(sc, k: int, director: str) -> list[dict]:
     return [c]
 
 
-def act_on(name, k, action, director, job):
-    """An action on object k: recorded as said; the edit is the director prompt when given, else the VLM's plan from
-    the action."""
+def act_on(name, k, action, director, agent, job):
+    """An action on object k: recorded as said, with where the agent (the viewer's eye) stood; the edit is the director
+    prompt when given, else the VLM's plan from the action."""
     st = state(name)
     sc = st["scene"]
     o = sc.objects[k]
@@ -457,6 +457,7 @@ def act_on(name, k, action, director, job):
             e["saved"][after] = area(sc, idx)
         job.enter("save", "Saving")
         st["history"].append({"what": "act", "id": k, "label": o["label"], "action": action, "director": director,
+                              "agent": agent,
                               "changes": [{"object": c["object"], "ids": c["ids"], "after": c["after"],
                                            "restored": c.get("restored", False),
                                            **{f: c[f] for f in ("memory", "position", "state_before", "state_after")
@@ -468,7 +469,7 @@ def act_on(name, k, action, director, job):
     return st["history"][-1]
 
 
-def place_item(name, n, u, v, action, director, job):
+def place_item(name, n, u, v, action, director, agent, job):
     """Put inventory item n where (u, v) is: the director prompt tells the editor how it stands there."""
     st = state(name)
     sc = st["scene"]
@@ -501,7 +502,8 @@ def place_item(name, n, u, v, action, director, job):
         st["inventory"] = [i for i in st["inventory"] if i != n]
         st["history"].append({"what": "place", "id": k, "label": e["label"], "memory": n,
                               "position": [round(float(v), 3) for v in e["saved"]["shape"]["base"]],
-                              "action": action or "place it here", "director": director, "changes": [],
+                              "action": action or "place it here", "director": director, "agent": agent,
+                              "changes": [],
                               "crops": [f"{len(st['history']) + 1}_{k}.jpg"]})
         (sc.path / "edits" / "crops").mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(sc.path / "edits" / "crops" / st["history"][-1]["crops"][0]),
@@ -596,7 +598,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not action or k not in interactable(state(name)):
                     return self.fail("Pick an object and describe what happens to it.", 400)
                 job = start(f"{state(name)['scene'].objects[k]['label']}: {action}", ["plan", "edit", "depth", "save"],
-                            lambda job: act_on(name, k, action, director, job))
+                            lambda job: act_on(name, k, action, director, body.get("agent"), job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what == "include":
                 k = int(body["id"])
@@ -613,7 +615,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail("That item is no longer in the inventory.", 400)
                 job = start("Placing", ["place", "save"],
                             lambda job: place_item(name, n, u, v, str(body.get("action", "")).strip(),
-                                                   str(body.get("director", body.get("note", ""))).strip(), job))
+                                                   str(body.get("director", body.get("note", ""))).strip(),
+                                                   body.get("agent"), job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what in ("undo", "reset"):
                 back(name, what == "reset")

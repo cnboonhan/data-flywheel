@@ -217,10 +217,12 @@ def where(scene: act.Scene, e: dict) -> dict:
 
 def interactions(state: dict, names: dict) -> list[dict]:
     """The history as steps a simulation can replay: pick up, place, set an articulated object's state. Each carries
-    what was said (the action) and, when given, the director prompt the image was edited with."""
+    what was said (the action), the director prompt the image was edited with when given, and where the agent (the
+    viewer's eye: x, y, z, yaw_deg, pitch_deg in the scene frame) stood when it was taken."""
     steps = []
     for h in state["history"]:
-        said = {"said": h["action"], **({"director": h["director"]} if h.get("director") else {})}
+        said = {"said": h["action"], **({"director": h["director"]} if h.get("director") else {}),
+                **({"agent": h["agent"]} if h.get("agent") else {})}
         if h["what"] == "place":
             steps.append({"type": "place", "asset": names.get(h.get("memory")), "label": h["label"],
                           "position": h.get("position"), **said})

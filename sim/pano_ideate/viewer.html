@@ -477,6 +477,12 @@ async function waitJob(id, title) {
     }
   } finally { $("busy").hidden = true; }
 }
+// Where the eye stands and looks, in the scene frame (z up, metres, origin on the floor below the capture point): the
+// viewer's x/z offset is the scene's -y/-x, and its yaw turns from +x towards +y.
+const agent = () => ({
+  x: +(-offset.y).toFixed(3), y: +(-offset.x).toFixed(3), z: +S.meta.camera_height.toFixed(3),
+  yaw_deg: +(((yaw * 180 / Math.PI) % 360 + 360) % 360).toFixed(1), pitch_deg: +(pitch * 180 / Math.PI).toFixed(1),
+});
 async function post(path, body) {
   const r = await fetch(`api/${S.name}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const j = await r.json();
@@ -488,7 +494,7 @@ $("apply").onclick = async () => {
     const it = placing, action = $("action").value.trim() || $("action").placeholder, director = $("director").value.trim();
     $("apply").disabled = true;
     try {
-      const { job } = await post("place", { item: it.item, u: target.u, v: target.v, action, director });
+      const { job } = await post("place", { item: it.item, u: target.u, v: target.v, action, director, agent: agent() });
       await waitJob(job, `Placing the ${it.label}`);
       startPlacing(null);
       await busy("Loading the result…", () => load(S.name, true));
@@ -501,7 +507,7 @@ $("apply").onclick = async () => {
   if (!o) return;
   $("apply").disabled = true;
   try {
-    const { job } = await post("act", { id: selected - 1, action, director: $("director").value.trim() });
+    const { job } = await post("act", { id: selected - 1, action, director: $("director").value.trim(), agent: agent() });
     await waitJob(job, `${o.label}: ${action}`);
     await busy("Loading the result…", () => load(S.name, true));
     closeCard();
