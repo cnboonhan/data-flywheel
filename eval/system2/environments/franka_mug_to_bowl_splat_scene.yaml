@@ -1,5 +1,5 @@
 env_name: franka_mug_to_bowl_splat_scene
-# Needs ARENA_SPLAT_SCENE=<sim/splat run>/scene.usda (trained with --floor); see sim/isaaclab_arena/README.md.
+# Needs ARENA_SPLAT_SCENE=<sim/colmap_splat run>/scene.usda (trained with --floor); see sim/isaaclab_arena/README.md.
 embodiment:
   id: franka
   registry_name: franka_ik

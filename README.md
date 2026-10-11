@@ -39,7 +39,7 @@ Click the diagram for the interactive version, with links to each component ([so
    ```
 4. Bring up the services: [services/](services/README.md#run).
 5. Get access and an account: [Access](services/README.md#access), [Users](services/README.md#users), [S3 client](services/versitygw/README.md#client-setup).
-6. Install the simulation tooling you need: [sim/splat/](sim/splat/README.md#install-once), [eval/system2/](eval/system2/README.md#install), [eval/system1/](eval/system1/README.md).
+6. Install the simulation tooling you need: [sim/colmap_splat/](sim/colmap_splat/README.md#install-once), [eval/system2/](eval/system2/README.md#install), [eval/system1/](eval/system1/README.md).
 7. Set up Slurm jobs: [slurm/](services/slurm/README.md).
 
 ## The flywheel, end to end
@@ -53,7 +53,7 @@ The diagram reads left to right: data is built, stored raw, processed into train
 | Egocentric UMI | YUBI glove and gripper rigs: [sensors/](sensors/README.md) (`yubi-hw`, `yubi-sw`) |
 | Robot Teleoperation | Galaxea R1 data (public so far) |
 | Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
-| Sim Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/splat/](sim/splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md) |
+| Sim Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/colmap_splat/](sim/colmap_splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md) |
 | Physical Scenes | not built yet |
 | Inference Compute | Triton on the service node's GPUs: [triton/](services/triton/README.md) |
 
@@ -107,5 +107,5 @@ The diagram reads left to right: data is built, stored raw, processed into train
 | LeRobot v3 (HiFi-UMI-2K) | `download-datasets-hf` | episodes with videos and state/action plots | EE-space data; XPolicyLab's joint-space layout doesn't fit yet |
 | xspark HDF5 (RoboDojo) | `setup-envs` | episode groups with preview videos | `robodojo_to_xpolicylab` → `train.sbatch` |
 | ROS 2 mcap (h2rc) | bag directories into `raw` | bags in FiftyOne and Rerun | no recorded actions in the bags; would need derived targets |
-| COLMAP captures (real2sim) | `aws s3 sync` into `raw/internal_datasets/real2sim/` | photos with poses | splats: [sim/splat/](sim/splat/README.md) |
+| COLMAP captures (real2sim) | `aws s3 sync` into `raw/internal_datasets/real2sim/` | photos with poses | splats: [sim/colmap_splat/](sim/colmap_splat/README.md) |
 | anything else | into `raw` | add a layout to `sync-fiftyone-raw` | one `<repo>_to_xpolicylab` adapter |

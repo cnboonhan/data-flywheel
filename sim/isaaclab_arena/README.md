@@ -27,7 +27,7 @@ bash sim/isaaclab_arena/envgen.sh gui                                  # live ed
 
 ## Splat backgrounds
 
-Point `ARENA_SPLAT_SCENE` at a [`sim/splat`](../splat/README.md) run's `scene.usda` (trained with `--floor`, e.g. from a [`sensors/real2sim`](../../sensors/real2sim/README.md) capture), then build or resolve a spec that uses the `splat_scene` background.
+Point `ARENA_SPLAT_SCENE` at a [`sim/colmap_splat`](../colmap_splat/README.md) run's `scene.usda` (trained with `--floor`, e.g. from a [`sensors/real2sim`](../../sensors/real2sim/README.md) capture), then build or resolve a spec that uses the `splat_scene` background.
 
 ```bash
 export ARENA_SPLAT_SCENE=datasets/real2sim/run1/runs/colmap/<run>/scene.usda

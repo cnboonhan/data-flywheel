@@ -1,11 +1,15 @@
-"""Panorama geometry shared by the pano_arena steps (imported by each step's uv script; MoGe only where it's used).
+"""Panorama geometry shared by the pano_splat steps (imported by each step's uv script; MoGe only where it's used).
 
 Frames: MoGe's panorama frame has z up and the middle column looking along -x. The steps turn it 180 deg about z so the
 middle column looks along +x ("panorama frame" below). The scene frame (step 1's frame.json) is the panorama frame
 levelled with R_moge_to_level, with the origin on the floor below the camera.
 """
 
+import base64
 import json
+import os
+import ssl
+import urllib.request
 from pathlib import Path
 
 import cv2
@@ -63,19 +67,47 @@ def project(frame: dict, d: np.ndarray, yaw: float, pitch: float, size: int, fov
             (c[..., 1] / z * f + size / 2 - 0.5).astype(np.float32), c[..., 2] > 1e-6)
 
 
-def moge_distance(image: np.ndarray, model_name: str) -> tuple[np.ndarray, np.ndarray]:
-    """Metric distance per panorama pixel, and where it's valid. MoGe-2 runs on MoGe's 20-view panorama split; MoGe's
+def load_moge(name: str):
+    """A MoGe model by its Hugging Face name: MoGe-3 (moge-3-*) or MoGe-2."""
+    if "moge-3" in name:
+        from moge.model.v3 import MoGeModel
+    else:
+        from moge.model.v2 import MoGeModel
+    return MoGeModel.from_pretrained(name).eval()
+
+
+def triton_ask(processor, model: str, text: str, image: np.ndarray | None = None, max_tokens: int = 1000) -> str:
+    """One answer from a VLM served on Triton (TRITON_URL, TRITON_TOKEN and AWS_CA_BUNDLE from slurm.env; see
+    services/triton/README.md): the chat template is applied here with processor, the image (RGB) goes as a JPEG."""
+    content = ([{"type": "image"}] if image is not None else []) + [{"type": "text", "text": text}]
+    prompt = processor.apply_chat_template([{"role": "user", "content": content}], add_generation_prompt=True,
+                                           tokenize=False, enable_thinking=False)
+    body = {"text_input": prompt, "exclude_input_in_output": True,
+            "sampling_parameters": json.dumps({"temperature": 0, "max_tokens": max_tokens})}
+    if image is not None:
+        jpg = cv2.imencode(".jpg", cv2.cvtColor(image, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 92])[1]
+        body["image"] = [base64.b64encode(jpg.tobytes()).decode()]
+    req = urllib.request.Request(f"https://{os.environ['TRITON_URL']}/v2/models/{model.split('/')[-1]}/generate",
+                                 json.dumps(body).encode(), {"Content-Type": "application/json",
+                                                             "Authorization": "Bearer " + os.environ["TRITON_TOKEN"]})
+    ctx = ssl.create_default_context(cafile=os.environ.get("AWS_CA_BUNDLE"))
+    with urllib.request.urlopen(req, context=ctx, timeout=900) as r:
+        return json.loads(r.read())["text_output"].strip()
+
+
+def moge_distance(image: np.ndarray, model_name: str, view_size: int = 1024,
+                  merge_width: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Metric distance per panorama pixel, and where it's valid. MoGe runs on MoGe's 20-view panorama split; MoGe's
     gradient-domain merge loses the absolute scale, so the merged map is rescaled to the views' metric distances."""
     import torch
     import utils3d_moge as utils3d
-    from moge.model.v2 import MoGeModel
     from moge.utils.panorama import (get_panorama_cameras, merge_panorama_depth, spherical_uv_to_directions,
                                      split_panorama_image)
 
     h, w = image.shape[:2]
     extr, intr = get_panorama_cameras()
-    views = split_panorama_image(image, extr, intr, 512)
-    model = MoGeModel.from_pretrained(model_name).cuda().eval()
+    views = split_panorama_image(image, extr, intr, view_size)
+    model = load_moge(model_name).cuda()
     dist, masks = [], []
     for i in range(0, len(views), 4):
         x = torch.tensor(np.stack(views[i:i + 4]) / 255, dtype=torch.float32, device="cuda").permute(0, 3, 1, 2)
@@ -87,7 +119,8 @@ def moge_distance(image: np.ndarray, model_name: str) -> tuple[np.ndarray, np.nd
     del model
     torch.cuda.empty_cache()
 
-    mw, mh = min(1920, w), min(960, h)
+    mw = min(merge_width or w, w)       # the merge (a least-squares solve) sets how much detail survives
+    mh = mw * h // w
     merged, valid = merge_panorama_depth(mw, mh, dist, masks, extr, intr)
     dirs = spherical_uv_to_directions(utils3d.np.uv_map(mh, mw))
     ratios = []

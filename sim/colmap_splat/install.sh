@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install 3DGRUT (sim/splat/3dgrut, untouched upstream) into its uv .venv, on x86_64 or aarch64.
-#   bash sim/splat/install.sh                 # CUDA version picked from the GPU (or CUDA_VERSION=12.8|13)
+# Install 3DGRUT (sim/colmap_splat/3dgrut, untouched upstream) into its uv .venv, on x86_64 or aarch64.
+#   bash sim/colmap_splat/install.sh                 # CUDA version picked from the GPU (or CUDA_VERSION=12.8|13)
 #
 # Wraps upstream's scripts/create_venv_cuda.sh + install_env_uv.sh and fills two platform gaps:
 #  - CUDA toolkit: upstream downloads an x86_64 runfile into .venv/cuda-<ver>/. Where no runfile exists for the
@@ -25,7 +25,7 @@ if [[ -z "${CUDA_VERSION:-}" ]]; then
 fi
 export CUDA_VERSION
 
-git -C "${HERE}/../.." submodule update --init sim/splat/3dgrut
+git -C "${HERE}/../.." submodule update --init sim/colmap_splat/3dgrut
 cd "${GRUT}"
 unset DISPLAY   # the CUDA runfile is a makeself archive that wants an xterm when it sees a display but no TTY
 # CUDA_FULL_VERSION for this CUDA_VERSION, as upstream resolves it (in a subshell: the helper also checks GCC)

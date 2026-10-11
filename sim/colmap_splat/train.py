@@ -4,9 +4,9 @@
 # ///
 """Train a Gaussian splat with 3DGRUT; input and output can each be a local directory or an s3:// prefix.
 
-    uv run sim/splat/train.py <input> <output> [3DGRUT hydra overrides...] [--floor]
-    uv run sim/splat/train.py datasets/splat/zh_lounge/zh_lounge/colmap datasets/splat/zh_lounge/runs n_iterations=7000
-    uv run sim/splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
+    uv run sim/colmap_splat/train.py <input> <output> [3DGRUT hydra overrides...] [--floor]
+    uv run sim/colmap_splat/train.py datasets/colmap_splat/zh_lounge/zh_lounge/colmap datasets/colmap_splat/zh_lounge/runs n_iterations=7000
+    uv run sim/colmap_splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
 
 <input> is a COLMAP dataset: sparse/0/*.bin plus images/ (or images.zip, unzipped on first use). An s3:// input is
 synced into --cache (only missing or changed files are fetched). The run is written under <output>/<name>/<run>/;
@@ -153,13 +153,13 @@ def main() -> None:
     parser.add_argument("--crop_radius", type=float, default=30.0,
                         help="scene.usda drops gaussians farther than this (m) from the splat's median; 0 keeps all")
     parser.add_argument("--config", default="apps/colmap_3dgut_mcmc.yaml", help="3DGRUT config")
-    parser.add_argument("--cache", type=Path, default=ROOT / "datasets" / "splat" / "cache",
+    parser.add_argument("--cache", type=Path, default=ROOT / "datasets" / "colmap_splat" / "cache",
                         help="local mirror of s3:// inputs and outputs")
     args = parser.parse_args()
 
     python = GRUT / ".venv" / "bin" / "python"
     if not python.exists():
-        sys.exit("3DGRUT not installed; see sim/splat/README.md (Install)")
+        sys.exit("3DGRUT not installed; see sim/colmap_splat/README.md (Install)")
 
     if args.input.startswith("s3://"):
         data = args.cache / "inputs" / "/".join(split_s3(args.input))

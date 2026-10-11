@@ -7,7 +7,7 @@ made by an import hook: right after Arena imports the target module, the additio
 - `ridgeback_franka_ik` embodiment (franka module): franka_ik on Isaac Lab's holonomic Ridgeback base. Actions:
   franka_ik's 7, then base vx, vy, wz on the planar joints anchored at the spawn pose (so in that frame).
 - `splat_scene` background (background_library), only when ARENA_SPLAT_SCENE is set: the scene.usda written by
-  sim/splat/train.py. The splat stays metric and Z-up; it is shifted in x/y so the centre of its collision floor
+  sim/colmap_splat/train.py. The splat stays metric and Z-up; it is shifted in x/y so the centre of its collision floor
   (the capture area) is Arena's origin, where embodiments spawn. Reference the floor as `prim_path: floor` to place
   objects on it.
 """
@@ -37,7 +37,7 @@ def _register_splat(module) -> None:
     from isaaclab_arena.utils.pose import Pose
 
     class SplatSceneBackground(module.LibraryBackground):
-        """Gaussian splat of a captured scene (sim/splat scene.usda), with its collision floor at z = 0."""
+        """Gaussian splat of a captured scene (sim/colmap_splat scene.usda), with its collision floor at z = 0."""
 
         name = os.getenv("ARENA_SPLAT_NAME", "splat_scene")
         tags = ["background", "splat"]

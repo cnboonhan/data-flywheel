@@ -44,7 +44,7 @@ Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket
    uvx --from awscli aws s3 ls s3://raw/      # or: uv tool install awscli
    ```
 
-Repo scripts such as `sim/splat/train.py` then need nothing more: the aws CLI and boto3 (>= 1.28) read both forms. If you also set `S3_ENDPOINT_URL`, it takes precedence.
+Repo scripts such as `sim/colmap_splat/train.py` then need nothing more: the aws CLI and boto3 (>= 1.28) read both forms. If you also set `S3_ENDPOINT_URL`, it takes precedence.
 
 ## Copy folders
 

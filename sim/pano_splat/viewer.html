@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pano Walk</title>
+<style>
+/* Layout: the room fills the window; a slim control panel top-left, the action card where you click. */
+:root {
+  --bg: #101418; --panel: rgba(16, 22, 28, 0.86); --line: rgba(160, 190, 210, 0.22); --fg: #e6edf2;
+  --muted: #93a4b1; --accent: #ffb547; --movable: #ff8c1a; --articulated: #34c6ff; --danger: #ff6b6b;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); overflow: hidden; }
+canvas { display: block; touch-action: none; }
+[hidden] { display: none !important; }   /* panels set their own display */
+.panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  backdrop-filter: blur(6px); padding: 12px 14px; display: grid; gap: 10px; }
+#controls { top: calc(12px + env(safe-area-inset-top, 0px)); left: 12px; width: min(300px, calc(100vw - 48px)); }
+#controls h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+select, textarea, button { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line); border-radius: 7px; }
+select { padding: 4px 8px; }
+button { padding: 5px 11px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
+.meter { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.meter b { color: var(--fg); font-weight: 500; }
+.meter.edge b { color: var(--accent); }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+#history { margin: 0; padding-left: 18px; font-size: 13px; max-height: 30vh; overflow: auto; }
+#history li { margin: 2px 0; }
+#history .after { color: var(--muted); }
+#history:empty::before { content: "No edits yet. Click an object to change it."; color: var(--muted); margin-left: -18px; }
+#tip { position: fixed; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: var(--panel);
+  border: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+#card { width: min(320px, calc(100vw - 48px)); }
+#card h2 { margin: 0; font-size: 16px; }
+#card .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+#card textarea { width: 100%; box-sizing: border-box; min-height: 58px; padding: 7px 9px; resize: vertical; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips button { font-size: 12px; padding: 3px 9px; border-radius: 99px; }
+#status { font-size: 13px; color: var(--muted); }
+#status.error { color: var(--danger); }
+#help { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
+  padding: 4px 12px; white-space: nowrap; }
+#pad { position: fixed; right: 16px; bottom: calc(48px + env(safe-area-inset-bottom, 0px)); display: grid;
+  grid-template-columns: repeat(3, 40px); gap: 4px; }
+#pad button { height: 40px; padding: 0; }
+@media (hover: hover) and (pointer: fine) { #pad { display: none; } }
+@media (max-width: 600px) { #help { display: none; } }
+#inventory { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+#inventory:empty::before { content: "Empty. Objects you pick up land here."; color: var(--muted); font-size: 13px; grid-column: 1 / -1; }
+.item { display: grid; gap: 2px; padding: 4px; justify-items: center; font-size: 11px; color: var(--muted);
+  background: repeating-conic-gradient(rgba(255,255,255,0.05) 0 25%, transparent 0 50%) 0 0 / 10px 10px; }
+.item img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.item[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--fg); }
+#placing { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #1a1206; font-weight: 600; border-radius: 99px; padding: 5px 14px; }
+body.placing canvas { cursor: crosshair; }
+#stepbar { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 48px)); }
+#stepbar .row { justify-content: space-between; }
+#stepTitle { font-weight: 600; }
+#stepAction { color: var(--muted); font-size: 13px; }
+#stepCrops { display: flex; gap: 6px; overflow-x: auto; }
+#stepCrops img { height: 64px; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
+#history li { cursor: pointer; border-radius: 5px; padding: 1px 4px; }
+#history li:hover { background: rgba(255, 255, 255, 0.06); }
+#history li.on { background: rgba(255, 181, 71, 0.16); }
+#zoom { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 16, 0.85); cursor: zoom-out; padding: 16px; }
+#zoom img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+#zoom p { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; margin: 0; }
+#busy { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 16, 0.45); }
+#busy div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; }
+</style>
+</head>
+<body>
+<div id="controls" class="panel">
+  <h1>Pano Walk</h1>
+  <div class="row"><label for="scene">Scene</label><select id="scene"></select></div>
+  <div class="row"><input type="checkbox" id="show" checked><label for="show" style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--fg)">Show objects</label></div>
+  <div class="legend"><span><span class="dot" style="background:var(--movable)"></span>movable</span>
+    <span><span class="dot" style="background:var(--articulated)"></span>articulated</span></div>
+  <div id="meter" class="meter"></div>
+  <div><label>Inventory</label><div id="inventory"></div></div>
+  <div><label>Edits</label><ol id="history"></ol></div>
+  <div class="row"><button id="undo">Undo</button><button id="reset">Reset</button></div>
+</div>
+<div id="tip" hidden></div>
+<div id="card" class="panel" hidden>
+  <div><h2 id="cardLabel"></h2><span id="cardKind" class="kind"></span></div>
+  <label for="action" id="actionLabel">What happens to it?</label>
+  <textarea id="action" placeholder="pick it up"></textarea>
+  <div id="chips" class="chips"></div>
+  <div class="row"><button id="apply" class="primary">Apply</button><button id="cancel">Cancel</button></div>
+  <div id="status"></div>
+</div>
+<div id="placing" hidden></div>
+<div id="stepbar" class="panel" hidden>
+  <div class="row"><div><div id="stepTitle"></div><div id="stepAction"></div></div>
+    <div class="row"><button id="prevStep" aria-label="Previous step">◀</button><button id="nextStep" aria-label="Next step">▶</button>
+      <button id="nowStep" class="primary">Back to now</button></div></div>
+  <div id="stepCrops"></div>
+</div>
+<div id="zoom" hidden><img alt="The edit up close: before, outlined, the editor's output, after"><p>Before · outlined · editor's output · after</p></div>
+<div id="busy" hidden><div id="busyText"></div></div>
+<div id="help">Drag to look · WASD or arrows to move · scroll to zoom · click an object to change it · click an edit, or [ and ], to step through them</div>
+<div id="pad"><span></span><button data-k="KeyW" aria-label="Forward">▲</button><span></span>
+  <button data-k="KeyA" aria-label="Left">◀</button><button data-k="KeyS" aria-label="Back">▼</button><button data-k="KeyD" aria-label="Right">▶</button></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const COLORS = { 1: [1.0, 0.55, 0.1], 2: [0.2, 0.78, 1.0] };
+const SUGGEST = { movable: ["pick it up", "knock it over", "take it away"], articulated: ["open it", "close it", "open it halfway"] };
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.prepend(renderer.domElement);
+const world = new THREE.Scene();
+world.background = new THREE.Color(0x101418);
+const camera = new THREE.PerspectiveCamera(75, 1, 0.02, 200);
+camera.rotation.order = "YXZ";
+
+let S = null;            // the loaded scene: meta, depth grid, id grid, mesh
+let yaw = 0, pitch = 0, offset = new THREE.Vector2(0, 0), hover = 0, selected = 0;
+const keys = new Set();
+
+const material = new THREE.ShaderMaterial({
+  uniforms: { map: { value: null }, ids: { value: null }, hover: { value: 0 }, selected: { value: 0 }, show: { value: 1 },
+              movable: { value: new THREE.Vector3(...COLORS[1]) }, articulated: { value: new THREE.Vector3(...COLORS[2]) } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D map, ids; uniform float hover, selected, show; uniform vec3 movable, articulated; varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(map, vUv).rgb;
+      vec3 t = floor(texture2D(ids, vec2(vUv.x, 1.0 - vUv.y)).rgb * 255.0 + 0.5);   // raw rows: top first
+      float id = t.r * 256.0 + t.g;
+      vec3 k = t.b > 1.5 ? articulated : movable;
+      if (id > 0.0) {
+        float a = id == selected ? 0.55 : id == hover ? 0.42 : 0.16 * show;
+        c = mix(c, k, a);
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  side: THREE.DoubleSide,
+});
+const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+const backdrop = new THREE.Mesh(new THREE.BufferGeometry(), material);
+backdrop.renderOrder = -1;
+world.add(backdrop, mesh);
+
+// The limit: a circle on the floor (the scene origin is on the floor below the capture point).
+const limit = new THREE.Group();
+world.add(limit);
+function drawLimit(r) {
+  limit.clear();
+  const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.012, r + 0.012, 128),
+    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.95, depthTest: false }));
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 128),
+    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.08, depthTest: false }));
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.025, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.8, depthTest: false }));
+  for (const m of [disc, ring, dot]) { m.rotation.x = -Math.PI / 2; m.position.y = 0.004; m.renderOrder = 10; limit.add(m); }
+}
+
+async function pixels(url) {
+  const blob = await (await fetch(url, { cache: "no-store" })).blob();
+  const bmp = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
+  const cv = document.createElement("canvas");
+  cv.width = bmp.width; cv.height = bmp.height;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0);
+  return { canvas: cv, data: ctx.getImageData(0, 0, cv.width, cv.height).data, w: cv.width, h: cv.height };
+}
+
+// Scene frame (x forward, y left, z up) to three.js (x right, y up, -z forward).
+const toThree = (x, y, z) => [-y, z, -x];
+
+function buildMesh(meta, depth, far = 0, step = 1) {
+  // far > 0: the panorama on a sphere that far away (every step-th grid point), behind the room, so the gaps the
+  // room mesh leaves at object edges show the panorama instead of the background.
+  const R = meta.R, h = meta.camera_height, gw = Math.floor(depth.w / step), gh = Math.floor(depth.h / step), cols = gw + 1;
+  const pos = new Float32Array(gh * cols * 3), uv = new Float32Array(gh * cols * 2), dist = new Float32Array(gh * gw);
+  for (let i = 0; i < gh * gw; i++) dist[i] = far || (depth.data[4 * i] * 65536 + depth.data[4 * i + 1] * 256 + depth.data[4 * i + 2]) / 1000;
+  for (let i = 0; i < gh; i++) {
+    const v = (i + 0.5) / gh, phi = v * Math.PI;
+    for (let j = 0; j <= gw; j++) {
+      const u = (j + 0.5) / gw, th = (1 - u) * 2 * Math.PI, d = dist[i * gw + (j % gw)];
+      const p = [-Math.sin(phi) * Math.cos(th) * d, -Math.sin(phi) * Math.sin(th) * d, Math.cos(phi) * d];
+      const s = [0, 1, 2].map((r) => R[r][0] * p[0] + R[r][1] * p[1] + R[r][2] * p[2]);
+      const t = toThree(s[0], s[1], s[2] + h), n = i * cols + j;
+      pos.set(t, 3 * n); uv[2 * n] = u; uv[2 * n + 1] = 1 - v;
+    }
+  }
+  const idx = [], lim = 1 + meta.jump;
+  for (let i = 0; i < gh - 1; i++) for (let j = 0; j < gw; j++) {
+    const a = i * cols + j, b = a + 1, c = a + cols, e = c + 1;
+    const ds = [dist[i * gw + j], dist[i * gw + (j + 1) % gw], dist[(i + 1) * gw + j], dist[(i + 1) * gw + (j + 1) % gw]];
+    if (Math.max(...ds) > lim * Math.min(...ds)) continue;      // an object's edge: leave the gap open
+    idx.push(a, c, b, b, c, e);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+  return { geometry: g, dist };
+}
+
+async function load(name, keepView, at = null) {
+  const base = `api/${name}/`, v = `?v=${Date.now()}`, files = at === null ? base : `${base}step/${at}/`;
+  const meta = await (await fetch(base + "meta.json" + v, { cache: "no-store" })).json();
+  const [depth, ids, map] = await Promise.all([pixels(files + "depth.png" + v), pixels(files + "ids.png" + v),
+    new THREE.TextureLoader().loadAsync(files + "pano.jpg" + v)]);
+  map.wrapS = THREE.RepeatWrapping; map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const idTex = new THREE.DataTexture(new Uint8Array(ids.data.buffer.slice(0)), ids.w, ids.h, THREE.RGBAFormat);
+  idTex.wrapS = THREE.RepeatWrapping; idTex.magFilter = idTex.minFilter = THREE.NearestFilter; idTex.generateMipmaps = false;
+  idTex.needsUpdate = true;
+  const { geometry, dist } = buildMesh(meta, depth);
+  mesh.geometry.dispose(); mesh.geometry = geometry;
+  backdrop.geometry.dispose(); backdrop.geometry = buildMesh(meta, depth, 150, 4).geometry;
+  material.uniforms.map.value?.dispose(); material.uniforms.ids.value?.dispose();
+  material.uniforms.map.value = map; material.uniforms.ids.value = idTex;
+  S = { name, meta, dist, gw: depth.w, gh: depth.h, ids: ids.data, iw: ids.w, ih: ids.h };
+  drawLimit(meta.radius);
+  if (!keepView) { yaw = 0; pitch = 0; offset.set(0, 0); }
+  hover = selected = 0;
+  step = at;
+  renderHistory();
+  renderStep();
+}
+
+// Looking back: the room after edit n (0: the original), read-only.
+let step = null;
+function renderStep() {
+  const n = S.meta.history.length;
+  $("stepbar").hidden = step === null;
+  document.body.classList.toggle("past", step !== null);
+  $("undo").disabled = $("reset").disabled = step !== null || !n;
+  if (step === null) return;
+  const e = S.meta.history[step - 1];
+  $("stepTitle").textContent = step === 0 ? `Step 0 of ${n} · the original` : `Step ${step} of ${n}`;
+  $("stepAction").textContent = e ? `${e.label}: ${e.action}` : "Before any edit.";
+  $("prevStep").disabled = step === 0; $("nextStep").disabled = step >= n;
+  $("stepCrops").innerHTML = "";
+  for (const c of (e && e.crops) || []) {
+    const img = document.createElement("img");
+    img.src = `api/${S.name}/crop/${c}`; img.alt = `${e.label} up close`;
+    img.onclick = () => { $("zoom").children[0].src = img.src; $("zoom").hidden = false; };
+    $("stepCrops").append(img);
+  }
+}
+async function showStep(i) {
+  closeCard(); startPlacing(null);
+  await busy(i === null ? "Back to now…" : `Loading step ${i}…`, () => load(S.name, true, i));
+}
+$("prevStep").onclick = () => showStep(Math.max(0, step - 1));
+$("nextStep").onclick = () => showStep(step + 1);
+$("nowStep").onclick = () => showStep(null);
+$("zoom").onclick = () => { $("zoom").hidden = true; };
+
+function renderHistory() {
+  $("history").innerHTML = "";
+  S.meta.history.forEach((e, i) => {
+    const li = document.createElement("li");
+    li.title = "Show the room after this edit";
+    li.classList.toggle("on", step === i + 1);
+    li.onclick = () => showStep(i + 1);
+    li.innerHTML = `<span></span> <span class="after"></span>`;
+    li.children[0].textContent = `${e.label}: ${e.action}`;
+    li.children[1].textContent = e.what === "place" ? "(placed)" : "(" + e.changes.map((c) =>
+      c.after.trim().toLowerCase().replace(/\.$/, "") === "remove" ? `${c.object} picked up`
+      : c.restored ? `${c.object}: restored as it was` : c.after).join("; ") + ")";
+    $("history").append(li);
+  });
+  $("inventory").innerHTML = "";
+  for (const it of S.meta.inventory) {
+    const b = document.createElement("button");
+    b.className = "item"; b.setAttribute("aria-pressed", String(placing?.item === it.item));
+    b.title = `Place the ${it.label}`;
+    b.innerHTML = `<img alt=""><span></span>`;
+    b.children[0].src = `api/${S.name}/item/${it.item}.png?v=${S.meta.version}`;
+    b.children[1].textContent = it.label;
+    b.onclick = () => startPlacing(placing?.item === it.item ? null : it);
+    $("inventory").append(b);
+  }
+}
+
+// Placing an inventory item: pick it, then click where it goes.
+let placing = null, target = null;
+function startPlacing(it) {
+  placing = it; closeCard();
+  document.body.classList.toggle("placing", !!it);
+  $("placing").hidden = !it;
+  if (it) $("placing").textContent = `Click where the ${it.label} goes · Esc to cancel`;
+  for (const b of document.querySelectorAll(".item")) b.setAttribute("aria-pressed", String(b.title === `Place the ${it?.label}` && !!it));
+}
+
+// What the pointer is on: march along the view ray until it passes the depth seen from the capture point.
+const ray = new THREE.Raycaster();
+function pick(cx, cy) {
+  if (!S) return 0;
+  const r = renderer.domElement.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+  const o = ray.ray.origin, d = ray.ray.direction, R = S.meta.R, h = S.meta.camera_height;
+  for (let t = 0.05; t < 60; t *= 1.01) {
+    const qx = o.x + d.x * t, qy = o.y + d.y * t - h, qz = o.z + d.z * t;
+    const s = [-qz, -qx, qy], n = Math.hypot(...s);
+    const v = [0, 1, 2].map((c) => R[0][c] * s[0] + R[1][c] * s[1] + R[2][c] * s[2]);
+    let u = 1 - (((Math.atan2(-v[1], -v[0]) / (2 * Math.PI)) % 1) + 1) % 1;
+    const w = Math.acos(Math.max(-1, Math.min(1, v[2] / n))) / Math.PI;
+    const gx = Math.floor(u * S.gw) % S.gw, gy = Math.min(S.gh - 1, Math.floor(w * S.gh));
+    if (n >= S.dist[gy * S.gw + gx]) {
+      const ix = Math.floor(u * S.iw) % S.iw, iy = Math.min(S.ih - 1, Math.floor(w * S.ih)), k = 4 * (iy * S.iw + ix);
+      lastHit = { u, v: w };
+      return S.ids[k] * 256 + S.ids[k + 1];
+    }
+  }
+  lastHit = null;
+  return 0;
+}
+let lastHit = null;
+
+const objectOf = (label) => S && label ? S.meta.objects[label - 1] : null;
+
+// Look and move.
+let drag = null;
+const el = renderer.domElement;
+el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; el.setPointerCapture(e.pointerId); });
+el.addEventListener("pointermove", (e) => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (drag.moved) {
+      const k = (camera.fov / 75) * 0.0042;
+      yaw += dx * k; pitch = Math.max(-1.5, Math.min(1.5, pitch + dy * k));   // drag the room
+      drag.x = e.clientX; drag.y = e.clientY;
+    }
+    $("tip").hidden = true;
+    return;
+  }
+  hover = step === null ? pick(e.clientX, e.clientY) : 0;
+  if (placing || step !== null) { hover = 0; $("tip").hidden = true; return; }
+  const o = objectOf(hover);
+  $("tip").hidden = !o;
+  if (o) { $("tip").textContent = `${o.label} · ${o.kind}`; $("tip").style.left = e.clientX + 14 + "px"; $("tip").style.top = e.clientY + 12 + "px"; }
+});
+el.addEventListener("pointerup", (e) => {
+  const click = drag && !drag.moved;
+  drag = null;
+  if (!click || step !== null) return;
+  const id = pick(e.clientX, e.clientY);
+  if (placing) { if (lastHit) openPlaceCard(lastHit, e.clientX, e.clientY); return; }
+  if (objectOf(id)) openCard(id, e.clientX, e.clientY); else closeCard();
+});
+el.addEventListener("pointerleave", () => { hover = 0; $("tip").hidden = true; });
+el.addEventListener("wheel", (e) => { camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.04)); camera.updateProjectionMatrix(); e.preventDefault(); }, { passive: false });
+const typing = () => ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
+addEventListener("keydown", (e) => {
+  if (!typing()) keys.add(e.code);
+  if (e.code === "Escape") { if (!$("zoom").hidden) $("zoom").hidden = true; else { closeCard(); startPlacing(null); } }
+  if (!typing() && S && S.meta.history.length && (e.key === "[" || e.key === "]")) {
+    const n = S.meta.history.length, at = step === null ? n : step, to = at + (e.key === "]" ? 1 : -1);
+    if (to >= 0 && to <= n) showStep(to);
+  }
+});
+addEventListener("keyup", (e) => keys.delete(e.code));
+for (const b of document.querySelectorAll("#pad button")) {
+  b.addEventListener("pointerdown", () => keys.add(b.dataset.k));
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => keys.delete(b.dataset.k));
+}
+
+// The action card.
+function showCard(x, y) {
+  const card = $("card"); card.hidden = false;
+  const w = card.offsetWidth, h = card.offsetHeight;
+  card.style.left = Math.max(12, Math.min(innerWidth - w - 12, x + 16)) + "px";
+  card.style.top = Math.max(12, Math.min(innerHeight - h - 12, y - 20)) + "px";
+  $("action").focus();
+}
+function openPlaceCard(hit, x, y) {
+  target = hit; selected = 0;
+  $("cardLabel").textContent = `Place the ${placing.label} here`;
+  $("cardKind").textContent = "from the inventory"; $("cardKind").style.color = "var(--muted)";
+  $("actionLabel").textContent = "Anything about how it stands? (optional)";
+  $("action").value = ""; $("action").placeholder = "upright, facing the room";
+  $("chips").innerHTML = ""; $("apply").textContent = "Place";
+  setStatus(""); showCard(x, y);
+}
+function openCard(id, x, y) {
+  selected = id; target = null;
+  $("actionLabel").textContent = "What happens to it?"; $("apply").textContent = "Apply";
+  const o = objectOf(id);
+  $("cardLabel").textContent = o.label;
+  $("cardKind").textContent = o.kind;
+  $("cardKind").style.color = o.kind === "articulated" ? "var(--articulated)" : "var(--movable)";
+  $("action").value = ""; $("action").placeholder = SUGGEST[o.kind][0];
+  $("chips").innerHTML = "";
+  for (const s of SUGGEST[o.kind]) {
+    const b = document.createElement("button"); b.textContent = s;
+    b.onclick = () => { $("action").value = s; $("action").focus(); };
+    $("chips").append(b);
+  }
+  setStatus(""); showCard(x, y);
+}
+function closeCard() { $("card").hidden = true; selected = 0; target = null; }
+function setStatus(t, error) { $("status").textContent = t; $("status").className = error ? "error" : ""; }
+$("cancel").onclick = closeCard;
+$("action").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("apply").click(); } });
+
+async function busy(text, work) {
+  $("busyText").textContent = text; $("busy").hidden = false;
+  try { return await work(); } finally { $("busy").hidden = true; }
+}
+async function post(path, body) {
+  const r = await fetch(`api/${S.name}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+$("apply").onclick = async () => {
+  if (target && placing) {
+    const it = placing, note = $("action").value.trim();
+    $("apply").disabled = true;
+    try {
+      await busy(`Placing the ${it.label}. This takes a minute or two.`, async () => {
+        await post("place", { item: it.item, u: target.u, v: target.v, note });
+        startPlacing(null);
+        await load(S.name, true);
+      });
+      closeCard();
+    } catch (err) { setStatus(`Placing failed: ${err.message}`, true); }
+    finally { $("apply").disabled = false; }
+    return;
+  }
+  const action = $("action").value.trim() || $("action").placeholder, o = objectOf(selected);
+  if (!o) return;
+  $("apply").disabled = true;
+  try {
+    await busy(`Editing the ${o.label}: "${action}". This takes a minute or two.`, async () => {
+      await post("act", { id: selected - 1, action });
+      await load(S.name, true);
+    });
+    closeCard();
+  } catch (err) { setStatus(`The edit failed: ${err.message}`, true); }
+  finally { $("apply").disabled = false; }
+};
+$("undo").onclick = () => busy("Undoing the last edit…", async () => { await post("undo"); await load(S.name, true); });
+$("reset").onclick = () => busy("Going back to the original…", async () => { await post("reset"); await load(S.name, true); });
+$("show").onchange = () => { material.uniforms.show.value = $("show").checked ? 1 : 0; };
+$("scene").onchange = () => { location.hash = $("scene").value; closeCard(); startPlacing(null); busy("Loading the scene…", () => load($("scene").value)); };
+
+function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (S) {
+    const f = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
+    const r = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
+    if (f || r) {
+      const sp = 0.5 * dt, sy = Math.sin(yaw), cy = Math.cos(yaw);
+      offset.x += (-sy * f + cy * r) * sp; offset.y += (-cy * f - sy * r) * sp;
+      const lim = S.meta.radius;
+      if (offset.length() > lim) offset.setLength(lim);       // stay where the panorama still looks right
+    }
+    camera.position.set(offset.x, S.meta.camera_height, offset.y);
+    camera.rotation.set(pitch, yaw, 0);
+    material.uniforms.hover.value = hover; material.uniforms.selected.value = selected;
+    const d = offset.length();
+    $("meter").className = "meter" + (d > S.meta.radius - 0.005 ? " edge" : "");
+    $("meter").innerHTML = `<b>${d.toFixed(2)} m</b> from the capture point · limit ${S.meta.radius.toFixed(2)} m`;
+  }
+  renderer.render(world, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+(async () => {
+  const names = await (await fetch("api/scenes")).json();
+  for (const n of names) $("scene").append(new Option(n, n));
+  const start = names.includes(location.hash.slice(1)) ? location.hash.slice(1) : names[0];
+  $("scene").value = start;
+  await busy("Loading the scene…", () => load(start));
+})();
+</script>
+</body>
+</html>

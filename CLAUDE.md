@@ -9,13 +9,14 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
 - `sensors/real2sim/`: Isaac Sim robot (Arena venv, bundled ROS 2 Jazzy, `ROS_DOMAIN_ID=42`) + Nav2 in Docker on a known map; goals via `/goal_pose`. A real robot shares the LAN on domain 0: never publish to `/hdas/*` or `/motion_target/*` from sim.
 - `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy and scripted demo recording (`envgen.sh`, `record.py`, `hooks/` import hooks: `cliproxy` endpoint, `ridgeback_franka_ik` mobile manipulator, `splat_scene` background from `ARENA_SPLAT_SCENE`).
-- `sim/pano_arena/`: Arena scenes from a single panorama, one uv script per step (`depth.py` first). Data in `datasets/pano_arena/` (gitignored).
-- `sim/splat/`: Gaussian-splat training of real scenes (`refine_poses.py` first for robot-posed captures); `sim/splat/3dgrut` is the 3DGRUT trainer (uv venv inside it, CUDA 12.8 bundled). Data in `datasets/splat/` (gitignored).
-- Everything under `eval/`, `sensors/yubi-*` and `sim/splat/3dgrut` is an **upstream git submodule**.
+- `sim/pano_splat/`: Arena scenes from a single panorama, one uv script per step (`depth.py` first); `serve.py` walks a scene in the browser and edits its objects. The VLM is Qwen3.5-122B on Triton (source `slurm.env`). Data in `datasets/pano_splat/` (gitignored).
+- `sim/colmap_splat/`: Gaussian-splat training of real scenes (`refine_poses.py` first for robot-posed captures); `sim/colmap_splat/3dgrut` is the 3DGRUT trainer (uv venv inside it, CUDA 12.8 bundled). Data in `datasets/colmap_splat/` (gitignored).
+- Everything under `eval/`, `sensors/yubi-*` and `sim/colmap_splat/3dgrut` is an **upstream git submodule**.
 
 ## Rules
 
 - **Never commit large files** (data, weights, assets, videos). To add a dataset or model, add it to the list in `services/gitea/ingest/download-datasets-hf.yml` or `download-models-hf.yml` and run that workflow. Don't download data unless asked.
+- **Prefer models with the fewest licence restrictions.** When choosing a model or weights, pick permissive ones (Apache-2.0, MIT, BSD, CC0/CC-BY) over research-only, non-commercial or custom-restricted licences, and say which licence a model has when proposing it. Use a restricted one only when nothing permissive does the job, and say so.
 - **Treat submodules as upstream code.** Don't commit inside them, because their remotes are third-party. Changes belong on a fork; ask first. data-flywheel only records each submodule's commit.
 - **Keep nested submodules pinned.** The RoboDojo and RoboTwin installers move XPolicyLab to its latest commit. After running them, run `git submodule update` inside that benchmark.
 - **IsaacLab-Arena `uv.lock`:** upstream's lock is stale, and it's regenerated locally with `git update-index --skip-worktree uv.lock`. Use `uv sync --frozen --extra dev` so uv doesn't rewrite it. See the README before pulling Arena.
@@ -54,7 +55,7 @@ XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_
 
 ## Docs
 
-- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/splat/README.md`, ...). Overviews (the top-level README and its flywheel walkthrough, `services/README.md`) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
+- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/colmap_splat/README.md`, ...). Overviews (the top-level README and its flywheel walkthrough, `services/README.md`) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
 - **Instructions are an action plus how.** Write each step as "Do X." followed by an executable code block or a link to the README that covers it. Keep explanations to the one clause a reader needs to act (why a step exists, what breaks otherwise); move background into a short notes list after the steps, or drop it. Tables for reference data, not for prose.
 - **Instructive, not a log.** Address the reader ("Run …", "Set …"), not a record of what happened. No dated "verified on" lines, lists of bugs found and fixed, attempts that didn't work, run or job IDs: that is git history. Keep a measurement only as guidance for the reader ("Expect ~25 min and 27 dB held out"), and a gotcha only while it still applies, phrased as what to do.
 

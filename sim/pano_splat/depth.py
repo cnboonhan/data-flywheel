@@ -1,12 +1,14 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = ["moge @ git+https://github.com/microsoft/MoGe.git@74fbce054ebe"]
+# [tool.uv]
+# override-dependencies = ["moderngl; sys_platform == 'never'"]   # MoGe's renderer, unused here; no aarch64 wheel
 # ///
-"""Step 1: metric depth of an equirectangular panorama, and the frame the rest of pano_arena works in.
+"""Step 1: metric depth of an equirectangular panorama, and the frame the rest of pano_splat works in.
 
-    uv run sim/pano_arena/depth.py datasets/pano_arena/<scene> [--camera_height 1.5]
+    uv run sim/pano_splat/depth.py datasets/pano_splat/<scene> [--camera_height 1.5]
 
-Reads <scene>/source.jpg. MoGe-2 metric depth (common.moge_distance). The floor is the lowest large horizontal layer of points. The output frame is Arena's: z up, origin on the floor
+Reads <scene>/source.jpg. MoGe-3 metric depth (ViT-g, MIT) (common.moge_distance). The floor is the lowest large horizontal layer of points. The output frame is Arena's: z up, origin on the floor
 below the camera, +x towards the middle of the panorama. --camera_height rescales to a known height above the floor.
 Writes <scene>/depth/: distance.npy (metres from the camera, per panorama pixel), pano.jpg (the image at that size),
 points.ply (coloured points in the output frame), depth.png and floor.png (previews), frame.json.
@@ -27,7 +29,9 @@ p = argparse.ArgumentParser()
 p.add_argument("scene", type=Path)
 p.add_argument("--camera_height", type=float, help="metres above the floor; default: as estimated")
 p.add_argument("--width", type=int, default=4096, help="panorama width to work at")
-p.add_argument("--model", default="Ruicheng/moge-2-vitl-normal")
+p.add_argument("--model", default="Ruicheng/moge-3-vitg")
+p.add_argument("--view_size", type=int, default=1024, help="px, each of MoGe's 20 perspective views")
+p.add_argument("--merge_width", type=int, default=0, help="px, width the views' depths are merged at (0: the panorama's)")
 args = p.parse_args()
 out = args.scene / "depth"
 out.mkdir(exist_ok=True)
@@ -36,7 +40,7 @@ image = cv2.cvtColor(cv2.imread(str(args.scene / "source.jpg")), cv2.COLOR_BGR2R
 image = cv2.resize(image, (args.width, args.width // 2), interpolation=cv2.INTER_AREA)
 h, w = image.shape[:2]
 
-distance, valid = moge_distance(image, args.model)
+distance, valid = moge_distance(image, args.model, args.view_size, args.merge_width or None)
 pts = distance[..., None] * directions(h, w)
 
 # Floor: the lowest z layer (2 cm bins) holding at least 2% of the points below the camera, refined with a plane fit.

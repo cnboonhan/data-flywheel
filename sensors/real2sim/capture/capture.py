@@ -7,7 +7,7 @@ At each viewpoint: Nav2 NavigateToPose (nav2_simple_commander), wait --settle se
 next left/right images, their poses from TF (map -> camera optical frame at the image stamp) and one lidar cloud in
 the map frame. Each camera's lens comes from its CameraInfo: no distortion -> PINHOLE, plumb_bob or
 rational_polynomial -> OPENCV or FULL_OPENCV, equidistant -> OPENCV_FISHEYE. Writes images/ and sparse/0/{cameras,images,points3D}.txt (COLMAP text model; world = map frame, so
-the result is metric and gravity-aligned). Train with sim/splat/train.py.
+the result is metric and gravity-aligned). Train with sim/colmap_splat/train.py.
 
 Camera heights: with --height_steps N > 1, each viewpoint is captured at N camera heights spread over --height_range
 (the robot's achievable camera heights above the floor). Each height is published on --height_topic

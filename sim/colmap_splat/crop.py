@@ -1,6 +1,6 @@
 """Copy a 3DGRUT export's gaussians, dropping those more than RADIUS m from their median.
 
-    sim/splat/3dgrut/.venv/bin/python sim/splat/crop.py <export.usdz> <out.usdc> <radius>
+    sim/colmap_splat/3dgrut/.venv/bin/python sim/colmap_splat/crop.py <export.usdz> <out.usdc> <radius>
 
 3DGRUT keeps a shell of background gaussians out to ~1000 km. In Isaac Sim's path tracer that shell occludes the dome
 light and samples stochastically: meshes go black on top and their shading flickers frame to frame.

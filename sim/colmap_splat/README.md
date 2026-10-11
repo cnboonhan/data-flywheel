@@ -1,13 +1,13 @@
-# sim/splat
+# sim/colmap_splat
 
-Gaussian splats of real environments: COLMAP images in, a `ParticleField` USD out that Isaac Sim 6.x (and IsaacLab-Arena) renders as a background. Training is [3DGRUT](https://github.com/nv-tlabs/3dgrut) (3DGUT + MCMC, the trainer behind NVIDIA NuRec), an untouched submodule at `sim/splat/3dgrut`. `train.py` runs it on a local directory or `s3://` prefix and writes the run to either. Data lives in `datasets/splat/` (gitignored): local scenes, runs, the S3 cache.
+Gaussian splats of real environments: COLMAP images in, a `ParticleField` USD out that Isaac Sim 6.x (and IsaacLab-Arena) renders as a background. Training is [3DGRUT](https://github.com/nv-tlabs/3dgrut) (3DGUT + MCMC, the trainer behind NVIDIA NuRec), an untouched submodule at `sim/colmap_splat/3dgrut`. `train.py` runs it on a local directory or `s3://` prefix and writes the run to either. Data lives in `datasets/colmap_splat/` (gitignored): local scenes, runs, the S3 cache.
 
 ## Install (once)
 
-Install 3DGRUT into its venv (~20 GB in `sim/splat/3dgrut/.venv`, x86_64 or aarch64). On the cluster, run it on a GPU node with many cores.
+Install 3DGRUT into its venv (~20 GB in `sim/colmap_splat/3dgrut/.venv`, x86_64 or aarch64). On the cluster, run it on a GPU node with many cores.
 
 ```bash
-bash sim/splat/install.sh
+bash sim/colmap_splat/install.sh
 ```
 
 Notes:
@@ -23,11 +23,11 @@ NVIDIA's Zurich office lounge from [`nvidia/PhysicalAI-Robotics-NuRec`](https://
 
 1. Fetch it.
    ```bash
-   uvx hf download nvidia/PhysicalAI-Robotics-NuRec --repo-type dataset --include 'zh_lounge/*' --local-dir datasets/splat/zh_lounge
+   uvx hf download nvidia/PhysicalAI-Robotics-NuRec --repo-type dataset --include 'zh_lounge/*' --local-dir datasets/colmap_splat/zh_lounge
    ```
 2. Train and export (every 8th image is held out and scored; add `n_iterations=7000` for a ~5 min check).
    ```bash
-   uv run sim/splat/train.py datasets/splat/zh_lounge/zh_lounge/colmap datasets/splat/zh_lounge/runs
+   uv run sim/colmap_splat/train.py datasets/colmap_splat/zh_lounge/zh_lounge/colmap datasets/colmap_splat/zh_lounge/runs
    ```
 
 `train.py <input> <output> [3DGRUT overrides]` runs upstream's `train.py` with `apps/colmap_3dgut_mcmc.yaml` (`--config` to change it) and USD export on, and unzips `images.zip` when there is no `images/`.
@@ -37,8 +37,8 @@ NVIDIA's Zurich office lounge from [`nvidia/PhysicalAI-Robotics-NuRec`](https://
 Refine poses that come from a robot's localisation (as in [`sensors/real2sim`](../../sensors/real2sim/README.md)) against the images before training; a few cm and about a degree of pose error blur a splat more than any training setting.
 
 ```bash
-uv run sim/splat/refine_poses.py datasets/real2sim/run1/colmap datasets/real2sim/run1/colmap_refined   # ~5 min for 1000 images
-uv run sim/splat/train.py datasets/real2sim/run1/colmap_refined datasets/real2sim/run1/runs --floor
+uv run sim/colmap_splat/refine_poses.py datasets/real2sim/run1/colmap datasets/real2sim/run1/colmap_refined   # ~5 min for 1000 images
+uv run sim/colmap_splat/train.py datasets/real2sim/run1/colmap_refined datasets/real2sim/run1/runs --floor
 ```
 
 `refine_poses.py` matches each image with its nearest views (GPU SIFT), triangulates from the input poses and bundle-adjusts poses and points with the lenses fixed, then maps the result back onto the input camera centres, so it stays in the map frame at metric scale. Check its last lines: reprojection error should be well under 1 px median, and it prints how far the poses moved. It runs on x86_64 only (no aarch64 `pycolmap-cuda12` wheels), so run it on the capture machine and upload the refined model.
@@ -48,11 +48,11 @@ uv run sim/splat/train.py datasets/real2sim/run1/colmap_refined datasets/real2si
 Set up the S3 client ([versitygw](../../services/versitygw/README.md#client-setup)), then use `s3://` prefixes on either side.
 
 ```bash
-uv run sim/splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
-uv run sim/splat/train.py s3://raw/internal_datasets/real2sim/ridgeback_demo/colmap_refined s3://processed/splats/ridgeback_demo --floor
+uv run sim/colmap_splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge
+uv run sim/colmap_splat/train.py s3://raw/internal_datasets/real2sim/ridgeback_demo/colmap_refined s3://processed/splats/ridgeback_demo --floor
 ```
 
-An S3 input is mirrored into `datasets/splat/cache/inputs/` (only changed files are fetched); an S3 output is trained in `datasets/splat/cache/runs/` and uploaded to `<output>/<name>/<run>/`. Captures from [`sensors/real2sim`](../../sensors/real2sim/README.md) go to `s3://raw/internal_datasets/real2sim/<name>/colmap/`, refined ones next to them in `colmap_refined/` (sync its `sparse/` and `images/`, not `work/`); `download-datasets-hf` fetches zh_lounge into `s3://raw/open_datasets/nurec-zh_lounge/`.
+An S3 input is mirrored into `datasets/colmap_splat/cache/inputs/` (only changed files are fetched); an S3 output is trained in `datasets/colmap_splat/cache/runs/` and uploaded to `<output>/<name>/<run>/`. Captures from [`sensors/real2sim`](../../sensors/real2sim/README.md) go to `s3://raw/internal_datasets/real2sim/<name>/colmap/`, refined ones next to them in `colmap_refined/` (sync its `sparse/` and `images/`, not `work/`); `download-datasets-hf` fetches zh_lounge into `s3://raw/open_datasets/nurec-zh_lounge/`.
 
 ## On the Slurm cluster
 
@@ -60,7 +60,7 @@ Source `slurm.env` ([slurm/](../../services/slurm/README.md)), then submit `trai
 
 ```bash
 cd $STATE_DIR/slurm-logs
-sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/splat/train.sbatch \
+sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/colmap_splat/train.sbatch \
   s3://raw/internal_datasets/real2sim/<scene>/colmap_refined s3://processed/splats/<scene> --name <scene> --floor
 ```
 
@@ -71,7 +71,7 @@ sbatch --export=ALL --exclude=$SERVICE_NODE $FLYWHEEL_ROOT/sim/splat/train.sbatc
 To write the PLY for a run trained before PLY export was on, run this on a GPU node:
 
 ```bash
-cd sim/splat/3dgrut && source .venv/bin/activate && python ../export_ply.py <run dir>
+cd sim/colmap_splat/3dgrut && source .venv/bin/activate && python ../export_ply.py <run dir>
 ```
 
 Open or reference **`scene.usda`**, not the USDZ:

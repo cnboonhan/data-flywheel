@@ -4,7 +4,7 @@
 # ///
 """Refine a posed COLMAP model's camera poses against its images; the lenses stay fixed.
 
-    uv run sim/splat/refine_poses.py <colmap> <colmap_refined>
+    uv run sim/colmap_splat/refine_poses.py <colmap> <colmap_refined>
 
 For captures posed by a robot's localisation (sensors/real2sim): a few cm and about a degree of pose error blur a splat
 far more than anything in training. GPU SIFT features, matches between each image and its 30 nearest views facing the

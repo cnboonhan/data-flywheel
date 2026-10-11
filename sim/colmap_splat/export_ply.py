@@ -1,7 +1,7 @@
 """Write a 3DGRUT run's splat as PLY (export_last.ply), from its checkpoint, without retraining. Runs in 3DGRUT's venv on
 a GPU node (loading the model builds its CUDA tracer). train.py exports PLY itself; this is for runs made before it did.
 
-    sim/splat/3dgrut/.venv/bin/python sim/splat/export_ply.py <run dir> [out.ply]
+    sim/colmap_splat/3dgrut/.venv/bin/python sim/colmap_splat/export_ply.py <run dir> [out.ply]
 """
 
 import sys

@@ -7,7 +7,7 @@
 # Generated specs go to eval/system2/environments/ unless --out_dir is given.
 # Env: OPENAI_API_KEY (proxy client key), ARENA_PROXY_BASE_URL (default http://127.0.0.1:8317/v1),
 #      ARENA_PROXY_MODEL (default claude-sonnet-5-5; CLI also accepts --model),
-#      ARENA_SPLAT_SCENE (a sim/splat scene.usda, registered as the `splat_scene` background).
+#      ARENA_SPLAT_SCENE (a sim/colmap_splat scene.usda, registered as the `splat_scene` background).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARENA="${ROOT}/eval/system2/IsaacLab-Arena"
