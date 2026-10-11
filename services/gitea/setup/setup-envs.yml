@@ -57,7 +57,7 @@ jobs:
           RUN_UID: ${{ vars.RUN_UID }}
           RUN_GID: ${{ vars.RUN_GID }}
         run: |
-          set -a; . "$STATE_DIR/slurm.env"; set +a            # paths of this checkout and the state dir (ctl.sh writes it)
+          set -a; . "$STATE_DIR/flywheel.env"; set +a            # paths of this checkout and the state dir (ctl.sh writes it)
           export S3_ENDPOINT_URL=http://versitygw:7070; unset AWS_CA_BUNDLE   # the gateway on the compose network
           export HOME=/tmp/home PATH="$USER_LOCAL/bin:$PATH" UV_PYTHON_INSTALL_DIR="$USER_LOCAL/share/uv/python" HF_HOME="$STATE_DIR/hf-home"
           mkdir -p "$HOME" && chown "$RUN_UID:$RUN_GID" "$HOME"

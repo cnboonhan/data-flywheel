@@ -25,7 +25,7 @@ export MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 export TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT TRITON_TOKEN=<Triton token>
 ```
 
-On the cluster's own nodes you can instead load all of this from the admin's `slurm.env` ([slurm/](services/slurm/README.md)).
+On the cluster's own nodes you can instead load all of this from the admin's `flywheel.env` ([services/](services/README.md#state)).
 
 ## 2. Set up SSH (from a laptop)
 

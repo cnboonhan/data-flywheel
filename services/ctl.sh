@@ -117,8 +117,8 @@ bootstrap_gitea() {
 }
 
 # What jobs need besides the services: a checkout of the pipelines repo to edit workflows in, the MLflow
-# token, and $STATE_DIR/slurm.env (credentials and paths, read by the setup-envs workflow and by Slurm jobs
-# you submit by hand, in a file only you can read).
+# token, and $STATE_DIR/flywheel.env (credentials and paths, in a file only you can read: the setup-envs workflow,
+# Slurm jobs and the sim tools load it).
 bootstrap_jobs() {
   local api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
   mkdir -p "$STATE_DIR/slurm-logs"
@@ -139,7 +139,7 @@ bootstrap_jobs() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/MLFLOW_USERNAME" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/MLFLOW_USERNAME" >/dev/null
   fi
-  (umask 077; cat > "$STATE_DIR/slurm.env" <<EOF
+  (umask 077; cat > "$STATE_DIR/flywheel.env" <<EOF
 MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
 MLFLOW_TRACKING_USERNAME=$ADMIN_USER
 MLFLOW_TRACKING_PASSWORD=$mltok

@@ -23,7 +23,7 @@ Naming:
     tags         registered_model, plus whatever the caller passes (e.g. xpolicylab_ckpt for RoboDojo evaluation)
 
 data_fingerprint hashes every episode's path, size and mtime, so two runs with the same fingerprint saw identical data.
-MLflow connection: MLFLOW_TRACKING_URI/USERNAME/PASSWORD and MLFLOW_TRACKING_SERVER_CERT_PATH (slurm.env).
+MLflow connection: MLFLOW_TRACKING_URI/USERNAME/PASSWORD and MLFLOW_TRACKING_SERVER_CERT_PATH (flywheel.env).
 """
 
 import dataclasses

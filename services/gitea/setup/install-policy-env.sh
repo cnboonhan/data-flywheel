@@ -3,7 +3,7 @@
 # Build (or re-point) the uv env an XPolicyLab policy trains and serves in: ENVS_DIR/<policy, lowercase>.
 # Run by the Gitea workflow setup-envs in a job container on the service node (dispatched by `ctl.sh up` /
 # `ctl.sh setup`). By hand, on any node:
-#   set -a; . $STATE_DIR/slurm.env; set +a; bash install-policy-env.sh ACT | DP
+#   set -a; . $STATE_DIR/flywheel.env; set +a; bash install-policy-env.sh ACT | DP
 # Follows policy/<P>/install.sh, with the versions that work on this aarch64 Blackwell node: torch from
 # the cu128 index (the policies pin torch==2.4.1, which has no CUDA build here), numpy/numba pins relaxed.
 # Editable installs point at PROJECT_ROOT, so re-run this after moving the repo. Idempotent.

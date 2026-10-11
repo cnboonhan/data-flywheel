@@ -8,7 +8,7 @@
 # $ROBODOJO_DIR/Assets and the RoboDojo data (sim + real, 2.1 TB) into s3://raw/open_datasets/. Resumable.
 # Run by the Gitea workflow setup-envs in a job container on the service node (dispatched by `ctl.sh up` /
 # `ctl.sh setup`), with $STATE_DIR, the checkout and ~/.local mounted at their host paths. By hand, on any node:
-#   set -a; . $STATE_DIR/slurm.env; set +a; bash install-robodojo.sh
+#   set -a; . $STATE_DIR/flywheel.env; set +a; bash install-robodojo.sh
 set -euo pipefail
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
 ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
@@ -110,7 +110,7 @@ echo "[8/8] RoboDojo data -> s3://raw/open_datasets/robodojo{,_real}/"
 # data/RoboDojo/<task>/...      (1.85 TB, 35 tasks, xspark HDF5) -> raw/open_datasets/robodojo/<task>/...
 # data/RoboDojo_real/...        (273 GB, real-robot episodes)    -> raw/open_datasets/robodojo_real/...
 # File by file through the S3 gateway (staged one at a time under $ROBODOJO_DIR/download); objects already in the
-# bucket with the same size are skipped, so a re-run resumes. Credentials: S3_ENDPOINT_URL, AWS_* from slurm.env.
+# bucket with the same size are skipped, so a re-run resumes. Credentials: S3_ENDPOINT_URL, AWS_* from flywheel.env.
 mkdir -p "$ROBODOJO_DIR/download"
 uv run -q --python 3.12 --with "huggingface_hub[hf_transfer]" --with boto3 python - "$ROBODOJO_DIR/download" <<'PY'
 import os, sys, time

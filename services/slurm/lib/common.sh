@@ -1,4 +1,4 @@
-# Sourced by train.sbatch and evaluate.sbatch. Paths come from slurm.env (`ctl.sh up` writes it); the defaults match it.
+# Sourced by train.sbatch and evaluate.sbatch. Paths come from flywheel.env (`ctl.sh up` writes it); the defaults match it.
 # sbatch runs a spooled copy of the job script, so the checkout comes from FLYWHEEL_ROOT, not the script's location.
 SLURM_DIR=${FLYWHEEL_ROOT:-$HOME/workspaces/data-flywheel}/services/slurm
 LIB=$SLURM_DIR/lib

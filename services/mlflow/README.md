@@ -17,7 +17,7 @@ Experiment tracking and model registry at `/mlflow`, built from `Dockerfile` wit
 
 **Notes**
 - Log in to the UI with Keycloak; use a personal access token for API clients. Members of `admins` are admins; everyone else gets `EDIT` wherever no permission is set. Set per-experiment and per-model permissions in the admin UI at `/mlflow/oidc/ui/` (stored in `$STATE_DIR/mlflow/oidc_auth.db`).
-- Slurm jobs use the admin token that `ctl.sh up` writes to `$STATE_DIR/slurm.env`; rerun `up` if it stops working.
+- Slurm jobs use the admin token that `ctl.sh up` writes to `$STATE_DIR/flywheel.env`; rerun `up` if it stops working.
 - From another container on the compose network, use `http://mlflow:5000` (no `/mlflow` prefix; Caddy adds it with `X-Forwarded-Prefix`).
 - The backend store is sqlite in `$STATE_DIR/mlflow`; switch to Postgres if concurrent writers start failing.
 - For how training runs and models are named, see [slurm/](../slurm/README.md#naming-in-mlflow); to serve a registered version, see [triton/](../triton/README.md).

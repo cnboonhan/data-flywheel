@@ -17,7 +17,7 @@ Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket
    ```bash
    mkdir -p ~/.aws && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o ~/.aws/flywheel-ca.crt
    ```
-   On cluster nodes, use `$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt` instead; `slurm.env` already sets `AWS_CA_BUNDLE` to it.
+   On cluster nodes, use `$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt` instead; `flywheel.env` already sets `AWS_CA_BUNDLE` to it.
 3. Configure the client, either as a profile:
    ```ini
    # ~/.aws/config

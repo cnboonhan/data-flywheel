@@ -45,7 +45,7 @@ The **Store** column of the [architecture diagram](../README.md#architecture): D
    ```bash
    git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive eval/system2/IsaacLab-Arena
    ```
-2. Copy `services/.env` (or fill in `.env.example`) and run `services/ctl.sh up` (about 5 min). On a clean state it starts Caddy first and waits for its CA, then the rest, then provisions Gitea ([gitea/](gitea/README.md)), Keycloak, Grafana, the MLflow job token, `$STATE_DIR/slurm.env` and the `$STATE_DIR/pipelines` checkout.
+2. Copy `services/.env` (or fill in `.env.example`) and run `services/ctl.sh up` (about 5 min). On a clean state it starts Caddy first and waits for its CA, then the rest, then provisions Gitea ([gitea/](gitea/README.md)), Keycloak, Grafana, the MLflow job token, `$STATE_DIR/flywheel.env` and the `$STATE_DIR/pipelines` checkout.
 3. Trust the CA: [Access](#access).
 4. Wait for `setup-envs`, which `up` dispatches: ~1 h for the envs on a cold cache, up to a day for the RoboDojo data ([gitea/setup/](gitea/setup/README.md)).
 
@@ -74,3 +74,9 @@ The **Store** column of the [architecture diagram](../README.md#architecture): D
 ## State
 
 Everything lives in `$STATE_DIR/<service>`, owned by `$SERVICE_UID:$SERVICE_GID`, including buckets, envs, caches, checkpoints and evaluation results (`versitygw/buckets`, `envs`, `uv-cache`, `xpolicylab`, `robodojo`); the checkout holds code only. `ctl.sh up` creates every directory it mounts, because a path dockerd has to create ends up root-owned.
+
+`ctl.sh up` also writes `$STATE_DIR/flywheel.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL`/`TRITON_TOKEN`, `SERVICE_NODE`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Load it on a cluster node to use the services from a shell, a Slurm job or a sim tool:
+
+```bash
+set -a; . $STATE_DIR/flywheel.env; set +a
+```

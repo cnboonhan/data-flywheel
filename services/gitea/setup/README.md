@@ -14,7 +14,7 @@ Builds the environments the Slurm jobs run in. Not a pipeline stage: `ctl.sh up`
    ```
 2. To build one env by hand, run its installer on any node.
    ```bash
-   set -a; . $STATE_DIR/slurm.env; set +a; bash services/gitea/setup/install-policy-env.sh ACT
+   set -a; . $STATE_DIR/flywheel.env; set +a; bash services/gitea/setup/install-policy-env.sh ACT
    ```
 
 **Notes**
