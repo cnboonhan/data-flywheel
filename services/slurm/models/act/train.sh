@@ -12,6 +12,8 @@ train() {
   bash process_data.sh "$BENCH" "$TASK" "$EMB_XPL_ENV_CFG" "$ACTION"
   action_dim=$(bash "$XPL/utils/get_action_dim.sh" "$PROJECT_ROOT" "$EMB_XPL_ENV_CFG")
   export ACT_ACTION_DIM=$action_dim
+  # Hyperparameters copied from XPolicyLab policy/ACT/train.sh, untuned here. save_freq = num_epochs keeps only the
+  # final checkpoint. Real results need the 6000 epochs: a 30-epoch run scores 0 on stack_bowls.
   python "$LIB/xpolicylab_train.py" --model ACT --embodiment "$EMB_NAME" --data "$BENCH/$TASK" --action "$ACTION" --seed "$SEED" \
     --ckpt-dir "$ckpt_dir" --ckpt-name "$setting-$SEED" -- \
     imitate_episodes.py --bench_name "$BENCH" --task_name "$TASK" --ckpt_setting "$setting" \

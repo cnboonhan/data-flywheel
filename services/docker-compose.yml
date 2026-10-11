@@ -1,13 +1,15 @@
 # Store stack: Caddy, Versity S3 Gateway, MLflow, Loki, Grafana.
 # Every image is a multi-arch manifest (linux/arm64 + linux/amd64), so the same
 # file runs on the GB300 node and on an Intel box. See README.md.
+# Container ports (7070, 5000, 3000, 4180, 8080, ...) are each app's default or the one it is told here; only Caddy's
+# is published, and caddy/Caddyfile proxies to the others by service name and port.
 
 x-common: &common
   restart: unless-stopped
   user: "${SERVICE_UID}:${SERVICE_GID}"
   logging:
     driver: json-file
-    options: { max-size: "20m", max-file: "5" }
+    options: { max-size: "20m", max-file: "5" }   # up to 100 MB of logs per container; untuned
 
 services:
   caddy:
@@ -171,7 +173,7 @@ services:
       - ${STATE_DIR}/gitea/data:/var/lib/gitea
       - ${STATE_DIR}/gitea/config:/etc/gitea
       - ${STATE_DIR}/caddy/data/caddy/pki/authorities/local/root.crt:/ca/root.crt:ro
-    healthcheck:
+    healthcheck:   # unhealthy after 12 failed checks 10 s apart (~2 min); act_runner waits for healthy. Untuned.
       test: ["CMD", "curl", "-fs", "http://localhost:3000/gitea/api/healthz"]
       interval: 10s
       timeout: 5s
@@ -203,7 +205,8 @@ services:
   mongo:
     <<: *common
     image: mongo:8
-    command: ["mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "4"]   # default cache is half the node's RAM
+    # WiredTiger cache 4 GB, untuned: the default is half the node's RAM.
+    command: ["mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "4"]
     volumes:
       - ${STATE_DIR}/mongo:/data/db
 
@@ -214,6 +217,7 @@ services:
     <<: *common
     build: ./fiftyone
     image: flywheel-fiftyone:latest
+    # --wait -1: keep serving after the last browser disconnects (a positive value exits after that many seconds).
     command: ["fiftyone", "app", "launch", "--remote", "--port", "5151", "--wait", "-1"]
     environment:
       HOME: /fiftyone
@@ -253,8 +257,8 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"   # the repository is read-only
     devices:
       - nvidia.com/gpu=all
-    shm_size: 16gb                   # Python-backend models pass tensors through shared memory
-    ulimits:
+    shm_size: 16gb                   # Python-backend models pass tensors through shared memory; 16 GB untuned
+    ulimits:                         # no memlock limit, 64 MiB stack: NVIDIA's recommended `docker run` for Triton
       memlock: -1
       stack: 67108864
     volumes:
@@ -271,7 +275,7 @@ services:
       POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
     volumes:
       - ${STATE_DIR}/keycloak/db:/var/lib/postgresql/data
-    healthcheck:
+    healthcheck:   # same timing as Gitea's (~2 min); Keycloak waits for healthy. Untuned.
       test: ["CMD-SHELL", "pg_isready -U keycloak"]
       interval: 10s
       timeout: 5s
@@ -327,7 +331,7 @@ services:
       - --allowed-group=users
       - --set-xauthrequest=true
       - --reverse-proxy=true
-      - --upstream=static://202
+      - --upstream=static://202       # auth only: 202 to a signed-in request; Caddy's (sso) snippet passes any 2xx
       - --http-address=0.0.0.0:4180
       - --skip-provider-button=true
       - --code-challenge-method=S256

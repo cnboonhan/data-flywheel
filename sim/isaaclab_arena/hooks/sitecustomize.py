@@ -22,7 +22,7 @@ import sys
 def _register_cliproxy(module) -> None:
     module.INFERENCE_ENDPOINTS["cliproxy"] = module.InferenceEndpoint(
         name="cliproxy",
-        base_url=os.getenv("ARENA_PROXY_BASE_URL", "http://127.0.0.1:8317/v1"),
+        base_url=os.getenv("ARENA_PROXY_BASE_URL", "http://127.0.0.1:8317/v1"),   # CLIProxyAPI's default port
         model=os.getenv("ARENA_PROXY_MODEL", "claude-sonnet-5-5"),
         api_key_env_var="OPENAI_API_KEY",
     )
@@ -43,7 +43,7 @@ def _register_splat(module) -> None:
         tags = ["background", "splat"]
         usd_path = scene
         initial_pose = Pose(position_xyz=(-cx, -cy, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
-        object_min_z = -0.2
+        object_min_z = -0.2   # a pick object below this counts as dropped; Arena's usual value
 
     register_asset(SplatSceneBackground)
 

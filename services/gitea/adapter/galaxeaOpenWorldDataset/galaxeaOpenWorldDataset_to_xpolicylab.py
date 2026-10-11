@@ -61,7 +61,7 @@ def _insert_rgb_marker(jpeg_bytes):
     return jpeg_bytes[:offset] + segment + jpeg_bytes[offset:]
 
 
-def encode_image_bit(rgb, quality=None):
+def encode_image_bit(rgb, quality=None):  # None: OpenCV's default JPEG quality (95), as XPolicyLab's encoder
     params = [] if quality is None else [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)]
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2BGR), params)
     if not ok:

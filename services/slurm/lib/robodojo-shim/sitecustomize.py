@@ -74,7 +74,7 @@ if any("eval_client" in a for a in sys.argv):
             import time
             import omni.usd
             t0 = time.time()
-            while time.time() - t0 < 60:
+            while time.time() - t0 < 60:  # vs Kit's ~2 s (docstring); 60 s is untuned
                 stage = omni.usd.get_context().get_stage()
                 if stage is not None and stage.GetPrimAtPath("/OmniverseKit_Persp").IsValid():
                     return

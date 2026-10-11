@@ -3,8 +3,8 @@
 auth_enabled: false
 
 server:
-  http_listen_port: 3100
-  grpc_listen_port: 9096
+  http_listen_port: 3100   # Loki's default; Caddy and Grafana use it
+  grpc_listen_port: 9096   # as in Loki's example config; between Loki's own components, not published
 
 common:
   instance_addr: 127.0.0.1
@@ -13,23 +13,23 @@ common:
     filesystem:
       chunks_directory: /logging/chunks
       rules_directory: /loki/rules
-  replication_factor: 1
+  replication_factor: 1   # one instance
   ring:
     kvstore:
       store: inmemory
 
 schema_config:
   configs:
-    - from: "2024-01-01"
+    - from: "2024-01-01"   # before the first log; a schema change gets a new entry with a future date
       store: tsdb
       object_store: filesystem
       schema: v13
       index:
         prefix: index_
-        period: 24h
+        period: 24h          # retention needs a 24 h index period
 
 limits_config:
-  retention_period: 30d
+  retention_period: 30d   # untuned; deleted by the compactor (retention_enabled)
 
 compactor:
   working_directory: /loki/compactor

@@ -20,6 +20,8 @@ from scipy.ndimage import distance_transform_edt
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("--out", required=True)
+# Spacing and headings default to a quick, sparse grid: for a splat use --spacing 1.0 --headings 8 (README: sparse grids
+# train noticeably worse). Clearance is untuned.
 ap.add_argument("--spacing", type=float, default=1.5, help="Grid spacing (m)")
 ap.add_argument("--headings", type=int, default=4, help="Headings per position")
 ap.add_argument("--clearance", type=float, default=0.8, help="Min distance to obstacles and unknown space (m)")
@@ -50,7 +52,7 @@ try:
     import tf2_ros
     tf = tf2_ros.Buffer()
     tf2_ros.TransformListener(tf, nav)
-    for _ in range(20):
+    for _ in range(20):   # up to ~4 s for TF, else start the tour at the map origin; untuned
         rclpy.spin_once(nav, timeout_sec=0.2)
         if tf.can_transform("map", "base_link", rclpy.time.Time()):
             t = tf.lookup_transform("map", "base_link", rclpy.time.Time()).transform.translation

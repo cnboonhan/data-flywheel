@@ -8,7 +8,7 @@ x-ros: &ros
   network_mode: host
   ipc: host
   init: true                          # tini as PID 1: signals reach ros2 launch, and xvfb-run works
-  user: "${UID:-1000}:${GID:-1000}"
+  user: "${UID:-1000}:${GID:-1000}"     # 1000: fallback when UID/GID are not exported (see above)
   environment:
     ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}      # off the lab robot's domain 0
     RMW_IMPLEMENTATION: rmw_fastrtps_cpp

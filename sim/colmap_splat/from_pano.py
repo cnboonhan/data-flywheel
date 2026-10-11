@@ -26,7 +26,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+# Views from each point, yaw and pitch (deg): 8 yaws at 3 pitches plus straight down and up cover the sphere at the
+# default 90 deg field of view; the angles are untuned.
 LOOKS = [(y, p) for p in (-60, -20, 20) for y in range(0, 360, 45)] + [(0, -90), (0, 90)]    # yaw, pitch (deg)
+# Points around the capture point (m): rings at 0.3 and 0.6 m, 0.2 m down and 0.15 m up. The splat holds up within
+# ~0.6 m (README); the radii and heights are untuned.
 AROUND = [(r * np.cos(np.radians(a)), r * np.sin(np.radians(a)), dz)
           for r in (0.3, 0.6) for a in range(0, 360, 60) for dz in (-0.2, 0.15)]                # offsets (m)
 
@@ -51,7 +55,7 @@ def points(distance: np.ndarray, frame: dict) -> np.ndarray:
 def render(xyz: np.ndarray, rgb: np.ndarray, centre: np.ndarray, R: np.ndarray, size: int, f: float):
     """The points seen from centre (nearest wins), and where nothing landed."""
     c = (xyz - centre) @ R
-    ok = c[:, 2] > 0.05
+    ok = c[:, 2] > 0.05                                       # near clip (m), untuned
     x, y = c[ok, 0] / c[ok, 2] * f + size / 2, c[ok, 1] / c[ok, 2] * f + size / 2
     inside = (x >= 0) & (x < size) & (y >= 0) & (y < size)
     xi, yi, z, col = x[inside].astype(int), y[inside].astype(int), c[ok, 2][inside], rgb[ok][inside]
@@ -68,14 +72,17 @@ def fill_editor(edit, img: np.ndarray, holes: np.ndarray) -> np.ndarray:
     out = edit.infer({"images": [cv2.imencode(".png", cv2.cvtColor(shown, cv2.COLOR_RGB2BGR))[1].tobytes()],
                       "prompt": [b"Fill the magenta areas with what continues the room around them: walls, floor, "
                                  b"furniture surfaces, lighting. Add no objects. Keep everything else as it is."],
-                      "steps": np.array([20], np.int32)}, ["image"])["image"]
+                      "steps": np.array([20], np.int32)}, ["image"])["image"]   # denoising steps, untuned
     res = cv2.cvtColor(cv2.imdecode(np.frombuffer(np.ravel(out)[0], np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
     res = cv2.resize(res, img.shape[1::-1], interpolation=cv2.INTER_AREA)
+    # pasted 2 px past the holes so their rim is redrawn too; untuned
     return np.where(cv2.dilate(holes.astype(np.uint8), np.ones((5, 5), np.uint8))[..., None] > 0, res, img)
 
 
 def run(session: Path, out: Path, size: int = 1024, fov: float = 90.0, n_points: int = 600000, fill: str = "opencv",
         log=print):
+    """size: view side (px), fov: views' field of view (deg), n_points: starting points from the depth; all untuned
+    (~29 dB held out at 7k iterations with these)."""
     with zipfile.ZipFile(session) as z:
         frame = json.loads(z.read("scene.json"))["frame"]
         pano = cv2.cvtColor(cv2.imdecode(np.frombuffer(z.read("background/pano.jpg"), np.uint8), cv2.IMREAD_COLOR),
@@ -104,11 +111,12 @@ def run(session: Path, out: Path, size: int = 1024, fov: float = 90.0, n_points:
     for i, (name, centre, R, (pts, col)) in enumerate(cams, 1):
         img, holes = render(pts, col, centre, R, size, f)
         if name.startswith("c_"):                                   # from the capture point nothing is hidden
-            img = cv2.inpaint(img, holes.astype(np.uint8), 3, cv2.INPAINT_TELEA)
-        elif edit and holes.mean() > 0.01:
+            img = cv2.inpaint(img, holes.astype(np.uint8), 3, cv2.INPAINT_TELEA)   # radius 3 px, untuned
+        elif edit and holes.mean() > 0.01:                          # the editor (~10 s) only past 1% holes; untuned
             img = fill_editor(edit, cv2.inpaint(img, holes.astype(np.uint8), 3, cv2.INPAINT_TELEA), holes)
         else:
-            img = cv2.inpaint(img, holes.astype(np.uint8), 5, cv2.INPAINT_TELEA)
+            img = cv2.inpaint(img, holes.astype(np.uint8), 5, cv2.INPAINT_TELEA)   # radius 5 px, untuned
+        # JPEG quality 95 for the training images, untuned
         cv2.imwrite(str(out / "images" / name), cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])
         Rcw = R.T                                                   # scene -> camera
         t = -Rcw @ centre

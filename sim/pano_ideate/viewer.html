@@ -142,15 +142,15 @@ body.placing canvas { cursor: crosshair; }
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const COLORS = { 1: [1.0, 0.55, 0.1], 2: [0.2, 0.78, 1.0] };
+const COLORS = { 1: [1.0, 0.55, 0.1], 2: [0.2, 0.78, 1.0] };   // by kind: --movable orange, --articulated cyan
 const SUGGEST = { movable: ["pick it up", "knock it over", "take it away"], articulated: ["open it", "close it", "open it halfway"] };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));   // at most 2x (untuned)
 document.body.prepend(renderer.domElement);
 const world = new THREE.Scene();
 world.background = new THREE.Color(0x101418);
-const camera = new THREE.PerspectiveCamera(75, 1, 0.02, 200);
+const camera = new THREE.PerspectiveCamera(75, 1, 0.02, 200);   // fov 75 deg to start (untuned); far past the backdrop
 camera.rotation.order = "YXZ";
 
 let S = null;            // the loaded scene: meta, depth grid, id grid, mesh
@@ -167,9 +167,9 @@ const material = new THREE.ShaderMaterial({
       vec3 c = texture2D(map, vUv).rgb;
       vec3 t = floor(texture2D(ids, vec2(vUv.x, 1.0 - vUv.y)).rgb * 255.0 + 0.5);   // raw rows: top first
       float id = t.r * 256.0 + t.g;
-      vec3 k = t.b > 1.5 ? articulated : movable;
+      vec3 k = t.b > 1.5 ? articulated : movable;   // kind 2: articulated (KIND in serve.py)
       if (id > 0.0) {
-        float a = id == selected ? 0.55 : id == hover ? 0.42 : 0.16 * show;
+        float a = id == selected ? 0.55 : id == hover ? 0.42 : 0.16 * show;   // tint strength (untuned)
         c = mix(c, k, a);
       }
       gl_FragColor = vec4(c, 1.0);
@@ -186,6 +186,7 @@ const limit = new THREE.Group();
 world.add(limit);
 function drawLimit(r) {
   limit.clear();
+  // A 2.4 cm line at r, a faint disc inside it, a 5 cm dot at the capture point, 4 mm up (cosmetic, untuned).
   const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.012, r + 0.012, 128),
     new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.95, depthTest: false }));
   const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 128),
@@ -250,6 +251,7 @@ async function load(name, keepView, at = null) {
   idTex.needsUpdate = true;
   const { geometry, dist } = buildMesh(meta, depth);
   mesh.geometry.dispose(); mesh.geometry = geometry;
+  // The backdrop: a sphere 150 m out, from every 4th grid point (untuned).
   backdrop.geometry.dispose(); backdrop.geometry = buildMesh(meta, depth, 150, 4).geometry;
   material.uniforms.map.value?.dispose(); material.uniforms.ids.value?.dispose();
   material.uniforms.map.value = map; material.uniforms.ids.value = idTex;
@@ -336,7 +338,7 @@ function pick(cx, cy) {
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
   const o = ray.ray.origin, d = ray.ray.direction, R = S.meta.R, h = S.meta.camera_height;
-  for (let t = 0.05; t < 60; t *= 1.01) {
+  for (let t = 0.05; t < 60; t *= 1.01) {   // from 5 cm to 60 m in 1% steps (untuned)
     const qx = o.x + d.x * t, qy = o.y + d.y * t - h, qz = o.z + d.z * t;
     const s = [-qz, -qx, qy], n = Math.hypot(...s);
     const v = [0, 1, 2].map((c) => R[0][c] * s[0] + R[1][c] * s[1] + R[2][c] * s[2]);
@@ -363,10 +365,10 @@ el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY,
 el.addEventListener("pointermove", (e) => {
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;   // over 4 px: a drag, not a click (untuned)
     if (drag.moved) {
-      const k = (camera.fov / 75) * 0.0042;
-      yaw += dx * k; pitch = Math.max(-1.5, Math.min(1.5, pitch + dy * k));   // drag the room
+      const k = (camera.fov / 75) * 0.0042;   // rad per px, slower zoomed in (untuned)
+      yaw += dx * k; pitch = Math.max(-1.5, Math.min(1.5, pitch + dy * k));   // drag the room; up to 86 deg
       drag.x = e.clientX; drag.y = e.clientY;
     }
     $("tip").hidden = true;
@@ -387,6 +389,7 @@ el.addEventListener("pointerup", (e) => {
   if (objectOf(id)) openCard(id, e.clientX, e.clientY); else closeCard();
 });
 el.addEventListener("pointerleave", () => { hover = 0; $("tip").hidden = true; });
+// Zoom: fov 30 to 100 deg, 0.04 deg per wheel unit (untuned).
 el.addEventListener("wheel", (e) => { camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.04)); camera.updateProjectionMatrix(); e.preventDefault(); }, { passive: false });
 const typing = () => ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
 addEventListener("keydown", (e) => {
@@ -465,7 +468,7 @@ async function waitJob(id, title) {
       showBusy(title, `${j.label || "Starting"} · ${secs} s`, j.progress);
       if (j.state === "done") return j.result;
       if (j.state === "error") throw new Error(j.error);
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));   // poll every 0.5 s (untuned)
     }
   } finally { $("busy").hidden = true; }
 }
@@ -540,12 +543,12 @@ addEventListener("resize", resize); resize();
 
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;   // at most 50 ms a frame (untuned)
   if (S) {
     const f = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
     const r = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
     if (f || r) {
-      const sp = 0.5 * dt, sy = Math.sin(yaw), cy = Math.cos(yaw);
+      const sp = 0.5 * dt, sy = Math.sin(yaw), cy = Math.cos(yaw);   // walk at 0.5 m/s (untuned)
       offset.x += (-sy * f + cy * r) * sp; offset.y += (-cy * f - sy * r) * sp;
       const lim = S.meta.radius;
       if (offset.length() > lim) offset.setLength(lim);       // stay where the panorama still looks right
@@ -554,7 +557,7 @@ function frame(now) {
     camera.rotation.set(pitch, yaw, 0);
     material.uniforms.hover.value = hover; material.uniforms.selected.value = selected;
     const d = offset.length();
-    $("meter").className = "meter" + (d > S.meta.radius - 0.005 ? " edge" : "");
+    $("meter").className = "meter" + (d > S.meta.radius - 0.005 ? " edge" : "");   // within 5 mm: at the limit
     $("meter").innerHTML = `<b>${d.toFixed(2)} m</b> from the capture point · limit ${S.meta.radius.toFixed(2)} m`;
   }
   renderer.render(world, camera);

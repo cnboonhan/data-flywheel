@@ -7,7 +7,7 @@ concurrency:
   cancel-in-progress: false
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/10 * * * *"   # how soon an alias change is served; untuned
   workflow_dispatch:
     inputs:
       force:
@@ -26,7 +26,7 @@ jobs:
       # in act_runner/config.yaml. The packagers read XPolicyLab's ACT code and models/mlp from it.
       volumes:
         - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel
-    timeout-minutes: 60
+    timeout-minutes: 60   # a sync that loads the 122B takes ~4 min (services/triton/README.md); untuned
     env:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_TRACKING_USERNAME: ${{ vars.MLFLOW_USERNAME }}

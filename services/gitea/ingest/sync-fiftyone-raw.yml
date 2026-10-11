@@ -7,7 +7,7 @@ concurrency:
   cancel-in-progress: false
 on:
   schedule:
-    - cron: "17,47 * * * *"
+    - cron: "17,47 * * * *"   # every 30 min; the minutes are untuned
   workflow_dispatch:
     inputs:
       datasets:
@@ -21,7 +21,7 @@ jobs:
   sync:
     runs-on: python
     container: flywheel-fiftyone:latest   # built by ctl.sh up from services/fiftyone/Dockerfile, same as the App
-    timeout-minutes: 600
+    timeout-minutes: 600   # 10 h; untuned
     env:
       FIFTYONE_DATABASE_URI: mongodb://mongo:27017
       FIFTYONE_DO_NOT_TRACK: "true"
@@ -169,7 +169,7 @@ jobs:
                       for v in videos:
                           cam = os.path.basename(v)[len(ep) + 1:-4]
                           samples.append(fo.Sample(filepath=v, camera=group.element(cam), **fields))
-                      if len(samples) >= 3000:
+                      if len(samples) >= 3000:   # added in batches of 3000; untuned
                           ds.add_samples(samples, progress=False)
                           print(f"  + {len(samples)} slices", flush=True)
                           samples = []
@@ -294,7 +294,7 @@ jobs:
                       if self.name == "mcap":
                           fields.update(self.bag_info(p))
                       samples.append(fo.Sample(filepath=p, **fields))
-                      if len(samples) >= 3000:
+                      if len(samples) >= 3000:   # added in batches of 3000; untuned
                           ds.add_samples(samples, progress=False)
                           print(f"  + {len(samples)} files", flush=True)
                           samples = []

@@ -19,8 +19,10 @@ from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppCont
 parser = cr.get_isaaclab_arena_cli_parser()
 cr.add_agentic_env_gen_runner_cli_args(parser)
 parser.add_argument("--video_dir", type=Path, required=True)
+# Scene camera framing in the env frame (m): untuned defaults; frame each spec with --eye/--target (README example).
 parser.add_argument("--eye", type=float, nargs=3, default=[0.3, -2.4, 1.9], help="scene camera position")
 parser.add_argument("--target", type=float, nargs=3, default=[1.5, 0.0, 0.6], help="scene camera look-at point")
+# 1.05: puts the mug (x 1.7-1.95) of ridgeback_mug_to_bowl_splat_scene.yaml within reach of the stopped base
 parser.add_argument("--stop_x", type=float, default=1.05, help="base x to drive to (mobile embodiments)")
 parser.set_defaults(enable_cameras=True)
 args = parser.parse_args()
@@ -42,9 +44,10 @@ with SimulationAppContext(args):
     name, cfg, kwargs = ArenaEnvBuilder(
         spec.to_arena_env(enable_cameras=True), cr.arena_env_builder_cfg_from_argparse(args)
     ).build_registered()
-    cfg.scene.wrist_cam.width, cfg.scene.wrist_cam.height = 640, 360
+    cfg.scene.wrist_cam.width, cfg.scene.wrist_cam.height = 640, 360   # 16:9 like the scene camera; untuned
     d = np.subtract(args.target, args.eye)   # "world" camera convention: x forward, z up
     rot = Rotation.from_euler("ZY", [np.arctan2(d[1], d[0]), np.arctan2(-d[2], np.hypot(d[0], d[1]))]).as_quat()
+    # Scene camera: 720p; 12 mm on the 20.955 mm aperture is ~82 deg wide, clipping 1 cm-1 km; all untuned.
     cfg.scene.video_cam = CameraCfg(
         prim_path="{ENV_REGEX_NS}/VideoCam", update_period=0.0, height=720, width=1280, data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(focal_length=12.0, horizontal_aperture=20.955, clipping_range=(0.01, 1000.0)),
@@ -65,7 +68,9 @@ with SimulationAppContext(args):
     mobile = "base_action" in u.action_manager.active_terms
     local = lambda n: (sc[n].data.root_pos_w[0] - origin).cpu().numpy()  # noqa: E731
     pick, dest = local(task["pick_up_object"]), local(task["destination_location"])
-    hover = max(pick[2], dest[2]) + 0.18   # hand heights; the fingertips are 0.107 m lower
+    # Hand heights above the objects' origins (the fingertips are 0.107 m lower): hover 0.18, dips 0.15 over the pick
+    # object and 0.13 over the destination; a 0.12 m circle in 12 steps over both. Untuned (the sweep doesn't grasp).
+    hover = max(pick[2], dest[2]) + 0.18
     c = (pick[:2] + dest[:2]) / 2
     arm = [  # (hand x, y, z), gripper (+1 open, -1 close)
         ((*pick[:2], hover), 1), ((*pick[:2], pick[2] + 0.15), 1), ((*pick[:2], pick[2] + 0.15), -1),
@@ -75,6 +80,7 @@ with SimulationAppContext(args):
     ]
     plan = [("arm", w) for w in arm]
     if mobile:   # base joints are anchored at the spawn pose: x, y, yaw in that frame
+        # back off 0.6 m, turning 0.8 rad, at the end; untuned
         plan = [("base", (args.stop_x, 0.0, 0.0))] + plan + [("base", (args.stop_x - 0.6, 0.0, 0.8))]
 
     scale = cfg.actions.arm_action.scale
@@ -85,6 +91,8 @@ with SimulationAppContext(args):
     for step in range(args.num_steps):
         kind, target = plan[min(wp, len(plan) - 1)]
         a = torch.zeros(u.action_space.shape, device=u.device)
+        # Untuned: per-step hand turn 0.1 rad and move 2 cm; base gain 1.5 capped at 0.4 m/s (rad/s); a waypoint is
+        # reached within 1 cm (base) or 1.5 cm (hand), else left after 150 or 60 steps.
         a[0, 3:6] = torch.tensor(np.clip((q_hold * quat().inv()).as_rotvec(), -0.1, 0.1) / scale)
         if kind == "base":
             err = np.subtract(target, robot.data.joint_pos[0, :3].cpu().numpy())
@@ -109,6 +117,6 @@ with SimulationAppContext(args):
     for cam, f in frames.items():
         out = args.video_dir / cam / "clip_0000.mp4"
         out.parent.mkdir(parents=True, exist_ok=True)
-        iio.imwrite(out, np.stack(f), fps=round(1 / u.step_dt), codec="libx264", quality=8)
+        iio.imwrite(out, np.stack(f), fps=round(1 / u.step_dt), codec="libx264", quality=8)   # 0-10 scale; untuned
         print(f"[record] {out}", flush=True)
     env.close()

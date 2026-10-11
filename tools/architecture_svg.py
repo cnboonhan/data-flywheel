@@ -25,6 +25,7 @@ keep = [r for r in re.findall(r"[^{}]+\{[^{}]*\}", re.sub(r"@media[^{]*\{(?:[^{}
 dark = re.search(r"@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme=\"light\"\]\) (\{[^}]*\})", css).group(1)
 style = "\n".join(r.strip() for r in keep if "data-theme" not in r)
 style += "\n@media (prefers-color-scheme: dark) { :root " + dark + " }"
+# the HTML page's body font, which the SVG inherited there
 style += "\nsvg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, \"Segoe UI\", sans-serif; }"
 style += "\n.bg { fill: var(--bg); }"
 

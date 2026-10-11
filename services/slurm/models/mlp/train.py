@@ -40,7 +40,7 @@ def load_episode(path, keys):
 def load_mix(mix, keys, val_frac):
     eps = [load_episode(p, keys) for p in mix.episodes]
     n_val = max(1, int(len(eps) * val_frac)) if len(eps) > 1 else 0
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(0)  # fixed, not --seed: every run of a mix validates on the same episodes
     order = rng.permutation(len(eps))
     split = lambda idx: tuple(np.concatenate([eps[i][j] for i in idx]) for j in (0, 1)) if len(idx) else None
     return split(order[n_val:]), split(order[:n_val])
@@ -64,11 +64,12 @@ def main():
     ap.add_argument("--mix", help="mix name (required when --data matches several datasets)")
     ap.add_argument("--action", default="joint", choices=sorted(ACTION_KEYS))
     ap.add_argument("--seed", type=int, default=0)
+    # Training defaults are untuned: the baseline only checks the plumbing (it trains in seconds on any mix).
     ap.add_argument("--epochs", type=int, default=50)
-    ap.add_argument("--batch-size", type=int, default=256)
-    ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--hidden", type=int, default=512)
-    ap.add_argument("--val-frac", type=float, default=0.1)
+    ap.add_argument("--batch-size", type=int, default=256)  # frames per optimizer step
+    ap.add_argument("--lr", type=float, default=1e-3)  # AdamW
+    ap.add_argument("--hidden", type=int, default=512)  # width of both hidden layers
+    ap.add_argument("--val-frac", type=float, default=0.1)  # share of episodes held out (at least 1 when there are 2+)
     ap.add_argument("--save-every", type=int, default=0, help="also keep a checkpoint every N epochs (0 = final only)")
     args = ap.parse_args()
 
@@ -78,7 +79,7 @@ def main():
     mix = Mix.resolve(args.data.split(","), emb, name=args.mix)
     (xs, ys), val = load_mix(mix, emb.keys(args.action), args.val_frac)
     assert ys.shape[1] == emb.action_dim(args.action), f"episodes have {ys.shape[1]}-D actions, {emb.name} expects {emb.action_dim(args.action)}"
-    mean, std = xs.mean(0), xs.std(0) + 1e-6
+    mean, std = xs.mean(0), xs.std(0) + 1e-6  # epsilon: constant state dims (std 0) would divide by zero
     print(f"{mix.name}: {len(mix.datasets)} datasets, {len(mix.episodes)} episodes, {len(xs)} train frames, device {device}", flush=True)
 
     model = MLP(xs.shape[1], ys.shape[1], args.hidden).to(device)

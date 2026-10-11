@@ -59,9 +59,10 @@ if args.cameras:
         if cam.IsA(UsdGeom.Camera) and cam.GetAttribute("cameraProjectionType").Get() == "fisheyePolynomial":
             get = lambda n, cam=cam: cam.GetAttribute(n).Get()  # noqa: E731
             w, h, cx, cy = (get(f"ftheta{n}") for n in ("Width", "Height", "Cx", "Cy"))
+            # the lens curve sampled at 4000 radii out to the corners (untuned; the fit lands < 0.1 px)
             r = np.linspace(0, max(np.hypot(x - cx, y - cy) for x in (0, w) for y in (0, h)), 4000)
             th = np.polyval([get(f"fthetaPoly{n}") for n in "EDCBA"], r)
-            c = np.linalg.lstsq(np.stack([th ** (2 * i + 1) for i in range(5)], 1), r, rcond=None)[0]
+            c = np.linalg.lstsq(np.stack([th ** (2 * i + 1) for i in range(5)], 1), r, rcond=None)[0]   # f, f*k1..k4
             lenses[get("stereoRole")] = (int(w), int(h), c[0], cx, cy, list(c[1:] / c[0]))
             print(f"[sim] {cam.GetName()}: f-theta lens -> equidistant f={c[0]:.1f} k={np.round(c[1:] / c[0], 5)}", flush=True)
     if set(lenses) != {"left", "right"}:

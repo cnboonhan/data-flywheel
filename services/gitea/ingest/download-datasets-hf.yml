@@ -40,7 +40,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
-      - run: pip -q install "huggingface_hub>=1.9" boto3
+      - run: pip -q install "huggingface_hub>=1.9" boto3   # >=1.9 since source=bucket: the Bucket API used below
       - run: |
           cat > download_hf.py <<'PY'
           #!/usr/bin/env python

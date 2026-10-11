@@ -61,7 +61,7 @@ PY
   "${dest}/bin/nvcc" --version | tail -1
 }
 
-[[ -d .venv ]] || uv venv .venv --python 3.11 --prompt 3dgrut
+[[ -d .venv ]] || uv venv .venv --python 3.11 --prompt 3dgrut   # the Python upstream's scripts create
 if [[ ! -x ${toolkit}/bin/nvcc && ${ARCH} != x86_64 ]]; then
   assemble_toolkit "${toolkit}"   # upstream only knows the x86_64 runfiles
 fi

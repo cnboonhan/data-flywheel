@@ -52,6 +52,7 @@ ap.add_argument("--cameras", nargs="+", default=["/front_stereo_camera/left", "/
                 help="Camera namespaces with image_raw and camera_info")
 ap.add_argument("--optical_frames", nargs="+", default=["front_stereo_camera_left_rgb", "front_stereo_camera_right_rgb"])
 ap.add_argument("--lidar", default="/front_3d_lidar/lidar_points")
+# The defaults below are untuned unless noted.
 ap.add_argument("--settle", type=float, default=1.0, help="Seconds to wait after arriving (robot clock)")
 ap.add_argument("--voxel", type=float, default=0.05, help="Lidar point voxel size for the initial point cloud (m)")
 ap.add_argument("--height_range", type=float, nargs=2, metavar=("MIN", "MAX"),
@@ -62,6 +63,7 @@ ap.add_argument("--height_tolerance", type=float, default=0.02, help="(m)")
 ap.add_argument("--pitches", type=float, nargs="+", help="Camera pitches per height (deg, positive looks down)")
 ap.add_argument("--pitch_topic", default="/camera_pitch")
 ap.add_argument("--pitch_tolerance", type=float, default=1.0, help="(deg)")
+# Without retries one run silently captured 8 of 20 viewpoints; 2 itself is untuned.
 ap.add_argument("--nav_retries", type=int, default=2, help="Retries of a failed goal, each after clearing the costmaps")
 args = ap.parse_args()
 if args.height_steps > 1 and not args.height_range:
@@ -76,7 +78,7 @@ out = Path(args.out)
 rclpy.init()
 nav = BasicNavigator()
 nav.set_parameters([rclpy.parameter.Parameter("use_sim_time", value=True)])
-bridge, tf = CvBridge(), tf2_ros.Buffer(Duration(seconds=60))
+bridge, tf = CvBridge(), tf2_ros.Buffer(Duration(seconds=60))   # TF history for image-stamp lookups; untuned
 tf2_ros.TransformListener(tf, nav)
 latest = {}
 for ns in args.cameras:
@@ -88,7 +90,7 @@ pitch_pub = nav.create_publisher(Float64, args.pitch_topic, 1)
 nav.waitUntilNav2Active()
 
 
-def wait_for(pred, timeout=30.0):
+def wait_for(pred, timeout=30.0):   # s; this and the other waits (60 s settle, 2 s TF lookups) are untuned
     end = time.time() + timeout
     while not pred() and time.time() < end:
         rclpy.spin_once(nav, timeout_sec=0.05)
@@ -225,7 +227,7 @@ pts = np.concatenate(clouds) if clouds else np.zeros((0, 3))
 pts = np.unique(np.round(pts / args.voxel), axis=0) * args.voxel   # voxel downsample
 with open(out / "sparse/0/points3D.txt", "w") as f:
     for i, (x, y, z) in enumerate(pts, start=1):
-        f.write(f"{i} {x} {y} {z} 128 128 128 0\n")
+        f.write(f"{i} {x} {y} {z} 128 128 128 0\n")   # lidar has no colour: mid-grey
 print(f"wrote {len(frames)} images, {len(pts)} points -> {out}")
 rclpy.shutdown()
 if skipped:   # the model is still written; a nonzero exit lets scripts notice the gaps

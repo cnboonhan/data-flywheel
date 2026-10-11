@@ -65,7 +65,7 @@ class Mix:
         for e in self.episodes:
             st = os.stat(e)
             h.update(f"{os.path.relpath(e, XSPARK_ROOT)}:{st.st_size}:{st.st_mtime_ns}\n".encode())
-        return h.hexdigest()[:12]
+        return h.hexdigest()[:12]  # 12 hex chars: a short id to compare runs by; length untuned
 
 
 def _git_commit():
@@ -94,6 +94,7 @@ class TrainRun:
         self.run = mlflow.start_run(run_name=self.run_name)
         self.git_commit = _git_commit()
         self.fingerprint = self.mix.fingerprint()
+        # [:6000] here and below: MLflow's limit on a param value (MAX_PARAM_VAL_LENGTH).
         mlflow.log_params({
             "model": self.model, "embodiment": self.embodiment.name, "mix": self.mix.name,
             "datasets": ",".join(self.mix.datasets)[:6000], "episodes": len(self.mix.episodes), "data_fingerprint": self.fingerprint,
@@ -123,6 +124,7 @@ class TrainRun:
             if e.error_code != "RESOURCE_ALREADY_EXISTS":
                 raise
         # MLflow 3: a runs:/ URI must name a LoggedModel, so register the artifact directory with its run_id.
+        # [:5000]: caps the datasets tag (registry tags have a length limit); 5000 itself is untuned.
         mv = client.create_model_version(self.model_name, f"{self.run.info.artifact_uri}/checkpoints", run_id=self.run.info.run_id, tags={
             "mix": self.mix.name, "datasets": ",".join(self.mix.datasets)[:5000], "action": self.action, "seed": str(self.seed),
             "run": self.run_name, "data_fingerprint": self.fingerprint, "git_commit": self.git_commit, **self.tags})

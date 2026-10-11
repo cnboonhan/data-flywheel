@@ -48,6 +48,7 @@ class TritonPythonModel:
         if fov > 0:
             d, m = self.infer([img], [fov])
             return {"distance": d[0].astype(np.float32), "mask": m[0].astype(bool)}
+        # view_size 1024 px, as sim/pano_ideate runs it (sim/pano_arena began at 512); untuned.
         d, m = self.panorama(img, int(scalar(req, "view_size", 1024)), int(scalar(req, "merge_width", 0)))
         return {"distance": d.astype(np.float32), "mask": m}
 
@@ -59,7 +60,7 @@ class TritonPythonModel:
         extr, intr = get_panorama_cameras()
         views = split_panorama_image(image, extr, intr, view_size)
         dist, masks = [], []
-        for i in range(0, len(views), 4):
+        for i in range(0, len(views), 4):                   # 4 views per forward pass; untuned
             fov = np.rad2deg(utils3d.np.intrinsics_to_fov(np.array(intr[i:i + 4])))[0]
             d, m = self.infer(views[i:i + 4], fov)
             dist += list(d)

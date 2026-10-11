@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=train
+# Resources: 1 GPU (the recipes train on one). CPUs and memory are untuned. 24 h is untuned: XPolicyLab's
+# 6000-epoch ACT on one Galaxea task needs ~3.5 h (README: ~1 min per 30 epochs), and a job killed at the limit
+# registers no checkpoints, because they upload when training ends.
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
@@ -32,6 +35,6 @@ load_model "$MODEL" train
 load_embodiment "$EMBODIMENT"
 # shellcheck source=/dev/null
 source "$ENVS_DIR/$ENV/bin/activate"
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} WANDB_MODE=offline
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} WANDB_MODE=offline   # GPU 0 only outside a Slurm GPU allocation
 echo "[$(date)] train $MODEL for $EMB_NAME on ${DATA[*]} (mix ${MIX:-default}, $ACTION, seed $SEED) on $(hostname), GPU $CUDA_VISIBLE_DEVICES, env $ENV"
 train

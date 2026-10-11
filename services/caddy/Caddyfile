@@ -6,11 +6,13 @@
 	auto_https disable_redirects
 }
 
-# Everything is on one port. Apps that can serve under a path are path-routed
-# on the base host; the three that can't (FiftyOne, Rerun, the S3 API) get a
-# subdomain of it. SERVICE_HOST is a name that resolves to the node from
-# anywhere (sslip.io); through an SSH tunnel, map it and the subdomains to
-# 127.0.0.1 in /etc/hosts.
+# Everything is on one port: 8443 inside the container, published as CADDY_PORT
+# (docker-compose.yml), which links and redirects carry. Upstreams are compose
+# service names with the port each app listens on (docker-compose.yml).
+# Apps that can serve under a path are path-routed on the base host; the three
+# that can't (FiftyOne, Rerun, the S3 API) get a subdomain of it. SERVICE_HOST
+# is a name that resolves to the node from anywhere (sslip.io); through an SSH
+# tunnel, map it and the subdomains to 127.0.0.1 in /etc/hosts.
 
 # Single sign-on for apps without a login of their own: Caddy asks
 # oauth2-proxy, which holds a session cookie for .SERVICE_HOST; a browser
@@ -157,6 +159,7 @@ https://triton.{$SERVICE_HOST}:8443 {
 	handle @token {
 		request_header -Authorization
 		@grpc header Content-Type application/grpc*
+		# Triton's default ports: gRPC on 8001 (HTTP/2, cleartext inside), HTTP on 8000.
 		handle @grpc {
 			reverse_proxy h2c://triton:8001
 		}

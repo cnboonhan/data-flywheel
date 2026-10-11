@@ -26,11 +26,11 @@ from common import directions
 
 
 def run(scene: Path, triton: models.Triton, camera_height: float | None = None, width: int = 4096,
-        view_size: int = 1024, merge_width: int = 0, log=print) -> dict:
+        view_size: int = 1024, merge_width: int = 0, log=print) -> dict:    # defaults: the CLI's help below
     out = scene / "depth"
     out.mkdir(exist_ok=True)
     image = cv2.cvtColor(cv2.imread(str(scene / "source.jpg")), cv2.COLOR_BGR2RGB)
-    if abs(image.shape[1] - 2 * image.shape[0]) > 2:
+    if abs(image.shape[1] - 2 * image.shape[0]) > 2:                 # 2:1 within 2 px (untuned)
         raise ValueError(f"{image.shape[1]}x{image.shape[0]} is not an equirectangular panorama (2:1)")
     image = cv2.resize(image, (width, width // 2), interpolation=cv2.INTER_AREA)
     h, w = image.shape[:2]
@@ -38,7 +38,8 @@ def run(scene: Path, triton: models.Triton, camera_height: float | None = None, 
     distance, valid = triton.depth(image, 0, view_size, merge_width)
     pts = distance[..., None] * directions(h, w)
 
-    # Floor: the lowest z layer (2 cm bins) holding at least 2% of the points below the camera, refined with a plane.
+    # Floor: the lowest z layer (2 cm bins) holding at least 2% of the points over 0.3 m below the camera, refined with
+    # a plane through the points within 5 cm of it. All four values untuned.
     below = pts[valid & (pts[..., 2] < -0.3)]
     hist, edges = np.histogram(below[:, 2], bins=np.arange(below[:, 2].min(), -0.3, 0.02))
     layer = np.flatnonzero(hist > 0.02 * len(below))[0]
@@ -58,17 +59,19 @@ def run(scene: Path, triton: models.Triton, camera_height: float | None = None, 
     distance = distance * s
 
     np.save(out / "distance.npy", distance.astype(np.float32))
+    # Quality 95 (untuned): every later step works from this pano.jpg, not source.jpg.
     cv2.imwrite(str(out / "pano.jpg"), cv2.cvtColor(image, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])
     inv = np.where(valid, 1 / np.maximum(distance, 1e-3), 0)
-    lo, hi = np.percentile(inv[valid], [1, 99])
+    lo, hi = np.percentile(inv[valid], [1, 99])                    # the preview's colour range (untuned)
     cv2.imwrite(str(out / "depth.png"), cv2.applyColorMap((np.clip((inv - lo) / (hi - lo), 0, 1) * 255).astype(np.uint8),
                                                           cv2.COLORMAP_TURBO))
-    step = max(1, w // 1024)
+    step = max(1, w // 1024)                                       # points.ply: about 1024 columns (untuned)
     sel = valid[::step, ::step]
     import trimesh
     trimesh.PointCloud(pts[::step, ::step][sel], image[::step, ::step][sel]).export(out / "points.ply")
 
-    # Top-down preview: points up to 2 m high, 1 cm per pixel, coloured by height; the camera is the red dot.
+    # Top-down preview: points up to 2 m high and within 8 m along x and y (untuned), 1 cm per pixel, coloured by
+    # height; the camera is the red dot.
     top = pts[valid & (pts[..., 2] < 2.0) & (np.abs(pts[..., :2]) < 8).all(-1)]
     res, half = 0.01, 8.0
     img = np.full((int(2 * half / res),) * 2 + (3,), 255, np.uint8)
@@ -92,8 +95,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("scene", type=Path)
     p.add_argument("--camera_height", type=float, help="metres above the floor; default: as estimated")
-    p.add_argument("--width", type=int, default=4096, help="panorama width to work at")
-    p.add_argument("--view_size", type=int, default=1024, help="px, each of MoGe's 20 perspective views")
-    p.add_argument("--merge_width", type=int, default=0, help="px, width the views' depths are merged at (0: --width)")
+    p.add_argument("--width", type=int, default=4096, help="panorama width to work at, every later step's too "
+                                                           "(untuned; the merge at this width is most of the ~2 min)")
+    p.add_argument("--view_size", type=int, default=1024, help="px, each of MoGe's 20 perspective views (untuned)")
+    p.add_argument("--merge_width", type=int, default=0, help="px, width the views' depths are merged at (0: --width; "
+                                                              "1920 takes about 1 min but blurs object edges)")
     a = p.parse_args()
     run(a.scene, models.Triton(), a.camera_height, a.width, a.view_size, a.merge_width)

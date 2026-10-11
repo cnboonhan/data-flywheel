@@ -79,6 +79,7 @@ class TritonPythonModel:
     def initialize(self, args):
         weights, self.device = setup(args)
         from triposg.pipelines.pipeline_triposg import TripoSGPipeline
+        # float16, steps 50, guidance 7.0 and faces -1 (run) are the defaults of TripoSG's scripts/inference_triposg.py.
         self.pipe = TripoSGPipeline.from_pretrained(weights).to(self.device, torch.float16)
         self.pipe.set_progress_bar_config(disable=True)
 
@@ -87,7 +88,7 @@ class TritonPythonModel:
 
     def run(self, req):
         image = prepare(get(req, "image").reshape(-1)[0])
-        seed, faces = int(scalar(req, "seed", 0)), int(scalar(req, "faces", -1))
+        seed, faces = int(scalar(req, "seed", 0)), int(scalar(req, "faces", -1))   # seed: any fixed one (upstream 42)
         with torch.no_grad():
             v, f = self.pipe(image=image, generator=torch.Generator(self.device).manual_seed(seed),
                              num_inference_steps=int(scalar(req, "steps", 50)),

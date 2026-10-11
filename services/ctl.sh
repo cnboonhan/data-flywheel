@@ -23,7 +23,7 @@ fi
 set -a; source .env; set +a
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-8: the usage block at the top of this file
   exit 1
 fi
 
@@ -40,7 +40,7 @@ gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; 
 # First-run setup Gitea can't take from env: the admin user, the runner's
 # registration token, and the `pipelines` repo with the example workflow.
 bootstrap_gitea() {
-  for _ in $(seq 30); do
+  for _ in $(seq 30); do   # wait up to 1 min (tries x sleep), untuned
     "${compose[@]}" exec -T gitea curl -fs http://localhost:3000/gitea/api/healthz >/dev/null 2>&1 && break
     sleep 2
   done
@@ -59,7 +59,7 @@ bootstrap_gitea() {
   # answers through Caddy (its realm import takes a while on first start).
   local discovery="https://$SERVICE_HOST:$CADDY_PORT/auth/realms/flywheel/.well-known/openid-configuration"
   if ! gitea admin auth list 2>/dev/null | grep -q 'keycloak'; then
-    for _ in $(seq 60); do
+    for _ in $(seq 60); do   # up to 5 min, untuned
       "${compose[@]}" exec -T gitea curl -fs --cacert /ca/root.crt "$discovery" >/dev/null 2>&1 && break
       sleep 5
     done
@@ -169,7 +169,7 @@ EOF
 # (mlflow) are created here from the rendered realm file when missing.
 bootstrap_keycloak() {
   local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh) realm="$STATE_DIR/keycloak/import/flywheel-realm.json" c
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 90); do   # wait up to 3 min for Keycloak, untuned
     "${kc[@]}" config credentials --server http://localhost:8080/auth --realm master --user "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null 2>&1 && break
     sleep 2
   done
@@ -187,7 +187,7 @@ bootstrap_keycloak() {
 # MLflow (mlflow-oidc-auth): wait until the server answers. Inside the compose network MLflow serves at the
 # root; the /mlflow prefix only exists through Caddy (X-Forwarded-Prefix).
 bootstrap_mlflow() {
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 60); do   # up to 2 min, untuned; if it runs out, run `up` again to mint the token
     "${compose[@]}" exec -T gitea curl -fs -H "Host: $SERVICE_HOST" http://mlflow:5000/health >/dev/null 2>&1 && return 0
     sleep 2
   done
@@ -195,7 +195,8 @@ bootstrap_mlflow() {
 }
 
 # MLflow access token for API clients (MLFLOW_TRACKING_USERNAME=<name>, MLFLOW_TRACKING_PASSWORD=<token>):
-# sign the user in with a Keycloak password grant, then (re)issue their "default" token, valid a year.
+# sign the user in with a Keycloak password grant, then (re)issue their "default" token, valid a year (untuned;
+# `up` re-mints the jobs' token each time).
 mlflow_token() {
   local name=$1 pw=$2 tok
   tok=$("${compose[@]}" exec -T gitea curl -fs -d grant_type=password -d client_id=mlflow -d "client_secret=$KC_MLFLOW_SECRET" \
@@ -232,7 +233,7 @@ setup_envs() {
 # email so the Keycloak login maps onto it instead of trying to create a second "admin".
 bootstrap_grafana() {
   local api="http://grafana:3000/grafana/api" auth="$ADMIN_USER:$ADMIN_PASSWORD"
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 60); do   # up to 2 min, untuned
     "${compose[@]}" exec -T gitea curl -fs "$api/health" >/dev/null 2>&1 && break
     sleep 2
   done
@@ -251,7 +252,7 @@ S3_SHARED_BUCKETS="raw processed"
 apply_s3_policies() {
   local users
   users=$("${compose[@]}" exec -T versitygw versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 list-users \
-          | awk 'NR > 2 && $2 == "user" {print $1}' | paste -sd,)
+          | awk 'NR > 2 && $2 == "user" {print $1}' | paste -sd,)   # NR > 2: skip the table's two header lines
   "${compose[@]}" exec -T -e USERS="$users" -e BUCKETS="$S3_SHARED_BUCKETS" -e UPLOAD_ONLY="$(grep -v '^\s*#' versitygw/upload-only.txt 2>/dev/null)" \
     -e AWS_ACCESS_KEY_ID="$ADMIN_USER" -e AWS_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" -e AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}" mlflow python -c '
 import boto3, json, os, sys
@@ -300,6 +301,7 @@ apply_s3_policies_save() {
 }
 
 user_add() {
+  # Random password: 18 bytes in base64 (24 chars) minus /+=, cut to 20 chars; length untuned.
   local name=${1:?name} email=${2:?email} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
   local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh)
   "${kc[@]}" config credentials --server http://localhost:8080/auth --realm master --user "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null
@@ -328,7 +330,7 @@ user_add() {
     echo "mlflow: no token minted (sign in at /mlflow with Keycloak; Profile > Tokens issues one)"
   fi
 
-  local secret; secret=$(openssl rand -hex 20)
+  local secret; secret=$(openssl rand -hex 20)   # 40 chars, the length of an AWS secret key
   if docker compose --project-name flywheel exec -T -e ROOT_ACCESS_KEY_ID="$ADMIN_USER" -e ROOT_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" versitygw \
        versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 create-user -a "$name" -s "$secret" -r user >/dev/null 2>&1; then
     echo "s3: access key $name, secret $secret   (endpoint https://s3.$SERVICE_HOST:$CADDY_PORT; shown once)"
@@ -368,7 +370,7 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   mkdir -p "$(dirname "$ca")"   # as us; a bind mount onto a missing path would make dockerd create the parents as root
   if [[ ! -f $ca ]]; then
     "${compose[@]}" up -d --no-deps caddy   # --no-deps: its dependents are the ones mounting the CA
-    for _ in $(seq 1 60); do [[ -f $ca ]] && break; sleep 1; done
+    for _ in $(seq 1 60); do [[ -f $ca ]] && break; sleep 1; done   # up to 1 min, untuned
     [[ -f $ca ]] || { echo "caddy did not create its CA at $ca" >&2; exit 1; }
   fi
   "${compose[@]}" up -d "${@:2}" $("${compose[@]}" config --services | grep -vx act_runner)

@@ -18,7 +18,7 @@ env=$ENVS_DIR/${policy,,}
 torch=(torch torchvision --index-url https://download.pytorch.org/whl/cu128)
 
 mkdir -p "$ENVS_DIR"
-[[ -d $env ]] || uv venv --python 3.10 "$env"
+[[ -d $env ]] || uv venv --python 3.10 "$env"   # Python 3.10: untuned
 source "$env/bin/activate"
 echo "[$(date)] $policy env at $env, XPolicyLab at $XPL"
 case $policy in

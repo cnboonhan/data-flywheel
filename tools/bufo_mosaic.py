@@ -19,7 +19,7 @@ root = Path(__file__).resolve().parents[1]
 src = root / "assets" / "bufo" / "all-the-bufo"
 state = os.environ.get("STATE_DIR", "/tier1/htx_boonhan/services")
 out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(state) / "keycloak" / "login-background" / "background.png"
-cell = int(sys.argv[2]) if len(sys.argv) > 2 else 48
+cell = int(sys.argv[2]) if len(sys.argv) > 2 else 48   # px per bufo: sets the mosaic's size and file size; untuned
 
 files = sorted(p for p in src.iterdir() if p.suffix.lower() in (".png", ".gif", ".jpg", ".jpeg"))
 if not files:

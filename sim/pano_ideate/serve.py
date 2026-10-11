@@ -55,11 +55,12 @@ p = argparse.ArgumentParser()
 p.add_argument("root", type=Path, nargs="?", default=Path("datasets/pano_ideate"),
                help="folder of scenes, one folder each (source.jpg, then depth/ and objects/)")
 p.add_argument("--port", type=int, default=8765)
-p.add_argument("--radius", type=float, default=0.4, help="m: how far the eye may move from the capture point")
-p.add_argument("--grid", type=int, default=1024, help="mesh vertices around the panorama")
+p.add_argument("--radius", type=float, default=0.4, help="m: how far the eye may move from the capture point "
+                                                       "(further away the holes behind objects show)")
+p.add_argument("--grid", type=int, default=1024, help="mesh vertices around the panorama (untuned)")
 p.add_argument("--jump", type=float, default=0.1, help="leave out triangles whose corner distances differ by more "
-                                                     "than this fraction (edges of objects)")
-p.add_argument("--steps", type=int, default=40, help="image edit steps")
+                                                     "than this fraction (edges of objects; untuned)")
+p.add_argument("--steps", type=int, default=40, help="image edit steps (the editor's default, untuned)")
 p.add_argument("--host", default="127.0.0.1", help="address to listen on (0.0.0.0: reachable from other machines)")
 args = p.parse_args()
 VIEWER = Path(__file__).with_name("viewer.html")
@@ -74,7 +75,8 @@ log = lambda s: print(s, flush=True)
 
 # --- Jobs: long operations run in the background and report progress ------------------------------------------------
 # A job is a list of phases; a phase reports done/total when it can count, otherwise its progress is its elapsed time
-# over how long it took before (EXPECTED, seconds, updated as jobs run).
+# over how long it took before (EXPECTED, seconds, updated as jobs run). The starting values are rough: edit, place and
+# pano_depth as the README's timings, the rest untuned.
 EXPECTED = {"plan": 3, "edit": 30, "restore": 2, "depth": 3, "save": 3, "place": 35, "erase": 40, "pack": 10,
             "pano_depth": 120, "list": 25, "detect": 15, "segment": 15, "merge": 80, "check": 8, "save_objects": 20}
 OBJECT_PHASES = {"Listing the objects in each view": "list", "Looking for missed objects": "detect",
@@ -98,6 +100,7 @@ class Job:
         if k != self.at or self.label != label:
             if k > self.at and self.total is None:          # learn how long timed phases take
                 key0 = self.phases[self.at]
+                # A moving average, 30% the latest run; 10 s for a phase not in EXPECTED (both untuned).
                 EXPECTED[key0] = 0.7 * EXPECTED.get(key0, 10) + 0.3 * (time.time() - self.since)
             if k != self.at:
                 self.since = time.time()
@@ -105,6 +108,7 @@ class Job:
         self.done, self.total = done, total
 
     def progress(self) -> float:
+        """The job's fraction done: a timed phase holds at 95% of its share until it ends, the job at 99% until done."""
         weights = [EXPECTED.get(k, 10) for k in self.phases]
         here = (self.done / self.total if self.total else
                 min(0.95, (time.time() - self.since) / EXPECTED.get(self.phases[self.at], 10)))
@@ -137,10 +141,10 @@ def add_scene(name: str, image: bytes) -> Job:
     pano = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
     if pano is None:
         raise ValueError("That file is not an image.")
-    if abs(pano.shape[1] - 2 * pano.shape[0]) > 2:
+    if abs(pano.shape[1] - 2 * pano.shape[0]) > 2:                    # 2:1 within 2 px, as depth.py
         raise ValueError(f"The image is {pano.shape[1]}x{pano.shape[0]}; a 360-degree panorama is twice as wide as tall.")
     folder.mkdir(parents=True)
-    cv2.imwrite(str(folder / "source.jpg"), pano, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    cv2.imwrite(str(folder / "source.jpg"), pano, [cv2.IMWRITE_JPEG_QUALITY, 95])      # quality 95: untuned
 
     def work(job):
         try:
@@ -286,13 +290,13 @@ def interactable(st):
 
 # --- What the viewer loads ----------------------------------------------------------------------------------------
 
-def encode(img, ext):
+def encode(img, ext):                                  # JPEG quality 90: untuned
     return cv2.imencode(ext, img, [cv2.IMWRITE_JPEG_QUALITY, 90] if ext == ".jpg" else [])[1].tobytes()
 
 
 def files(st, what):
     sc = st["scene"]
-    if what == "pano.jpg":
+    if what == "pano.jpg":     # the viewer's texture, 4096 x 2048 (untuned)
         return encode(cv2.cvtColor(cv2.resize(sc.pano, (4096, 2048), interpolation=cv2.INTER_AREA), cv2.COLOR_RGB2BGR),
                       ".jpg"), "image/jpeg"
     if what == "depth.png":    # distance in mm, 24 bits in RGB; nearest samples, since averaging across an edge
@@ -303,6 +307,7 @@ def files(st, what):
         lab = sc.labels.astype(np.int32)
         if st["removed"]:
             lab[np.isin(lab - 1, list(st["removed"]))] = 0
+        # 2048 x 1024: the resolution of the viewer's hover, click and tint map (untuned).
         lab = cv2.resize(lab.astype(np.float32), (2048, 1024), interpolation=cv2.INTER_NEAREST).astype(np.int32)
         kinds = np.zeros(lab.max() + 1, np.uint8)
         for k, o in sc.objects.items():
@@ -407,6 +412,7 @@ def act_on(name, k, action, job):
                 st["removed"] |= set(c["ids"])
                 sc.labels[np.isin(sc.labels - 1, c["ids"])] = 0
             elif after:
+                # The state's area: the changed pixels and 7 px around them (untuned).
                 idx = np.flatnonzero(cv2.dilate(mask.astype(np.uint8), np.ones((15, 15), np.uint8)))
                 if now:
                     e["saved"][now] = {"idx": idx, "pano": old[0].reshape(-1, 3)[idx], "distance": old[1].reshape(-1)[idx],

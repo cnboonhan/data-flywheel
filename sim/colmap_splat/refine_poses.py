@@ -22,8 +22,12 @@ from pathlib import Path
 import numpy as np
 import pycolmap
 
-PAIRS_PER_IMAGE, MAX_AXIS_ANGLE = 30, 75       # matching pairs: nearest views whose optical axes differ by < 75 deg
-MAX_REPROJ_ERROR, MAX_DISTANCE = 4.0, 50.0     # px; m from the cameras' centroid
+# Matching pairs: each image's 30 nearest views whose optical axes differ by < 75 deg. Untuned; with these, refining
+# the 1008-image ridgeback_demo capture took it from 18.9 to 33.1 dB held out.
+PAIRS_PER_IMAGE, MAX_AXIS_ANGLE = 30, 75
+# Points dropped after triangulation and after bundle adjustment: reprojection error (px) and distance (m) from the
+# cameras' centroid, against outliers; untuned.
+MAX_REPROJ_ERROR, MAX_DISTANCE = 4.0, 50.0
 
 src, dst = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
 work = dst / "work"
@@ -81,7 +85,7 @@ def clean(rec, tag):
 ba = pycolmap.BundleAdjustmentOptions(refine_focal_length=False, refine_principal_point=False,
                                       refine_extra_params=False)
 ba.ceres.loss_function_type = pycolmap.LossFunctionType.CAUCHY
-for it in range(2):
+for it in range(2):                       # a second pass re-triangulates from the adjusted poses; count untuned
     rec = pycolmap.triangulate_points(rec, db, src / "images", work / "triangulated", clear_points=True)
     clean(rec, f"triangulated ({it + 1}/2)")
     pycolmap.bundle_adjustment(rec, ba)

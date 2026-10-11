@@ -17,12 +17,14 @@ export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
 export PATH="$HOME/.local/bin:$PATH"
 export OMNI_KIT_ACCEPT_EULA=YES TERM=xterm-256color
 
+# RoboDojo/scripts/install.sh's Isaac Sim constraints and torch stack, as it has them; reinstalled after each step
+# that may move them.
 pins=(numpy==1.26.0 packaging==23.0 typing_extensions==4.12.2 filelock==3.13.1 websockets==12.0 click==8.1.7 psutil==5.9.8
       wheel==0.45.1 starlette==0.45.3 scipy==1.15.3 warp-lang==1.11.0 "onnx>=1.18,<1.22" "ipython<9" virtualenv==20.30.0)
 torch_stack=(torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128)
 
 mkdir -p "$ENVS_DIR"
-[[ -d $ENVS_DIR/robodojo ]] || uv venv --python 3.11 "$ENVS_DIR/robodojo"
+[[ -d $ENVS_DIR/robodojo ]] || uv venv --python 3.11 "$ENVS_DIR/robodojo"   # 3.11 as RoboDojo's install.sh
 source "$ENVS_DIR/robodojo/bin/activate"
 cd "$PROJECT_ROOT"
 
@@ -94,6 +96,7 @@ print("editable installs point at $PROJECT_ROOT")
 EOF
 echo "robodojo env ready at $ENVS_DIR/robodojo"
 
+# The hub client in its own env, away from the pins above; Python 3.12 untuned.
 hf() { uv run -q --python 3.12 --with "huggingface_hub[hf_transfer]" hf "$@"; }
 export HF_HUB_ENABLE_HF_TRANSFER=1
 
@@ -139,7 +142,7 @@ def one(path):
     os.remove(local)
 
 done, started = 0, time.time()
-with ThreadPoolExecutor(8) as pool:
+with ThreadPoolExecutor(8) as pool:   # 8 files in flight; untuned
     for fut in as_completed([pool.submit(one, p) for p, _ in todo]):
         fut.result()
         done += 1

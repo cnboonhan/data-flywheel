@@ -33,7 +33,7 @@ class Embodiment:
         return [f"{arm}_{k}" for arm in self.arms for k in ACTION_KEYS[action]]
 
     def action_dim(self, action):
-        per_arm = (self.arm_dim if action == "joint" else 7) + self.ee_dim
+        per_arm = (self.arm_dim if action == "joint" else 7) + self.ee_dim  # ee_poses are 7-D: position + quaternion
         return per_arm * len(self.arms)
 
 

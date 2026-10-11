@@ -25,6 +25,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - **Run one Isaac Sim instance at a time.** The GPU is an RTX 5090 Laptop with 24 GB.
 - **NVIDIA driver 580-open is held on purpose**, because Isaac Sim 5.1 crashes on 595. Don't change drivers or system packages without asking.
 - **Off-limits:** don't modify, run or copy from `~/workspaces/htx-robotics-release` or `~/workspaces/snippets`.
+- **Document magic numbers and parameter tuning.** Every constant or default that isn't self-evident (a threshold, scale, count, size, timeout, prompt setting) gets a comment where it is defined: what it controls and why this value, meaning what it was tuned on and what goes wrong above or below it ("lora_scale 1.4: at 1.0 the camera barely turns"). When you tune a value, update that comment in the same change. Keep it to a clause; a longer tuning story goes in the notes of the nearest README. Don't invent a reason: if it isn't known, say what the value controls and that it is untuned.
 - **Isaac Sim crash reports:** Isaac Sim uploads them to NVIDIA by default. Pass `--/crashreporter/enabled=false` to ad-hoc Isaac Sim runs.
 
 ## Environments

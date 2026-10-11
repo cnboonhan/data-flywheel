@@ -53,6 +53,7 @@ class Endpoint:
         if not hasattr(self._local, "client"):
             import tritonclient.http as th
             tls = self.scheme == "https"
+            # 15 min to answer (the slowest call, a MoGe panorama, takes ~2 min; README.md), 1 min to connect; untuned.
             self._local.client = th.InferenceServerClient(
                 self.host, ssl=tls, ssl_options={"ca_certs": self.ca} if tls and self.ca else None,
                 network_timeout=900.0, connection_timeout=60.0)
@@ -72,7 +73,7 @@ class Endpoint:
                                  outputs=[th.InferRequestedOutput(o, binary_data=True) for o in outputs])
         return {o: r.as_numpy(o) for o in outputs}
 
-    def generate(self, body: dict, timeout: float = 900) -> dict:
+    def generate(self, body: dict, timeout: float = 900) -> dict:   # s, as infer's network_timeout
         """POST to the model's generate endpoint (LLMs and VLMs on the vLLM backend)."""
         req = urllib.request.Request(f"{self.scheme}://{self.host}/v2/models/{self.model}/generate",
                                      json.dumps(body).encode(), {"Content-Type": "application/json", **self.headers})

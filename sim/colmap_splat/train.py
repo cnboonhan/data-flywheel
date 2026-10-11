@@ -85,8 +85,9 @@ def Xform "World"
 %s}
 """
 
-# Invisible static collider whose top face is z = 0, covering the cameras' footprint plus FLOOR_MARGIN. Only meaningful
-# when the COLMAP world is gravity-aligned and metric with the floor at z = 0, as in sensors/real2sim captures (map frame).
+# Invisible static collider, a 0.1 m slab (thickness untuned) whose top face is z = 0, covering the cameras' footprint
+# plus FLOOR_MARGIN. Only meaningful when the COLMAP world is gravity-aligned and metric with the floor at z = 0, as in
+# sensors/real2sim captures (map frame).
 FLOOR = """
     def Cube "floor" (
         prepend apiSchemas = ["PhysicsCollisionAPI"]
@@ -99,8 +100,10 @@ FLOOR = """
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
     }
 """
-FLOOR_MARGIN = 2.0
-LARGE_CAPTURE = 500   # images; above this, train with weaker opacity and scale penalties (see main)
+FLOOR_MARGIN = 2.0    # m around the cameras' footprint; a much larger floor lets placement leave the capture; untuned
+# Images; at or above this, train with weaker opacity and scale penalties (see main): zh_lounge (374) trains at the
+# defaults, a 1008-image capture collapsed. 500 sits between; untuned.
+LARGE_CAPTURE = 500
 
 
 def camera_centres(images_txt: Path) -> list[tuple[float, float, float]]:
@@ -150,6 +153,8 @@ def main() -> None:
     parser.add_argument("--floor", action="store_true",
                         help="add a collision floor at z = 0 under the cameras to scene.usda (needs a gravity-aligned, metric "
                              "text COLMAP model, e.g. from sensors/real2sim)")
+    # 3DGRUT's background shell (out to ~1000 km) blacks out meshes in Isaac Sim; 30 m keeps a room (9.4% of a
+    # real2sim capture's gaussians dropped). Untuned beyond that.
     parser.add_argument("--crop_radius", type=float, default=30.0,
                         help="scene.usda drops gaussians farther than this (m) from the splat's median; 0 keeps all")
     parser.add_argument("--config", default="apps/colmap_3dgut_mcmc.yaml", help="3DGRUT config")

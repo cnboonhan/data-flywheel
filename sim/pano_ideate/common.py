@@ -47,7 +47,8 @@ def camera(frame: dict, yaw: float, pitch: float) -> np.ndarray:
 
 
 def view(frame: dict, h: int, w: int, yaw: float, pitch: float, size: int, fov: float = 90.0):
-    """Remap grids (panorama pixel coordinates per view pixel) of a square pinhole view."""
+    """Remap grids (panorama pixel coordinates per view pixel) of a square pinhole view. fov 90 deg by default:
+    objects.py's views, 45 deg apart, overlap by half (untuned)."""
     f = 0.5 * size / np.tan(np.radians(fov) / 2)
     x, y = np.meshgrid(np.arange(size) + 0.5 - size / 2, np.arange(size) + 0.5 - size / 2)
     return to_pixels(np.stack([x, y, np.full_like(x, f)], -1) @ camera(frame, yaw, pitch).T, h, w)

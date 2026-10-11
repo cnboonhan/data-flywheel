@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=evaluate
+# Resources: 1 GPU shared by the simulator and the policy server (--gres=gpu:2 gives the server its own). CPUs and
+# memory are untuned. 12 h is generous (2 episodes of 800 steps take ~10 min) and untuned.
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
@@ -17,10 +19,11 @@
 # <model>: models/<model>/eval.sh. <ckpt>: the checkpoint name the model's recipe understands (ACT/DP: XPolicyLab's
 # <bench>-<task>-<env_cfg>-<action>-<seed>, the training run's tag xpolicylab_ckpt, or a RoboDojo hub name).
 set -euo pipefail
+# EVAL_NUM empty: RoboDojo's own episode count for the task.
 MODEL=${1:?model}; EMBODIMENT=${2:?embodiment}; TASK=${3:?task}; CKPT=${4:?ckpt}; ACTION=${5:-joint}; SEED=${6:-0}; EVAL_NUM=${7:-}
 
 source "${FLYWHEEL_ROOT:-$HOME/workspaces/data-flywheel}/services/slurm/lib/common.sh"
 load_model "$MODEL" eval
 load_embodiment "$EMBODIMENT"
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}   # 0 only outside a Slurm GPU allocation
 evaluate
