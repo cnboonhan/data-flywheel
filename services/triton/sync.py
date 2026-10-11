@@ -158,13 +158,11 @@ def package_vllm(mv, run, ckpt, dst, params):
 # (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG).
 HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
                "Ruicheng/moge-2-vitl-normal": "moge", "iSEE-Laboratory/llmdet_large": "llmdet",
-               "facebook/sam2.1-hiera-large": "sam2", "microsoft/TRELLIS-image-large": "trellis",
-               "VAST-AI/TripoSG": "triposg"}
+               "facebook/sam2.1-hiera-large": "sam2", "VAST-AI/TripoSG": "triposg"}
 # Other registered models a backend loads too, by repo: parameter weights_<key> is the latest version of that
 # registered model, in place from /mlflow, left out while it isn't registered (the backend says what it lacks).
-# TRELLIS's image encoder, which it otherwise fetches through torch.hub; Qwen-Image-Edit's camera-angle LoRA.
-HF_COMPANIONS = {"microsoft/TRELLIS-image-large": {"dinov2": "dinov2-with-registers-large"},
-                 "Qwen/Qwen-Image-Edit-2511": {"lora_angles": "Qwen-Image-Edit-2511-Multiple-Angles-LoRA"}}
+# Qwen-Image-Edit's camera-angle LoRA.
+HF_COMPANIONS = {"Qwen/Qwen-Image-Edit-2511": {"lora_angles": "Qwen-Image-Edit-2511-Multiple-Angles-LoRA"}}
 PYTHON_GPU = os.environ.get("TRITON_PYTHON_GPU", "2")
 PYTHON_IO = {
     "qwen_image_edit": ([("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
@@ -178,8 +176,6 @@ PYTHON_IO = {
                 ("text_threshold", "FP32", [1], True), ("nms", "FP32", [1], True)],
                [("boxes", "FP32", [-1, 4]), ("scores", "FP32", [-1]), ("names", "STRING", [-1])]),
     "sam2": ([("image", "STRING", [1]), ("boxes", "FP32", [-1, 4])], [("masks", "BOOL", [-1, -1, -1])]),
-    "trellis": ([("images", "STRING", [-1]), ("seed", "INT32", [1], True), ("steps", "INT32", [1], True),
-                 ("simplify", "FP32", [1], True)], [("glb", "STRING", [1])]),
     "triposg": ([("image", "STRING", [1]), ("seed", "INT32", [1], True), ("steps", "INT32", [1], True),
                  ("guidance", "FP32", [1], True), ("faces", "INT32", [1], True)], [("mesh", "STRING", [1])]),
 }
@@ -187,7 +183,6 @@ SMOKE = {"qwen_image_edit": {"images": ["image"], "prompt": ["Keep the image as 
          "moge": {"image": ["image"], "fov_x": [60.0]},
          "llmdet": {"image": ["image"], "labels": ["chair"]},
          "sam2": {"image": ["image"], "boxes": [[8.0, 8.0, 56.0, 56.0]]},
-         "trellis": {"images": ["image"], "steps": [4]},
          "triposg": {"image": ["image"], "steps": [4], "faces": [1000]}}
 
 

@@ -3,11 +3,9 @@
 # onnx + onnxscript for exporting, mlflow-skinny and boto3 for reading the registry and writing the triton bucket,
 # diffusers and peft (Qwen-Image-Edit and its LoRA) and MoGe with its git dependencies (MoGe-3; FlexGEMM runs on
 # Triton kernels, no build).
-# TRELLIS (image to 3D; MIT) for its mesh decoder: its code at a pinned commit with its FlexiCubes submodule (Apache-2.0),
-# torchsparse 2.1 (MIT) built here for sm_103, xformers the image's own. TRELLIS's nvdiffrast and diff-gaussian-rasterization
-# (non-commercial) are left out: backends/trellis.py never needs them.
-# TripoSG (image to shape; MIT) at a pinned commit, with what it imports (jaxtyping, typeguard, omegaconf) and
-# scikit-image for its surface; its RMBG-1.4 (non-commercial) and diso are left out: backends/triposg.py needs neither.
+# TripoSG (image to shape; MIT) at a pinned commit, with what it imports (jaxtyping, typeguard, omegaconf), scikit-image
+# for its surface, trimesh and fast-simplification for the mesh; its RMBG-1.4 (non-commercial) and diso are left out:
+# backends/triposg.py needs neither.
 # Everything is installed against a constraints file of the image's own torch, numpy, transformers and vLLM, so none of
 # them changes; MoGe and its git dependencies go in without theirs (they would pull numpy 2 and an OpenGL renderer).
 FROM nvcr.io/nvidia/tritonserver:26.08-py3 AS standard
@@ -23,17 +21,8 @@ RUN pip list --format=freeze | grep -iE '^(torch|torchvision|numpy|transformers|
       "utils3d_moge @ git+https://github.com/EasternJournalist/utils3d-moge.git@62f09d58509485564e24d5d9f6aac9ee9ebc0c37" \
       "pipeline @ git+https://github.com/EasternJournalist/pipeline.git@1c511390d90226c00c101f34b84df26a0f8789b4" \
       "flex-gemm @ git+https://github.com/JeffreyXiang/FlexGEMM.git@b2fadb29d41846c7981ade6801ffc689fae119cf" \
- && apt-get update && apt-get install -y --no-install-recommends libsparsehash-dev && rm -rf /var/lib/apt/lists/* \
- && git clone https://github.com/mit-han-lab/torchsparse.git /tmp/torchsparse && cd /tmp/torchsparse \
- && git checkout 385f5ce8718fcae93540511b7f5832f4e71fd835 \
- && FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST=10.3 MAX_JOBS=32 pip install --no-cache-dir --break-system-packages \
-      --no-build-isolation -c /tmp/pinned.txt . rootpath backports.cached_property \
- && cd / && rm -rf /tmp/torchsparse \
- && pip install --no-cache-dir --break-system-packages -c /tmp/pinned.txt easydict trimesh fast-simplification \
- && git clone https://github.com/microsoft/TRELLIS.git /tmp/trellis && cd /tmp/trellis \
- && git checkout 442aa1e1afb9014e80681d3bf604e8d728a86ee7 && git submodule update --init trellis/representations/mesh/flexicubes \
- && cp -r trellis "$(python3 -c 'import site; print(site.getsitepackages()[0])')/" && cd / && rm -rf /tmp/trellis \
- && pip install --no-cache-dir --break-system-packages -c /tmp/pinned.txt jaxtyping typeguard omegaconf scikit-image \
+ && pip install --no-cache-dir --break-system-packages -c /tmp/pinned.txt \
+      jaxtyping typeguard omegaconf scikit-image trimesh fast-simplification \
  && git clone https://github.com/VAST-AI-Research/TripoSG.git /tmp/triposg && cd /tmp/triposg \
  && git checkout fc5c40990181e2a756c4e0b1c2f4d6b5202faf8c \
  && cp -r triposg "$(python3 -c 'import site; print(site.getsitepackages()[0])')/" && cd / && rm -rf /tmp/triposg \

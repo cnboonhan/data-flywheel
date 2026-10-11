@@ -14,7 +14,7 @@ Triton Inference Server on all GPUs of the service node (`SERVICE_NODE` in [`.en
 
 ## Call a model
 
-Use `TRITON_URL` and `TRITON_TOKEN` from `slurm.env`:
+Use `TRITON_URL` and `TRITON_TOKEN` from `flywheel.env`:
 
 ```python
 import os, tritonclient.grpc as tg
@@ -81,7 +81,6 @@ distance = depth.infer({"image": [jpg], "fov_x": np.array([90.0], np.float32)}, 
 | `moge-3-vitg` | Python (`backends/moge.py`) | `image` BYTES `[1]`, `fov_x` FP32 `[1]` (degrees; 0 = equirectangular panorama); optional `view_size` INT32 (1024), `merge_width` INT32 (0 = full width) | `distance` FP32 `[H, W]` (metres), `mask` BOOL `[H, W]` |
 | `llmdet_large` | Python (`backends/llmdet.py`) | `image` BYTES `[1]`, `labels` BYTES `[N]`; optional `box_threshold` (0.35), `text_threshold` (0.25), `nms` (0.7) FP32 | `boxes` FP32 `[K, 4]` (pixels), `scores` FP32 `[K]`, `names` BYTES `[K]` |
 | `sam2.1-hiera-large` | Python (`backends/sam2.py`) | `image` BYTES `[1]`, `boxes` FP32 `[K, 4]` (pixels) | `masks` BOOL `[K, H, W]` |
-| `TRELLIS-image-large` | Python (`backends/trellis.py`) | `images` BYTES `[N]` (RGBA PNG cutouts of one object, one per view); optional `seed` INT32 (0), `steps` INT32 (12), `simplify` FP32 (0.9, the fraction of faces removed) | `glb` BYTES `[1]` (mesh with vertex colours, y up) |
 | `TripoSG` | Python (`backends/triposg.py`) | `image` BYTES `[1]` (RGBA PNG cutout of one object); optional `seed` INT32 (0), `steps` INT32 (50), `guidance` FP32 (7.0), `faces` INT32 (-1 = all; else simplify to about that many) | `mesh` BYTES `[1]` (GLB, shape only: y up, centred, within ±1) |
 
 A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` names for its repo (or its version's tag `triton.backend`), otherwise to vLLM. Other models are tagged `unsupported`; to add one, write a `package_<model>` function in `sync.py`, or a backend in `backends/` with its inputs and outputs in `PYTHON_IO`.
@@ -97,7 +96,7 @@ A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` 
 
 ## Notes
 
-- If the service node is also a Slurm node, jobs placed there share its GPUs with Triton. Until its GPUs are removed from Slurm, submit GPU-heavy jobs with `--exclude=$SERVICE_NODE` (`slurm.env` sets it).
+- If the service node is also a Slurm node, jobs placed there share its GPUs with Triton. Until its GPUs are removed from Slurm, submit GPU-heavy jobs with `--exclude=$SERVICE_NODE` (`flywheel.env` sets it).
 - Send gRPC metadata keys in lowercase (`authorization`). `tritonclient.http` adds entries to the `headers` dict it is given, so pass a fresh dict on every call.
 - Expect about 40 ms per ACT call with three 640×480 cameras from the login node.
 - After editing `Dockerfile` (`tritonserver:26.08-vllm-python-py3`, vLLM 0.27 and torch 2.14 built for sm_103, plus the ONNX Runtime backend from `tritonserver:26.08-py3`), rebuild with `services/ctl.sh up --build`.
@@ -105,7 +104,6 @@ A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` 
 - The Python-backend Hugging Face models run as one instance each on GPU 2 (`TRITON_PYTHON_GPU`, or tag `triton.gpu`), about 100 GB together (the image editor 68 GB). They run with cuDNN off: in this image it makes Qwen-Image-Edit return noise and has no kernel for MoGe's transposed convolutions on GB300.
 - Expect on the Python backends: an image edit at 1024×1024 in ~16 s (40 steps), MoGe on one 1024 px view in ~0.6 s and on a 4096×2048 panorama in ~110 s (its 20 views, then the merge on the CPU), LLMDet and SAM in well under a second per view.
 - Qwen-Image-Edit's `lora=angles` is the camera-angle LoRA [fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA) (Apache-2.0): prompt `<sks> <view> <elevation> <distance>`, e.g. `<sks> back-left quarter view elevated shot medium shot`. Register it as `Qwen-Image-Edit-2511-Multiple-Angles-LoRA` with `include` `*.safetensors,README.md` (no alias); the model loads it on its next packaging (`HF_COMPANIONS` in `sync.py`). Calls without `lora` run the base model unchanged.
-- TRELLIS returns only its mesh with per-vertex colours. Its textured GLB and Gaussians need nvdiffrast and diff-gaussian-rasterization, both non-commercial, so the image installs neither; expect coarse colours. It also needs the registered model `dinov2-with-registers-large` (its image encoder, Apache-2.0; `HF_COMPANIONS` in `sync.py`). Give it cutouts: an opaque image is taken whole as the object.
 - TripoSG ([VAST-AI/TripoSG](https://huggingface.co/VAST-AI/TripoSG), MIT) returns a shape without colours. Its turn about the vertical is its own, close to the input's view from +z (image right +x) but not exactly, so fit the yaw against the input. Give it a cutout: it skips TripoSG's RMBG-1.4 background removal (non-commercial). Expect ~12 s per mesh at 50 steps (~1.6M faces before `faces` simplifies it).
 - vLLM models read their weights in place from the `mlflow` bucket (mounted read-only at `/mlflow`), so nothing is copied into the `triton` bucket. Expect about 4 min to load the 122B (230 GiB of weights, then compilation), so a sync that loads it takes that long.
 - Expect about 1.7 s for 17 concurrent requests with one 1024×1024 image and ~90 output tokens each on the 122B (~900 tokens/s together); the first request after a load takes ~20 s.
