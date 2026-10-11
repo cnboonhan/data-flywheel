@@ -5,6 +5,7 @@
 #   OpenWAM/OpenWAM-Alpha-Sim-RoboDojo      model    *                           openwam-sim-robodojo
 #   OpenWAM/OpenWAM-Alpha-Sim-RoboTwin-Full model    *                           openwam-sim-robotwin-full
 #   RoboDojo-Benchmark/RoboDojo             dataset  ckpt/RoboDojo/GR00T_N17/*   robodojo-gr00t_n17
+#   Qwen/Qwen3.5-122B-A10B                  model    *                           Qwen3.5-122B-A10B   (234 GB; served by Triton's vLLM backend)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:

@@ -234,9 +234,10 @@ services:
     environment:
       HOME: /tmp
 
-  # Triton Inference Server on all of the node's GPUs (CDI). Its model repository is the triton bucket's models/
-  # folder, read in place; the sync-triton workflow fills it from the MLflow registry and loads and unloads models
-  # (explicit model control). Reached through Caddy on triton.<host> (HTTP and gRPC, bearer token). See triton/README.md.
+  # Triton Inference Server on all of the node's GPUs (CDI), with the vLLM backend for LLMs. Its model repository is the
+  # triton bucket's models/ folder, read in place; the sync-triton workflow fills it from the MLflow registry and loads
+  # and unloads models (explicit model control). Reached through Caddy on triton.<host> (HTTP and gRPC, bearer token).
+  # See triton/README.md.
   triton:
     <<: *common
     build: ./triton
@@ -258,6 +259,7 @@ services:
       stack: 67108864
     volumes:
       - ${STATE_DIR}/versitygw/buckets/triton:/triton:ro   # the bucket, not models/: the gateway deletes empty folders
+      - ${STATE_DIR}/versitygw/buckets/mlflow:/mlflow:ro   # registered weights, read in place by vLLM models (sync.py)
 
   # --- Single sign-on -------------------------------------------------------
   keycloak-db:

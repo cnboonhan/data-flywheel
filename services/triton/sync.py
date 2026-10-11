@@ -5,7 +5,8 @@ Desired state is the MLflow registry: every registered model whose alias `triton
 as a Triton model with the registered model's name and the MLflow version number as Triton version. Each sync
 
   1. packages new or changed versions into s3://triton/models/<name>/ (Triton's model repository), using the packager
-     for the run's `model` param (PACKAGERS below), and removes models whose alias is gone;
+     for the run's `model` param (PACKAGERS below; a Hugging Face model registered by download-models-hf gets the vLLM
+     packager), and removes models whose alias is gone;
   2. loads or unloads them in Triton (explicit model control) and runs one zero-input inference on each;
   3. records the outcome where people look:
        - MLflow model version tags   triton.status (ready | failed | unsupported | unloaded), triton.model,
@@ -48,14 +49,17 @@ NOW = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"
 
 # ---- packagers: (MLflow version, run, downloaded checkpoints dir, target model dir) -> Triton model ----------------
 
+def param_lines(params):
+    return [f'parameters {{ key: "{k}" value {{ string_value: {json.dumps(str(v))} }} }}' for k, v in params.items()]
+
+
 def pbtxt(backend, inputs, outputs, params, max_batch=8, platform=None):
     """config.pbtxt; inputs/outputs: (name, TYPE, dims) without the batch dim."""
     t = lambda kind, n, ty, d: f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ] }}'
     lines = [f'platform: "{platform}"' if platform else f'backend: "{backend}"', f"max_batch_size: {max_batch}"]
     lines += [t("input", *i) for i in inputs] + [t("output", *o) for o in outputs]
     lines += ["dynamic_batching { }", 'instance_group [ { kind: KIND_GPU } ]']   # one instance on every GPU
-    lines += [f'parameters {{ key: "{k}" value {{ string_value: {json.dumps(str(v))} }} }}' for k, v in params.items()]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines + param_lines(params)) + "\n"
 
 
 def train_args(run):
@@ -124,7 +128,29 @@ def package_mlp(mv, run, ckpt, dst, params):
                  platform="onnxruntime_onnx")
 
 
-PACKAGERS = {"ACT": package_act, "MLP": package_mlp}   # keyed by the training run's param `model`
+# vLLM engine arguments (model.json); a model version's tag triton.vllm (JSON) overrides them, tag triton.gpu the GPU.
+VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_per_prompt": {"image": 4},
+               "max_num_seqs": 32}
+VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "1")
+
+
+def package_vllm(mv, run, ckpt, dst, params):
+    """A Hugging Face LLM or VLM on the vLLM backend, as one instance on one whole GPU (vLLM's own batching; split
+    across GPUs the 122B hit NVLink errors). The weights are read in place from the mlflow bucket, which the server
+    mounts at /mlflow: copying hundreds of GB into the triton bucket would only double them."""
+    if not mv.source.startswith("mlflow-artifacts:/"):
+        raise ValueError(f"source {mv.source} is not in the mlflow bucket")
+    engine = {"model": "/mlflow/" + mv.source.removeprefix("mlflow-artifacts:/").lstrip("/"), **VLLM_ENGINE,
+              **json.loads(mv.tags.get("triton.vllm", "{}"))}
+    v = os.path.join(dst, mv.version)
+    os.makedirs(v)
+    json.dump(engine, open(os.path.join(v, "model.json"), "w"), indent=1)
+    gpu = int(mv.tags.get("triton.gpu", VLLM_GPU))
+    lines = ['backend: "vllm"', f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]"]
+    return "\n".join(lines + param_lines(params)) + "\n"
+
+
+PACKAGERS = {"ACT": package_act, "MLP": package_mlp, "vllm": package_vllm}   # keyed by the training run's param `model`
 
 
 # ---- S3 ----------------------------------------------------------------------------------------------------------
@@ -191,10 +217,18 @@ def triton(path, body=None, method=None):
 
 
 def smoke_test(name):
-    """One inference with zero inputs (images 64x64); returns an error string or None."""
+    """One inference with zero inputs (images 64x64), or for a vLLM model a few generated tokens; returns an error
+    string or None."""
     code, cfg = triton(f"/v2/models/{name}/config")
     if code != 200:
         return cfg.get("error", f"HTTP {code}")
+    if cfg.get("backend") == "vllm":
+        code, out = triton(f"/v2/models/{name}/generate",
+                           {"text_input": "Hello", "sampling_parameters": json.dumps({"max_tokens": 4})})
+        if code != 200:
+            return out.get("error", f"HTTP {code}")
+        print(f"  {name}: generate ok, {out.get('text_output', '')!r}")
+        return None
     inputs = []
     for i in cfg["input"]:
         dims = [64 if d == -1 else int(d) for d in i["dims"]]
@@ -255,7 +289,7 @@ def sync(args):
             status.append({"model": name, "version": mv.version, "status": "failed", "error": mv.tags["triton.error"]})
             continue   # packaging failed before; retried only with --force (or a new version)
         run = client.get_run(mv.run_id) if mv.run_id else None
-        kind = run.data.params.get("model") if run else None
+        kind = run and (run.data.params.get("model") or ("vllm" if "hf_repo" in run.data.params else None))
         packager = PACKAGERS.get(kind)
         if packager is None:
             msg = f"no packager for model '{kind}' (have: {', '.join(PACKAGERS)})"
@@ -274,7 +308,8 @@ def sync(args):
                   "data_fingerprint": p.get("data_fingerprint", ""), "git_commit": p.get("git_commit", ""), "synced_at": NOW}
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                ckpt = mlflow.artifacts.download_artifacts(artifact_uri=mv.source, dst_path=os.path.join(tmp, "ckpt"))
+                ckpt = None if kind == "vllm" else mlflow.artifacts.download_artifacts(   # vLLM reads them in place
+                    artifact_uri=mv.source, dst_path=os.path.join(tmp, "ckpt"))
                 dst = os.path.join(tmp, "repo")
                 os.makedirs(dst)
                 cfg = packager(mv, run, ckpt, dst, params)
