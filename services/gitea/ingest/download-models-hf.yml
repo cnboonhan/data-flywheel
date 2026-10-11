@@ -10,6 +10,10 @@
 #   Ruicheng/moge-3-vitg                    model    *                           moge-3-vitg            (Triton Python backend)
 #   iSEE-Laboratory/llmdet_large            model    *                           llmdet_large           (Triton Python backend)
 #   facebook/sam2.1-hiera-large             model    *                           sam2.1-hiera-large     (Triton Python backend)
+#   fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA  model  *.safetensors,README.md  Qwen-Image-Edit-2511-Multiple-Angles-LoRA   (its lora=angles)
+#   microsoft/TRELLIS-image-large           model    *                           TRELLIS-image-large    (Triton Python backend; needs the next)
+#   facebook/dinov2-with-registers-large    model    *                           dinov2-with-registers-large   (TRELLIS's image encoder)
+#   VAST-AI/TripoSG                         model    *                           TripoSG                (Triton Python backend)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:
