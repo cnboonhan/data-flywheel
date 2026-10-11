@@ -34,6 +34,27 @@ flowchart LR
 | `pose.json` | where it stands and how it is turned in the scene frame, its size and mass, what it was generated as |
 | `views/` | the session's view, the drawing, each side's render and painting: look here first when an object is wrong |
 
+## In IsaacLab-Arena
+
+![Generated objects in Arena on a GB300, in front of the mesh room: scene camera, wrist camera](../../assets/asset_gen/arena.jpg)
+
+1. Make the background a textured mesh room (the erased panorama on its depth; renders on any GPU, where colmap_splat's splat needs RT cores).
+   ```bash
+   uv run sim/asset_gen/background.py <scene>_session.zip
+   ```
+2. Write an Arena spec of the objects where the session saw them, with a Franka picking one and placing it at another; it prints the environment to export.
+   ```bash
+   uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 06_cup --place 03_bottle
+   ```
+3. Record it ([isaaclab_arena](../isaaclab_arena/README.md#record-a-demo); on a GB300, see [Which GPU](../isaaclab_arena/README.md#which-gpu)).
+   ```bash
+   bash sim/isaaclab_arena/envgen.sh record --env_spec datasets/asset_gen/<scene>/arena.yaml --video_dir <dir>
+   ```
+
+Notes:
+- The room is a static collider, so objects rest on its counters; it shows the photo as it is (emissive), whatever the sim's lights. View it from near the capture point: further away, what the panorama never saw shows.
+- The robot stands on the floor 0.5 m from the picked object (`ARENA_SPLAT_ORIGIN`); a Franka on the floor can't reach a 1 m counter from outside it, so give it a stand or a mobile base for counter tasks.
+
 ## Model endpoints
 
 | Variable | Default model | Used for | Licence |

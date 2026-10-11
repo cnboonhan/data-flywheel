@@ -48,7 +48,8 @@ bash sim/isaaclab_arena/envgen.sh cli --mode resolve --prompt "Franka at a table
 ```
 
 Notes:
-- Registered as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted in x/y so the middle of the capture area is Arena's origin, where the robot spawns.
+- Registered as `splat_scene` (`ARENA_SPLAT_NAME` to rename), shifted in x/y so the middle of the capture area is Arena's origin, where the robot spawns; `ARENA_SPLAT_ORIGIN="x y"` picks another point of the capture's frame.
+- [`sim/asset_gen`](../asset_gen/README.md#in-isaaclab-arena) writes a mesh-room background in the same layout (for GPUs without RT cores) and registers a session's generated objects as `gen_<asset>` (`ARENA_ASSET_DIR`).
 - The splat only renders; its baked lighting doesn't respond to the sim.
 - The only collision is the floor (the capture cameras' footprint plus 2 m). Anchor on it with an object reference (`parent_id: <background id>`, `prim_path: floor`), place a table `on` it and objects on the table; an object beyond the floor fails the `on` check and falls. [`franka_mug_to_bowl_splat_scene.yaml`](../../eval/system2/environments/franka_mug_to_bowl_splat_scene.yaml) pins the table in front of the robot with `at_position`.
 
