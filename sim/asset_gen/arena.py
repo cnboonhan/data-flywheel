@@ -43,7 +43,7 @@ def run(root: Path, pick: str, place: str, out: Path, background: Path | None = 
         lines.append(f"- {{kind: rotate_around_solution, subject: gen_{a}, params: {{yaw_rad: {yaw:.4f}}}}}")
     lines += ["task:", "  composition: atomic",
               f"  description: Franka picks up the {objects[pick]['label']} and places it at the "
-              f"{objects[place]['label']}, in a kitchen generated from one panorama.",
+              f"{objects[place]['label']}, in a room generated from one panorama.",
               "  subtasks:", "  - kind: PickAndPlaceTask", "    params:",
               f"      pick_up_object: gen_{pick}", f"      destination_location: gen_{place}",
               "      background_scene: splat"]
@@ -55,8 +55,8 @@ def run(root: Path, pick: str, place: str, out: Path, background: Path | None = 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("root", type=Path, help="datasets/asset_gen/<scene> (objects/ and background/)")
-    p.add_argument("--pick", required=True, help="the asset the Franka picks, as in objects/ (06_cup)")
-    p.add_argument("--place", required=True, help="the asset it places it at (03_bottle)")
+    p.add_argument("--pick", required=True, help="the asset the Franka picks, as in objects/ (04_cup)")
+    p.add_argument("--place", required=True, help="the asset it places it at (03_book)")
     p.add_argument("--background", type=Path, help="the background scene.usda (default: background.py's)")
     p.add_argument("--out", type=Path, help="spec to write (default: <root>/arena.yaml)")
     a = p.parse_args()

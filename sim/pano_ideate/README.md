@@ -2,7 +2,7 @@
 
 Turn one 360° photo of a room into a simulation scene: act on its objects in the browser, then generate them as textured rigid bodies and the room around them as a Gaussian splat.
 
-![pano_ideate end to end: pick up the bowl, open the fridge, put the bowl in, add the kettle, download the session](../../assets/pano_ideate/e2e.gif)
+![pano_ideate end to end: pick up the cup, open the cupboard, put the cup in, add the heater, download the session](../../assets/pano_ideate/e2e.gif)
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
    ```bash
    uv run sim/pano_ideate/serve.py
    ```
-3. Click objects and say what happens ("pick it up", "open the fridge"); **Add to session** keeps one as it is. Then **Download session**.
+3. Click objects and say what happens ("pick it up", "open the cupboard"); **Add to session** keeps one as it is. Then **Download session**.
 4. Generate the objects, ticking them in the checklist (~4 min each; [asset_gen](../asset_gen/README.md)).
    ```bash
    uv run sim/asset_gen/objects.py <scene>_session.zip
@@ -73,7 +73,7 @@ Leave a variable unset for the default model on the flywheel Triton (`triton.$SE
 
 Notes:
 - The state is saved to `<scene>/edits/` after every edit and resumed on restart; Reset deletes it. `session.py <scene>` writes the zip without the viewer. `--host 0.0.0.0` serves other machines.
-- An articulated object remembers each state's view, contents included: close the fridge with the bowl inside, open it, the bowl is there.
+- An articulated object remembers each state's view, contents included: close the cupboard with the cup inside, open it, the cup is there.
 
 ## The steps by hand
 
@@ -83,16 +83,16 @@ The viewer runs these; run one by hand to check or redo it.
 |---|---|---|
 | Depth and scene frame (~2 min) | `uv run sim/pano_ideate/depth.py datasets/pano_ideate/<scene>` | `depth/floor.png`: walls straight, floor flat |
 | Objects (~1 min) | `uv run sim/pano_ideate/objects.py datasets/pano_ideate/<scene>` | `objects/labels.jpg` |
-| An action's end state | `uv run sim/pano_ideate/act.py datasets/pano_ideate/<scene> "open the fridge"` | `act/<action>/crops/` |
+| An action's end state | `uv run sim/pano_ideate/act.py datasets/pano_ideate/<scene> "open the cupboard"` | `act/<action>/crops/` |
 | The session zip | `uv run sim/pano_ideate/session.py datasets/pano_ideate/<scene>` | `background/pano.jpg` in it |
 
-The panorama goes at `datasets/pano_ideate/<scene>/source.jpg`. The two samples are Poly Haven HDRIs (CC0):
+The panorama goes at `datasets/pano_ideate/<scene>/source.jpg`. The sample, `office`, is a Poly Haven HDRI (CC0):
 ```bash
-for p in "kitchen blinds" "office poly_haven_studio"; do set -- $p; mkdir -p datasets/pano_ideate/$1
-  curl -fL -o datasets/pano_ideate/$1/source.jpg "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/$2.jpg"; done
+mkdir -p datasets/pano_ideate/office && curl -fL -o datasets/pano_ideate/office/source.jpg \
+  "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/poly_haven_studio.jpg"
 ```
 
 Notes:
-- The scale is MoGe's estimate (camera 1.2 m above the floor for `office`, 1.4 m for `kitchen`); `depth.py --camera_height <m>` sets it.
+- The scale is MoGe's estimate (camera 1.2 m above the floor for `office`); `depth.py --camera_height <m>` sets it.
 - Kinds: movable (could be picked up or carried, at most 1.5 m across and 1 cm thick: `--max_size`, `--min_thickness`), articulated (has a part to open, close or turn), static (the rest). Expect duplicates and odd labels; acting merges an object's entries.
 - `objects.py --redetect` and `act.py --replan` ask the models again instead of reusing their cache.

@@ -25,7 +25,7 @@ flowchart LR
    uv run sim/asset_gen/objects.py <scene>_session.zip
    ```
 
-`--asset <name>` (repeat; `02_chair` or `chair`) skips the checklist, and a run outside a terminal generates every object. `--seed <n>` draws another one.
+`--asset <name>` (repeat; `00_chair` or `chair`) skips the checklist, and a run outside a terminal generates every object. `--seed <n>` draws another one.
 
 | File in `datasets/asset_gen/<scene>/objects/<asset>/` | What |
 |---|---|
@@ -44,7 +44,7 @@ flowchart LR
    ```
 2. Write an Arena spec of the objects where the session saw them (position and yaw), with a Franka at the capture point picking one and placing it at another; it prints the environment to export.
    ```bash
-   uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 06_cup --place 03_bottle
+   uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 04_cup --place 03_book
    ```
 3. Record it ([isaaclab_arena](../isaaclab_arena/README.md#record-a-demo); on a GB300, see [Which GPU](../isaaclab_arena/README.md#which-gpu)).
    ```bash

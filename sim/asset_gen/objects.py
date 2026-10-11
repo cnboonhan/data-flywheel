@@ -353,7 +353,7 @@ def choose(z: zipfile.ZipFile, scene: dict, out_root: Path) -> list[str]:
 
 
 def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: int = 0, log=print) -> list[Path]:
-    """Generate the session's objects; assets: only these (each an asset name such as 02_chair, or a label such as
+    """Generate the session's objects; assets: only these (each an asset name such as 00_chair, or a label such as
     chair), else every one."""
     triton, generator = Triton(), Endpoint("MESH", "TripoSG")
     log(f"{triton.vlm_}\n{triton.edit_}\n{triton.segment_}\n{generator}")
@@ -392,7 +392,7 @@ def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: in
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("session", type=Path, help="a session zip from pano_ideate's viewer (Download session)")
-    p.add_argument("--asset", action="append", help="only this asset: its name (02_chair) or label (chair); repeat. "
+    p.add_argument("--asset", action="append", help="only this asset: its name (00_chair) or label (chair); repeat. "
                    "Without it a checklist asks which to generate (every one when not run in a terminal)")
     p.add_argument("--out", type=Path, default=Path("datasets/asset_gen"))
     p.add_argument("--seed", type=int, default=0, help="another seed draws another object")

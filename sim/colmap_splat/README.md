@@ -93,7 +93,7 @@ Poses come from COLMAP or GLOMAP (not set up here yet), or from [`sensors/real2s
 
 Train the background of a [`pano_ideate`](../pano_ideate/README.md) session (its room with the session's objects erased; [`asset_gen`](../asset_gen/README.md) makes the objects) like any capture:
 
-![Held-out views of a pano_ideate background: input | splat, 29.9 dB](../../assets/colmap_splat/pano_splat.jpg)
+![Held-out views of the office background: input | splat, 30.1 dB](../../assets/colmap_splat/pano_splat.jpg)
 
 1. Write its COLMAP dataset.
    ```bash

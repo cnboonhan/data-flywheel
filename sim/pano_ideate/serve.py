@@ -23,8 +23,8 @@ A movable object has one: its coloured points, saved when it is picked up (it th
 it moves those points onto the surface clicked, draws their outline from the capture point (hidden where something is
 in front), and the editor draws the object there; it stays the same object, so picking it up again updates its
 memory. An articulated object has one mode per state (closed, open): its area's pixels, depth and objects, contents
-included; going back to a state it has been in restores that instead of rendering (open the fridge, put a bowl in,
-close it, open it: the bowl is there). Edits stack; Undo and Reset go back. The state is saved to <scene>/edits/
+included; going back to a state it has been in restores that instead of rendering (open the cupboard, put a cup in,
+close it, open it: the cup is there). Edits stack; Undo and Reset go back. The state is saved to <scene>/edits/
 after every edit and picked up again on restart (pano.png, distance.npy, labels.npy, state.json, memory/, inventory/,
 masks/, crops/, and steps/<n>/: the viewer's files after each edit, so its Edits list can show any step).
 Download session packs it for the assets (session.py): the interacted objects and those added with "Add to session"

@@ -4,7 +4,7 @@
 # ///
 """Render the end state of an action on the panorama: what the scene looks like after it, without the steps between.
 
-    uv run sim/pano_ideate/act.py datasets/pano_ideate/<scene> "pick up the cup on the counter and open the fridge"
+    uv run sim/pano_ideate/act.py datasets/pano_ideate/<scene> "pick up the cup on the desk and open the cupboard"
 
 Needs steps 1 and 2, and Triton (models.py). The VLM (Qwen3.5-122B-A10B) reads the action, the panorama and step 2's
 object list, and names the objects the action changes, with what each looks like afterwards: taken away ("remove": picked up, carried off,
