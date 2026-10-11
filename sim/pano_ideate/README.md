@@ -2,7 +2,7 @@
 
 Turn one 360° photo of a room into a simulation scene: act on its objects in the browser, then generate them as textured rigid bodies and the room around them as a Gaussian splat.
 
-![pano_ideate end to end: pick up the cup, open the cupboard, put the cup in, add the heater, download the session](../../assets/pano_ideate/e2e.gif)
+![pano_ideate end to end: throw the cup in the bin, open the bin to see it, add the heater, download the session](../../assets/pano_ideate/e2e.gif)
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
    ```bash
    uv run sim/pano_ideate/serve.py
    ```
-3. Click objects and say what happens ("pick it up", "open the cupboard"); **Add to session** keeps one as it is. Then **Download session**.
+3. Click objects and say what happens ("throw it in the bin", "open its lid"); **Add to session** keeps one as it is. Then **Download session**.
 4. Generate the objects, ticking them in the checklist (~4 min each; [asset_gen](../asset_gen/README.md)).
    ```bash
    uv run sim/asset_gen/objects.py <scene>_session.zip
