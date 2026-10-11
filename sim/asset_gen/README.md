@@ -42,7 +42,7 @@ flowchart LR
    ```bash
    uv run sim/asset_gen/background.py <scene>_session.zip
    ```
-2. Write an Arena spec of the objects where the session saw them, with a Franka picking one and placing it at another; it prints the environment to export.
+2. Write an Arena spec of the objects where the session saw them (position and yaw), with a Franka at the capture point picking one and placing it at another; it prints the environment to export.
    ```bash
    uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 06_cup --place 03_bottle
    ```
@@ -53,7 +53,7 @@ flowchart LR
 
 Notes:
 - The room is a static collider, so objects rest on its counters; it shows the photo as it is (emissive), whatever the sim's lights. View it from near the capture point: further away, what the panorama never saw shows.
-- The robot stands on the floor 0.5 m from the picked object (`ARENA_SPLAT_ORIGIN`); a Franka on the floor can't reach a 1 m counter from outside it, so give it a stand or a mobile base for counter tasks.
+- The robot spawns at the panorama's capture point (`ARENA_SPLAT_ORIGIN='0 0'`), and each object stands where the session saw it, turned by its `pose.json` yaw. A capture point next to a counter puts the robot's base against it.
 
 ## Model endpoints
 
