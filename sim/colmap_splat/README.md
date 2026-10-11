@@ -91,13 +91,13 @@ Poses come from COLMAP or GLOMAP (not set up here yet), or from [`sensors/real2s
 
 ## From a pano_ideate session
 
-Train the background of a [`pano_ideate`](../pano_ideate/README.md) session (its room with the interacted objects erased; [`asset_gen`](../asset_gen/README.md) makes the objects) like any capture:
+Train the background of a [`pano_ideate`](../pano_ideate/README.md) session (its room with the session's objects erased; [`asset_gen`](../asset_gen/README.md) makes the objects) like any capture:
 
 1. Write its COLMAP dataset.
    ```bash
    uv run sim/colmap_splat/from_pano.py <scene>_session.zip datasets/colmap_splat/<scene>
    ```
-2. Train it on any machine with an NVIDIA GPU and the 3DGRUT install ([Install](#install-once)), a laptop's included; no cluster needed.
+2. Train it on any machine with an NVIDIA GPU and the 3DGRUT install ([Install](#install-once)), a laptop's included; no Slurm needed. On the cluster, run it over SSH on a node with a free GPU, picked with `CUDA_VISIBLE_DEVICES`.
    ```bash
    uv run sim/colmap_splat/train.py datasets/colmap_splat/<scene> datasets/colmap_splat/<scene>/runs --floor
    ```
@@ -105,7 +105,7 @@ Train the background of a [`pano_ideate`](../pano_ideate/README.md) session (its
 The model is in the session's scene frame (metric, z up, origin on the floor below the capture point), so `--floor` and Arena placement work as for a real2sim capture.
 
 Notes:
-- Views: 26 from the capture point, cut from the panorama, and 288 from 24 points up to 0.6 m around it, drawn from its depth. What the panorama never saw is filled by OpenCV; `--fill editor` fills views with more than 1% missing with Qwen-Image-Edit instead (~10 s a view; endpoint `EDIT_ENDPOINT`, default `Qwen-Image-Edit-2511` on the flywheel Triton, set up as in [asset_gen](../asset_gen/README.md#model-endpoint)). Starting points: 600k from the depth.
+- Views: 26 from the capture point, cut from the panorama, and 288 from 24 points up to 0.6 m around it, drawn from its depth. What the panorama never saw is filled by OpenCV; `--fill editor` fills views with more than 1% missing with Qwen-Image-Edit instead (~10 s a view; endpoint `EDIT_ENDPOINT`, default `Qwen-Image-Edit-2511` on the flywheel Triton, set up as in [asset_gen](../asset_gen/README.md#model-endpoints)). Starting points: 600k from the depth.
 - Expect ~29 dB held-out PSNR at 7k iterations (`n_iterations=7000`): ~3 min on a GB300. Writing the dataset takes ~7 min of CPU. The splat looks right within ~0.6 m of the capture point; further out, what the panorama never saw shows.
 
 ## Planned: automated workcell capture

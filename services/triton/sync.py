@@ -28,7 +28,6 @@ import datetime
 import functools
 import json
 import os
-import re
 import shlex
 import shutil
 import sys
@@ -56,7 +55,8 @@ def param_lines(params):
 
 
 def pbtxt(backend, inputs, outputs, params, max_batch=8, platform=None):
-    """config.pbtxt; inputs/outputs: (name, TYPE, dims) without the batch dim."""
+    """config.pbtxt; inputs/outputs: (name, TYPE, dims) without the batch dim. max_batch: the largest batch Triton's
+    dynamic batcher forms (8 for ACT; untuned)."""
     t = lambda kind, n, ty, d: f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ] }}'
     lines = [f'platform: "{platform}"' if platform else f'backend: "{backend}"', f"max_batch_size: {max_batch}"]
     lines += [t("input", *i) for i in inputs] + [t("output", *o) for o in outputs]
@@ -123,6 +123,7 @@ def package_mlp(mv, run, ckpt, dst, params):
 
     v = os.path.join(dst, mv.version)
     os.makedirs(v)
+    # ONNX opset 18, a batch dimension up to 4096 and max_batch_size 256 in Triton: untuned.
     torch.onnx.export(Served().eval(), (torch.zeros(1, d_in),), os.path.join(v, "model.onnx"),
                       input_names=["state"], output_names=["action"], opset_version=18,
                       dynamic_shapes={"state": {0: torch.export.Dim("batch", max=4096)}})
@@ -131,6 +132,9 @@ def package_mlp(mv, run, ckpt, dst, params):
 
 
 # vLLM engine arguments (model.json); a model version's tag triton.vllm (JSON) overrides them, tag triton.gpu the GPU.
+# Context 32k tokens, 90% of the GPU's memory (vLLM's default), at most 4 images per prompt, 32 sequences batched at
+# once: untuned. VLLM_GPU and PYTHON_GPU (below) place the models on the service node's GPUs: the vLLM model takes all
+# of GPU 1, the Python-backend models share GPU 2 (~71 GB together); which index is a choice, not tuned.
 VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_per_prompt": {"image": 4},
                "max_num_seqs": 32}
 VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "1")
@@ -155,19 +159,15 @@ def package_vllm(mv, run, ckpt, dst, params):
 # Hugging Face models served by a Python backend (services/triton/backends/<name>.py) instead of vLLM, keyed by repo;
 # a model version's tag triton.backend names one for any other repo. Each loads its weights in place from /mlflow, on
 # one GPU (tag triton.gpu, default TRITON_PYTHON_GPU), takes encoded images as BYTES and has no batch dimension.
-# (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG).
+# (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG). It checks that a model runs,
+# not how well, so few steps (2, 4) and faces (1000) keep it quick; fov_x and the box are any valid ones.
 HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
                "Ruicheng/moge-2-vitl-normal": "moge", "iSEE-Laboratory/llmdet_large": "llmdet",
                "facebook/sam2.1-hiera-large": "sam2", "VAST-AI/TripoSG": "triposg"}
-# Other registered models a backend loads too, by repo: parameter weights_<key> is the latest version of that
-# registered model, in place from /mlflow, left out while it isn't registered (the backend says what it lacks).
-# Qwen-Image-Edit's camera-angle LoRA.
-HF_COMPANIONS = {"Qwen/Qwen-Image-Edit-2511": {"lora_angles": "Qwen-Image-Edit-2511-Multiple-Angles-LoRA"}}
 PYTHON_GPU = os.environ.get("TRITON_PYTHON_GPU", "2")
 PYTHON_IO = {
     "qwen_image_edit": ([("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
-                         ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True),
-                         ("lora", "STRING", [1], True), ("lora_scale", "FP32", [1], True)],
+                         ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True)],
                         [("image", "STRING", [1])]),
     "moge": ([("image", "STRING", [1]), ("fov_x", "FP32", [1]), ("view_size", "INT32", [1], True),
               ("merge_width", "INT32", [1], True)],
@@ -205,12 +205,7 @@ def package_python(backend, mv, run, ckpt, dst, params):
     lines = ['backend: "python"', "max_batch_size: 0"] + [t("input", *i) for i in ins] + [t("output", *o) for o in outs]
     lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]")
     in_place = lambda m: "/mlflow/" + m.source.removeprefix("mlflow-artifacts:/").lstrip("/")
-    hf_repo = run.data.params.get("hf_repo", "")
-    params = {**params, "weights": in_place(mv), "hf_repo": hf_repo}
-    for key, name in HF_COMPANIONS.get(hf_repo, {}).items():
-        versions = mlflow.MlflowClient().search_model_versions(f"name='{name}'")
-        if versions:
-            params["weights_" + key] = in_place(max(versions, key=lambda m: int(m.version)))
+    params = {**params, "weights": in_place(mv), "hf_repo": run.data.params.get("hf_repo", "")}
     return "\n".join(lines + param_lines(params)) + "\n"
 
 
@@ -271,7 +266,7 @@ def triton(path, body=None, method=None):
                                  method=method or ("POST" if body is not None else "GET"),
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=600) as r:
+        with urllib.request.urlopen(req, timeout=600) as r:   # a load answers once done: ~4 min for the 122B; untuned
             raw = r.read()
             return r.status, json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
@@ -331,7 +326,7 @@ def smoke_python(name, kind):
         t = th.InferInput(n, list(a.shape), "BYTES" if types[n] == "STRING" else types[n])
         t.set_data_from_numpy(a)
         inputs.append(t)
-    try:
+    try:   # 10 min as in triton(); untuned
         out = th.InferenceServerClient(TRITON.split("://")[-1], network_timeout=600).infer(name, inputs)
     except Exception as e:
         return f"{type(e).__name__}: {e}"
@@ -345,13 +340,14 @@ def smoke_python(name, kind):
 def desired(client):
     """{name: ModelVersion} for every registered model with the alias."""
     out = {}
-    for rm in client.search_registered_models(max_results=1000):
+    for rm in client.search_registered_models(max_results=1000):   # one page: models past the 1000th go unseen
         if ALIAS in (rm.aliases or {}):
             out[rm.name] = client.get_model_version(rm.name, rm.aliases[ALIAS])
     return out
 
 
 def tag(client, name, version, status, error=""):
+    # triton.error is cut at 5000 characters (MLflow allows 100 000 in a model version tag); untuned.
     for k, v in {"triton.status": status, "triton.model": name, "triton.synced_at": NOW, "triton.error": error[:5000]}.items():
         try:
             client.set_model_version_tag(name, str(version), k, v)

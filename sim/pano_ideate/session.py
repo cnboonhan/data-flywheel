@@ -46,12 +46,12 @@ import models
 def clear(triton: models.Triton, scene: act.Scene, ids: list[int], group_fov: float = 50.0, log=print,
           progress=lambda done, total: None) -> list[list[int]]:
     """Remove the objects with these ids from scene.pano and scene.distance, grouped by direction so each image edit
-    removes the ones that fit in one view."""
+    removes the ones that fit in one view (each pair within group_fov / 2 of each other; 50 deg is untuned)."""
     dirs, area = {}, {}
     for k in ids:
         m = scene.mask(k)
         if m.any():
-            d = scene.dirs[m][:: max(1, m.sum() // 2000)] @ scene.R.T
+            d = scene.dirs[m][:: max(1, m.sum() // 2000)] @ scene.R.T     # up to 4000 of its pixels (untuned)
             dirs[k], area[k] = d.mean(0) / np.linalg.norm(d.mean(0)), m.sum()
     groups = []
     for k in sorted(dirs, key=lambda k: -area[k]):
@@ -62,18 +62,47 @@ def clear(triton: models.Triton, scene: act.Scene, ids: list[int], group_fov: fl
         else:
             groups.append([k])
     changed = np.zeros((scene.H, scene.W), bool)
-    for n, g in enumerate(groups):
+    n, first_retry = 0, len(groups)
+    while n < len(groups):                                            # grows when a group's removal misses some
+        g = groups[n]
         progress(n, len(groups))
         names = sorted({scene.objects[k]["label"] for k in g})
         c = {"ids": g, "labels": [scene.objects[k]["label"] for k in g], "after": "remove",
              "object": "the " + ", the ".join(names)}
-        mask, _ = act.render(triton, scene, c, log=log)
+        # Described in words rather than outlined in red: given the outline, the editor left red smears and sometimes
+        # returned the outlined picture unchanged. A retry removes one object on its own, framed tight: a food
+        # processor survived a 40 deg view (15 untuned).
+        retry = n >= first_retry
+        mask, _ = act.render(triton, scene, c, least=15 if retry else 40, described=True, log=log)
         changed |= mask
-        scene.labels[np.isin(scene.labels - 1, g)] = 0
+        # The editor can leave some of a group in place, swap one for a similar object (a toaster into another
+        # appliance; that changes its pixels as much as removing it), or leave a red smear of the outline: the VLM
+        # looks where each was, and one not bare is removed again on its own, once.
+        missed = [k for k in g if still_there(triton, scene, k)]
+        if missed and not retry:
+            log(f"  still there: {', '.join(scene.objects[k]['label'] for k in missed)}; removing each on its own")
+            groups += [[k] for k in missed]
+        elif missed:
+            log(f"  WARNING: the {scene.objects[missed[0]]['label']} may still be in the background")
+        scene.labels[np.isin(scene.labels - 1, [k for k in g if k not in missed or retry])] = 0
+        n += 1
     progress(len(groups), len(groups))
     if changed.any():
         act.update_depth(triton, scene, changed)
     return groups
+
+
+def still_there(triton: models.Triton, scene: act.Scene, k: int) -> bool:
+    """Whether the VLM sees anything but bare surface inside object k's old outline in the room as it is now: the
+    object, another object the editor drew in its place (a toaster became another appliance), or a red smear left
+    from the outline the editor was shown. The outline is drawn green so it isn't taken for a smear."""
+    rgba = act.cutout(scene, [k])
+    img = np.ascontiguousarray(rgba[..., :3])
+    contours, _ = cv2.findContours((rgba[..., 3] > 128).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(img, contours, -1, (0, 255, 0), 2)
+    answer = triton.vlm("Inside the green outline, is there only the bare surface behind (wall, floor, counter, "
+                        "cabinet), or is there an object or a red or orange smear? Answer bare or object.", img, 5)
+    return not answer.strip().lower().startswith("bare")
 
 
 def asset_name(n: int, label: str) -> str:
@@ -111,6 +140,7 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
     progress("Packing the session", 0, 1)
     out = out or path / "session.zip"
     frame = json.loads((path / "depth" / "frame.json").read_text())
+    # JPEG quality 95: untuned.
     enc = lambda rgb: cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])[1]
 
     def npy(**arrays) -> bytes:
@@ -212,7 +242,7 @@ def state_view(room: np.ndarray, a: dict, W: int) -> np.ndarray:
     img = room.copy()
     img.reshape(-1, 3)[a["idx"]] = a["pano"]
     ys, xs = np.divmod(a["idx"], W)
-    pad = 40
+    pad = 40                                    # px around the area (untuned)
     return img[max(ys.min() - pad, 0):ys.max() + pad, max(xs.min() - pad, 0):xs.max() + pad]
 
 

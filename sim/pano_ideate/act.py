@@ -51,6 +51,12 @@ PLAN = (
     'showing the shelves inside", "state_before": "closed", "state_after": "open"}}]')
 EDIT = ("Picture 2 is picture 1 with {object} outlined in red. Edit picture 1: {change} Keep everything else exactly as "
         "it is: the same framing, lighting and every other object. Do not draw the red outline.")
+# A single-picture edit, for when the outlined pair fails: the object named by where it is instead of by the outline.
+DESCRIBE = ("Name the object or objects outlined in red and say where each is relative to what is next to it, in one "
+            "short phrase (for example: the white food processor between the slow cooker and the toaster). Only the "
+            "phrase.")
+ONLY = ("Edit this picture: {change} Keep everything else exactly as it is: the same framing, lighting and every other "
+        "object.")
 REMOVE = ("remove {object} completely, with no trace, outline or shadow of it left, showing the empty surface where it "
           "stood and whatever it hid.")
 
@@ -100,7 +106,7 @@ def plan(triton: models.Triton, scene: Scene, action: str) -> list[dict]:
         lines.append(f"{k}: {o['label']} ({o['kind']}), {np.degrees(np.arctan2(y, x)):.0f} deg, "
                      f"{np.hypot(x, y):.1f} m, {z:.1f} m")
     text = PLAN.format(objects="\n".join(lines), action=action)
-    image = cv2.resize(scene.pano, (2048, 1024), interpolation=cv2.INTER_AREA)
+    image = cv2.resize(scene.pano, (2048, 1024), interpolation=cv2.INTER_AREA)   # the VLM's view of the room, untuned
     changes = parse_plan(scene, triton.vlm(text, image))
     if not changes:                                   # now and then the answer uses other keys: ask once more
         answer = triton.vlm(text + "\n\nUse exactly the keys ids, object, after, state_before and state_after.", image)
@@ -127,7 +133,8 @@ def parse_plan(scene: Scene, answer: str) -> list[dict]:
 
 def crop_camera(scene: Scene, mask: np.ndarray, margin: float, least: float = 40):
     """A view centred on the mask: yaw, pitch and a fov of `margin` times its angular extent plus 10 deg (at least
-    `least`), in degrees."""
+    `least`, at most 120), in degrees. The extent is the 98th percentile of its pixels' angles from the centre (at most
+    40000 of them, every n-th). All untuned."""
     d = scene.dirs[mask][:: max(1, mask.sum() // 20000)] @ scene.R.T
     c = d.mean(0) / np.linalg.norm(d.mean(0))
     extent = np.degrees(np.percentile(np.arccos(np.clip(d @ c, -1, 1)), 98))
@@ -139,7 +146,7 @@ def outline(img: np.ndarray, obj: np.ndarray) -> np.ndarray:
     """img with obj's outline in red (dimming the rest instead washes the edit out)."""
     line = np.zeros(obj.shape, np.uint8)
     cv2.drawContours(line, cv2.findContours(obj.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0], -1, 1,
-                     max(2, obj.shape[0] // 340))
+                     max(2, obj.shape[0] // 340))                    # 3 px at 1024, untuned
     return np.where(line[..., None] > 0, np.array([255, 0, 0], np.uint8), img)
 
 
@@ -155,14 +162,16 @@ def edit(triton: models.Triton, images: list, prompt: str, img: np.ndarray, obj:
         res += (img[ref].astype(np.float32) - res[ref]).mean(0)       # the editor shifts colours slightly
         res = res.clip(0, 255)
         # The outline, copied anyway, often along the object's new shape: thin strokes of pure red the view didn't have.
+        # Pure red: R over 150, G and B under 60; red over 31 px wide stays (not a stroke); grown 3 px, then inpainted.
+        # All untuned.
         redness = lambda a: (a[..., 0] > 150) & (a[..., 1:].max(-1) < 60)
         red = (redness(res) & ~redness(img)).astype(np.uint8)
         red &= ~cv2.morphologyEx(red, cv2.MORPH_OPEN, np.ones((31, 31), np.uint8)).astype(bool)
         if red.any():
             res = cv2.inpaint(res.astype(np.uint8), cv2.dilate(red, np.ones((7, 7), np.uint8)), 5,
                               cv2.INPAINT_TELEA).astype(np.float32)
-        diff = cv2.GaussianBlur(np.abs(res - img).mean(-1), (0, 0), 2) > 25
-        if np.mean(diff[obj > 0]) > 0.3:
+        diff = cv2.GaussianBlur(np.abs(res - img).mean(-1), (0, 0), 2) > 25   # changed: over 25 levels, untuned
+        if np.mean(diff[obj > 0]) > 0.3:                                    # over 30% of the object (untuned)
             break
         log(f"  {name}: barely changed" + (", trying another seed" if seed == 0 else ", kept anyway"))
     return res, raw, diff
@@ -177,7 +186,8 @@ def box_zone(obj: np.ndarray, grow: float) -> np.ndarray:
 
 
 def changed_near(diff: np.ndarray, zone: np.ndarray, obj: np.ndarray) -> np.ndarray:
-    """The regions of diff within zone that touch obj, with obj."""
+    """The regions of diff within zone that touch obj, with obj (specks under 5 px dropped, gaps under 15 px closed;
+    untuned)."""
     diff = cv2.morphologyEx(diff.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     diff = cv2.morphologyEx(diff, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8)) > 0
     k, part = cv2.connectedComponents(((diff & zone) | (obj > 0)).astype(np.uint8))
@@ -209,7 +219,7 @@ def lookup(scene: Scene, view: tuple, idx: np.ndarray, images: list[np.ndarray])
 
 def paste(scene: Scene, res: np.ndarray, alpha: np.ndarray, view: tuple) -> np.ndarray:
     """Blend the view res onto scene.pano with alpha; the panorama pixels that changed (alpha > 0.5)."""
-    near = cv2.dilate((alpha > 0.01).astype(np.uint8), np.ones((9, 9), np.uint8))
+    near = cv2.dilate((alpha > 0.01).astype(np.uint8), np.ones((9, 9), np.uint8))   # grown 4 px (untuned)
     idx, (a, rgb) = lookup(scene, view, around(scene, view, near), [alpha, res.astype(np.uint8)])
     flat = scene.pano.reshape(-1, 3)
     flat[idx] = (flat[idx] * (1 - a) + rgb * a).astype(np.uint8)
@@ -218,13 +228,18 @@ def paste(scene: Scene, res: np.ndarray, alpha: np.ndarray, view: tuple) -> np.n
     return changed
 
 
-def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps: int = 40, log=print):
+def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps: int = 40, least: float = 40,
+           described: bool = False, log=print):
     """Apply one change to scene.pano in place. Returns the panorama pixels that changed and the crop panels (view
-    before, marked, the editor's output, after)."""
+    before, marked, the editor's output, after). size: the view in px; steps: the editor's (both untuned; an edit
+    takes ~16 s at these, services/triton/README.md); least: the view's smallest fov in degrees (crop_camera; a
+    small object in a 40 deg view can be left in place, its outline redrawn as a red box); described: the editor gets
+    only the view and the VLM's description of the outlined object and where it is, not the outlined copy (for a
+    retry: given the outline, the editor sometimes returns the outlined picture unchanged)."""
     S = size
     remove = c["after"].strip().lower().rstrip(".") == "remove"
     mask = np.any([scene.mask(i) for i in c["ids"]], 0)
-    yaw, pitch, fov = crop_camera(scene, mask, 2.5 if remove else 4.0)   # an opening door swings out: more room
+    yaw, pitch, fov = crop_camera(scene, mask, 2.5 if remove else 4.0, least)   # an opening door swings out: more room
     mx, my = common.view(scene.frame, scene.H, scene.W, yaw, pitch, S, fov)
     img = cv2.remap(scene.pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
     obj = cv2.remap(mask.astype(np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
@@ -236,23 +251,32 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
     # changes too little to detect), less every other movable or articulated object; for a new state, the regions
     # that changed within the object's box grown by its full size (a door or lid swings out) and touching it.
     zone = box_zone(obj, 0.2 if remove else 1.0)
-    core = cv2.dilate(obj, np.ones((15, 15), np.uint8)) > 0
+    core = cv2.dilate(obj, np.ones((15, 15), np.uint8)) > 0             # the object + 7 px: unfeathered (untuned)
+    # Colour reference: outside the zone or, if that is under 5% of the view, over 30 px from the object (untuned).
     ref = ~zone if (~zone).mean() > 0.05 else cv2.dilate(obj, np.ones((61, 61), np.uint8)) == 0   # for the colours
-    res, raw, diff = edit(triton, [img, marked], prompt, img, obj, ref, steps, log, c["object"])
+    if described:
+        where = triton.vlm(DESCRIBE, marked, 40)                      # one short phrase; untuned
+        log(f"  {c['object']}: described as {where!r}")
+        change = REMOVE.format(object=where) if remove else f"{where}: {c['after'].rstrip('.')}."
+        images, prompt = [img], ONLY.format(change=change[0].upper() + change[1:])
+    else:
+        images = [img, marked]
+    res, raw, diff = edit(triton, images, prompt, img, obj, ref, steps, log, c["object"])
     if remove:
         lab = cv2.remap(scene.labels, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
         keep = (zone | core) & ~((lab > 0) & ~np.isin(lab, np.array(c["ids"]) + 1) & ~core)   # other objects stay
         # Match the fill's shading to its surroundings: the colour offset on the unchanged pixels around it, spread
-        # smoothly across it (one global offset leaves the object's silhouette in a slightly different tone).
+        # smoothly across it (one global offset leaves the object's silhouette in a slightly different tone): measured
+        # 4 px clear of the kept area, spread over a quarter of its size (untuned).
         ky, kx = np.nonzero(keep)
         sigma = max(np.ptp(kx), np.ptp(ky), 8) / 4
         w = (~cv2.dilate(keep.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)).astype(np.float32)
         num = cv2.GaussianBlur((img - res) * w[..., None], (0, 0), sigma)
         res = (res + num / np.maximum(cv2.GaussianBlur(w, (0, 0), sigma), 1e-3)[..., None]).clip(0, 255)
         ys, xs = np.nonzero(obj)
-        feather = max(3.0, 0.06 * max(np.ptp(xs), np.ptp(ys)))
+        feather = max(3.0, 0.06 * max(np.ptp(xs), np.ptp(ys)))        # px: 6% of the object's size (untuned)
     else:
-        keep, feather = changed_near(diff, zone, obj), 3.0
+        keep, feather = changed_near(diff, zone, obj), 3.0              # px, untuned
     alpha = np.maximum(cv2.GaussianBlur(keep.astype(np.float32), (0, 0), feather), (keep & core).astype(np.float32))
     after = (img * (1 - alpha[..., None]) + res * alpha[..., None]).astype(np.uint8)
     changed = paste(scene, res, alpha, (mx, my, yaw, pitch, fov))
@@ -261,7 +285,8 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
 
 
 def cutout(scene: Scene, ids: list[int], size: int = 512) -> np.ndarray:
-    """The objects as an RGBA image: a close view of them, transparent around them."""
+    """The objects as an RGBA image: a close view of them, transparent around them (`size` px, crop_camera's margin
+    1.3, edges softened 1 px; untuned)."""
     mask = np.any([scene.mask(i) for i in ids], 0)
     yaw, pitch, fov = crop_camera(scene, mask, 1.3)
     mx, my = common.view(scene.frame, scene.H, scene.W, yaw, pitch, size, fov)
@@ -277,6 +302,8 @@ def shape(scene: Scene, ids: list[int]) -> dict:
     if not mask.any():
         mask = np.any([scene.mask(i) for i in ids], 0)
     d = scene.distance[mask]
+    # Bled pixels: further than 25% + 5 cm from the median, as objects.py's; the base: the median x, y at the 1st
+    # percentile of z. Untuned.
     keep = np.abs(d - np.median(d)) < 0.25 * np.median(d) + 0.05
     xyz = (scene.dirs[mask][keep] * d[keep, None]) @ scene.R.T + [0, 0, scene.frame["camera_height"]]
     base = np.array([np.median(xyz[:, 0]), np.median(xyz[:, 1]), np.percentile(xyz[:, 2], 1)])
@@ -284,8 +311,8 @@ def shape(scene: Scene, ids: list[int]) -> dict:
 
 
 def splat(scene: Scene, xyz: np.ndarray):
-    """Points drawn onto the panorama, gaps between them closed: their distance, and where they show (in front of
-    what is there)."""
+    """Points drawn onto the panorama, gaps between them closed (under 5 px): their distance, and where they show (over
+    2 cm in front of what is there). Untuned."""
     H, W, h = scene.H, scene.W, scene.frame["camera_height"]
     rays = xyz - [0, 0, h]
     d = np.linalg.norm(rays, axis=1)
@@ -308,7 +335,7 @@ def place(triton: models.Triton, scene: Scene, label: str, shp: dict, rgba: np.n
     large and what covers it, as an outline; the editor draws it there from its cutout (rgba), in the scene's lighting
     with a contact shadow (shown the points themselves, it keeps them as they are: they cover only the side first
     seen). Its depth is its points'. Returns the panorama pixels that changed and the new object's mask on the
-    panorama, and the crop panels."""
+    panorama, and the crop panels. size and steps as in render()."""
     y, x = min(int(v * scene.H), scene.H - 1), min(int(u * scene.W), scene.W - 1)
     target = scene.R @ (scene.dirs[y, x] * scene.distance[y, x]) + [0, 0, scene.frame["camera_height"]]
     xyz = shp["xyz"] + (target - shp["base"]).astype(np.float32)
@@ -322,6 +349,7 @@ def place(triton: models.Triton, scene: Scene, label: str, shp: dict, rgba: np.n
     mx, my = view[:2]
     img = cv2.remap(scene.pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
     pts = cv2.remap(mask.astype(np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
+    # The outline: the points joined across 8 px gaps, parts under 20% of the largest dropped (untuned).
     parts = cv2.findContours(cv2.dilate(pts, np.ones((9, 9), np.uint8)), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
     big = max(cv2.contourArea(c) for c in parts)
     obj = np.zeros((S, S), np.uint8)                                  # solid, however sparse the points; no strays
@@ -329,7 +357,7 @@ def place(triton: models.Triton, scene: Scene, label: str, shp: dict, rgba: np.n
     # Other objects in front of it stay as they are (not what it stands on or in: that changes with its shadow).
     lab = cv2.remap(scene.labels, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
     dist = cv2.remap(scene.distance, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
-    front = (lab > 0) & (dist < np.median(depth[mask]) - 0.05)
+    front = (lab > 0) & (dist < np.median(depth[mask]) - 0.05)        # over 5 cm nearer (untuned)
     marked = outline(img, obj)
     thing = rgba[..., :3].astype(np.float32) * (rgba[..., 3:] / 255) + 235 * (1 - rgba[..., 3:] / 255)  # on light grey
     prompt = (f"Picture 2 is picture 1 with a red outline where an object goes. Picture 3 shows the {label}. Edit "
@@ -337,12 +365,12 @@ def place(triton: models.Triton, scene: Scene, label: str, shp: dict, rgba: np.n
               "colours and material, in the scene's perspective and lighting, with a soft contact shadow where it "
               "stands. " + (f"{note.strip().rstrip('.')}. " if note.strip() else "")
               + "Keep everything else exactly as it is. Do not draw the red outline.")
-    zone = box_zone(obj, 0.5)
-    ref = ~zone if (~zone).mean() > 0.05 else cv2.dilate(obj, np.ones((61, 61), np.uint8)) == 0
+    zone = box_zone(obj, 0.5)                                         # grown by half its size, for its shadow; untuned
+    ref = ~zone if (~zone).mean() > 0.05 else cv2.dilate(obj, np.ones((61, 61), np.uint8)) == 0   # as in render()
     res, raw, diff = edit(triton, [img, marked, thing.astype(np.uint8)], prompt, img, obj, ref, steps, log, label)
     keep = changed_near(diff, zone, obj) & ~front                     # the object and its shadow
     core = keep & (obj > 0)
-    alpha = np.maximum(cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 3.0), core.astype(np.float32))
+    alpha = np.maximum(cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 3.0), core.astype(np.float32))  # 3 px, untuned
     after = (img * (1 - alpha[..., None]) + res * alpha[..., None]).astype(np.uint8)
     changed = paste(scene, res, alpha, view)
     # The new object: what the editor changed inside the outline. Its depth: its points', or their median between them.
@@ -365,7 +393,8 @@ def view_to_pano(scene: Scene, m: np.ndarray, view: tuple) -> np.ndarray:
 
 def update_depth(triton: models.Triton, scene: Scene, changed: np.ndarray, size: int = 768):
     """scene.distance for the changed pixels: per changed region, MoGe on one perspective view around it (not the
-    whole panorama), scaled to the old depth on the unchanged ring around the region."""
+    whole panorama), scaled to the old depth on the unchanged ring around the region. The ring is 20 px wide; the
+    view `size` px, crop_camera's margin 1.2, at least 30 deg (all untuned)."""
     H, W = scene.H, scene.W
     changed = cv2.dilate(changed.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0    # with the blended edge
     n, regions = cv2.connectedComponents(changed.astype(np.uint8))
@@ -394,8 +423,8 @@ def main():
     p.add_argument("--input", default="depth", help="folder in the scene with the panorama to change and its depth")
     p.add_argument("--out", help="output folder in <scene>/act (default: from the action)")
     p.add_argument("--replan", action="store_true", help="ask the VLM again instead of reusing plan.json")
-    p.add_argument("--size", type=int, default=1024, help="view size in pixels")
-    p.add_argument("--steps", type=int, default=40)
+    p.add_argument("--size", type=int, default=1024, help="view size in pixels (untuned)")
+    p.add_argument("--steps", type=int, default=40, help="image edit steps (the editor's default, untuned)")
     args = p.parse_args()
     out = args.scene / "act" / (args.out or re.sub(r"[^a-z0-9]+", "_", args.action.lower()).strip("_")[:60] or "action")
     (out / "crops").mkdir(parents=True, exist_ok=True)
@@ -422,6 +451,7 @@ def main():
     update_depth(triton, scene, changed)
 
     np.save(out / "distance.npy", scene.distance)
+    # JPEG quality 95: untuned.
     cv2.imwrite(str(out / "pano.jpg"), cv2.cvtColor(scene.pano, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 95])
     cv2.imwrite(str(out / "changed.png"), changed.astype(np.uint8) * 255)
     half = lambda a: cv2.resize(a, (scene.W // 2, scene.H // 2), interpolation=cv2.INTER_AREA)

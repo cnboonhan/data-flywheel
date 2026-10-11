@@ -27,7 +27,7 @@ from triton_endpoint import Endpoint  # noqa: E402
 
 
 def jpg(image: np.ndarray, quality: int = 95) -> bytes:
-    """An RGB image as JPEG bytes."""
+    """An RGB image as JPEG bytes (quality 95 by default, untuned)."""
     return cv2.imencode(".jpg", cv2.cvtColor(image, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
 
 
@@ -49,7 +49,8 @@ class Triton:
         return ", ".join(map(repr, (self.vlm_, self.edit_, self.depth_, self.detect_, self.segment_)))
 
     def vlm(self, text: str, image: np.ndarray | None = None, max_tokens: int = 1000) -> str:
-        """One answer from the VLM (greedy, thinking off), about the RGB image if given."""
+        """One answer from the VLM (greedy, thinking off), about the RGB image if given; at most max_tokens (1000 by
+        default, untuned)."""
         if self._tokenizer is None:
             from transformers import AutoTokenizer
             self._tokenizer = AutoTokenizer.from_pretrained(os.environ.get("VLM_TOKENIZER", "Qwen/Qwen3.5-122B-A10B"))
@@ -59,17 +60,16 @@ class Triton:
         body = {"text_input": prompt, "exclude_input_in_output": True,
                 "sampling_parameters": json.dumps({"temperature": 0, "max_tokens": max_tokens})}
         if image is not None:
-            body["image"] = [base64.b64encode(jpg(image, 92)).decode()]
+            body["image"] = [base64.b64encode(jpg(image, 92)).decode()]   # quality 92: untuned
         return self.vlm_.generate(body)["text_output"].strip()
 
     def edit(self, images: list[np.ndarray], prompt: str, steps: int = 40, seed: int = 0, cfg: float = 4.0,
-             negative: str = " ", lora: str = "", lora_scale: float = 1.0) -> np.ndarray:
-        """Qwen-Image-Edit: picture 1 edited as the prompt says (pictures 2 and 3 for reference); RGB. lora "angles"
-        turns on the camera-angle LoRA (services/triton/README.md)."""
+             negative: str = " ") -> np.ndarray:
+        """Qwen-Image-Edit: picture 1 edited as the prompt says (pictures 2 and 3 for reference); RGB. The defaults
+        are the server's (services/triton/backends/qwen_image_edit.py), untuned here."""
         out = self.edit_.infer({"images": [png(i) for i in images], "prompt": [prompt.encode()],
                                 "negative_prompt": [negative.encode()], "steps": np.array([steps], np.int32),
-                                "seed": np.array([seed], np.int32), "true_cfg_scale": np.array([cfg], np.float32),
-                                "lora": [lora.encode()], "lora_scale": np.array([lora_scale], np.float32)},
+                                "seed": np.array([seed], np.int32), "true_cfg_scale": np.array([cfg], np.float32)},
                                ["image"])["image"]
         raw = np.frombuffer(np.ravel(out)[0], np.uint8)
         return cv2.cvtColor(cv2.imdecode(raw, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
@@ -77,7 +77,7 @@ class Triton:
     def depth(self, image: np.ndarray, fov_x: float, view_size: int = 1024, merge_width: int = 0):
         """MoGe-3: metric distance per pixel and where it is valid, of a perspective view (fov_x degrees) or, with
         fov_x 0, of an equirectangular panorama (split into 20 views of view_size px, merged at merge_width; 0: its
-        own width). A panorama takes about 2 min."""
+        own width; both the server's defaults, set by depth.py). A panorama takes about 2 min."""
         out = self.depth_.infer({"image": [jpg(image)], "fov_x": np.array([fov_x], np.float32),
                                  "view_size": np.array([view_size], np.int32),
                                  "merge_width": np.array([merge_width], np.int32)}, ["distance", "mask"])
