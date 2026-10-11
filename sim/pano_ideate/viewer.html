@@ -106,7 +106,8 @@ body.placing canvas { cursor: crosshair; }
   <div><label>Edits</label><ol id="history"></ol></div>
   <div class="row"><button id="undo">Undo</button><button id="reset">Reset</button></div>
   <div><label>Session</label>
-    <div class="row"><button id="export" title="The interacted objects, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
+    <div id="sessionList" class="meter"></div>
+    <div class="row"><button id="export" title="The interacted and added objects, where each stands, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
     <div id="exportHint" class="meter"></div></div>
   <div id="add"><label for="file">Add a panorama</label>
     <input type="file" id="file" accept="image/jpeg,image/png">
@@ -119,7 +120,7 @@ body.placing canvas { cursor: crosshair; }
   <label for="action" id="actionLabel">What happens to it?</label>
   <textarea id="action" placeholder="pick it up"></textarea>
   <div id="chips" class="chips"></div>
-  <div class="row"><button id="apply" class="primary">Apply</button><button id="cancel">Cancel</button></div>
+  <div class="row"><button id="apply" class="primary">Apply</button><button id="include" title="Make it an asset of the session without changing it">Add to session</button><button id="cancel">Cancel</button></div>
   <div id="status"></div>
 </div>
 <div id="placing" hidden></div>
@@ -259,6 +260,7 @@ async function load(name, keepView, at = null) {
   step = at;
   renderHistory();
   renderStep();
+  renderSession();
 }
 
 // Looking back: the room after edit n (0: the original), read-only.
@@ -415,7 +417,7 @@ function openPlaceCard(hit, x, y) {
   $("cardKind").textContent = "from the inventory"; $("cardKind").style.color = "var(--muted)";
   $("actionLabel").textContent = "Anything about how it stands? (optional)";
   $("action").value = ""; $("action").placeholder = "upright, facing the room";
-  $("chips").innerHTML = ""; $("apply").textContent = "Place";
+  $("chips").innerHTML = ""; $("apply").textContent = "Place"; $("include").hidden = true;
   setStatus(""); showCard(x, y);
 }
 function openCard(id, x, y) {
@@ -432,6 +434,9 @@ function openCard(id, x, y) {
     b.onclick = () => { $("action").value = s; $("action").focus(); };
     $("chips").append(b);
   }
+  $("include").hidden = false;
+  $("include").disabled = o.session === "interacted";
+  $("include").textContent = { interacted: "In the session", included: "Remove from session" }[o.session] || "Add to session";
   setStatus(""); showCard(x, y);
 }
 function closeCard() { $("card").hidden = true; selected = 0; target = null; }
@@ -495,6 +500,24 @@ $("apply").onclick = async () => {
   } catch (err) { setStatus(`The edit failed: ${err.message}`, true); }
   finally { $("apply").disabled = false; }
 };
+$("include").onclick = async () => {
+  const id = selected, o = objectOf(id);
+  if (!o) return;
+  $("include").disabled = true;
+  try {
+    await post("include", { id: id - 1, on: o.session !== "included" });
+    await load(S.name, true);
+    closeCard();
+  } catch (err) { setStatus(`Failed: ${err.message}`, true); }
+  finally { $("include").disabled = false; }
+};
+function renderSession() {
+  const os = Object.values(S.meta.objects), names = (w) => os.filter((o) => o.session === w).map((o) => o.label);
+  const acted = S.meta.session_assets, added = names("included");
+  $("sessionList").textContent = acted || added.length
+    ? `Assets: ${acted} interacted${added.length ? `, added: ${added.join(", ")}` : ""}.`
+    : "Act on objects, or click one and Add to session.";
+}
 $("export").onclick = async () => {
   $("export").disabled = true;
   try {

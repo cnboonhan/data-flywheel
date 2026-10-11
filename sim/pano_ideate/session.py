@@ -7,14 +7,18 @@ sim/colmap_splat (the background).
 
     uv run sim/pano_ideate/session.py datasets/pano_ideate/<scene>          # -> <scene>/session.zip
 
-Reads the viewer's record (<scene>/edits/). The objects interacted with (picked up, placed, opened or closed) are
-erased from the room as it is now, nearby ones together in one image edit (act.py's removal, on Triton), so the
-background holds only what the simulation does not add as an asset. The zip:
+Reads the viewer's record (<scene>/edits/). The objects interacted with (picked up, placed, opened or closed) and
+those added to the session without an interaction (the viewer's "Add to session") are the assets: they are erased
+from the room as it is now, nearby ones together in one image edit (act.py's removal, on Triton), so the background
+holds only what the simulation adds as an asset. The zip:
 
     scene.json                     the scene frame (depth/frame.json): z up, metres, origin on the floor below the
                                    capture point; the panorama's size
     interactions.json              the interactions in order: what was picked up, placed, opened or closed, the asset
                                    it concerns, positions (scene frame) and states
+    layout.json                    where each asset is now, from the origin (scene frame, metres): x, y of its centre
+                                   on the floor plane, null for one picked up and not placed again (then where it was
+                                   last seen); no height, which one view cannot tell when its bottom is hidden
     background/pano.jpg            the room as it is now, the interacted objects erased
     background/distance.npy        its metric distance per pixel (float32)
     room/pano.jpg                  the room as it is now, as seen in the viewer
@@ -81,7 +85,7 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
     """Write the session zip (see the module docstring); out defaults to <scene>/session.zip."""
     edits = path / "edits"
     if not (edits / "state.json").exists():
-        raise ValueError("Nothing to export yet: act on some objects first.")
+        raise ValueError("Nothing to export yet: act on some objects or add them to the session first.")
     state = json.loads((edits / "state.json").read_text())
     scene = act.Scene(path)
     scene.pano = cv2.cvtColor(cv2.imread(str(edits / "pano.png")), cv2.COLOR_BGR2RGB)
@@ -89,14 +93,20 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
     scene.labels = np.load(edits / "labels.npy")
     scene.objects = {int(k): o for k, o in state["objects"].items()}
     room = scene.pano.copy()
-    memory = state["memory"]
-    names = {n: asset_name(n, e["label"]) for n, e in enumerate(memory)}
-
-    # Erase what was interacted with and is still in the room.
     present = set(np.unique(scene.labels).tolist()) - {0}
+    memory = [{**e, "saved": {m: dict(np.load(edits / "memory" / f)) for m, f in e["saved"].items()},
+               "views": [(edits / "inventory" / v).read_bytes() for v in e.get("views", [])]} for e in state["memory"]]
+    known = {k for e in memory for k in e["ids"]}
+    for k in sorted(set(state.get("include", [])) - known):      # added without an interaction: as it looks now
+        if k + 1 in present:
+            memory.append(as_seen(scene, k))
+    names = {n: asset_name(n, e["label"]) for n, e in enumerate(memory)}
+    layout = [{"asset": names[n], **where(scene, e)} for n, e in enumerate(memory)]
+
+    # Erase the assets still in the room.
     erase = sorted({k for e in memory for k in e["ids"] if k + 1 in present})
-    log(f"{path.name}: erasing {len(erase)} interacted objects")
-    clear(triton, scene, erase, log=log, progress=lambda d, t: progress("Erasing the interacted objects", d, t))
+    log(f"{path.name}: erasing {len(erase)} objects")
+    clear(triton, scene, erase, log=log, progress=lambda d, t: progress("Erasing the objects", d, t))
 
     progress("Packing the session", 0, 1)
     out = out or path / "session.zip"
@@ -115,6 +125,10 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
                        "articulated": [names[n] for n, e in enumerate(memory) if e["kind"] == "articulated"]}},
             indent=1))
         z.writestr("interactions.json", json.dumps(interactions(state, names), indent=1))
+        z.writestr("layout.json", json.dumps({
+            "frame": "z up, metres, origin on the floor below the capture point (scene.json)",
+            "position": "x, y of the asset's centre (no height); null when it was picked up and not placed again",
+            "assets": layout}, indent=1))
         z.writestr("background/pano.jpg", enc(scene.pano).tobytes())
         buf = io.BytesIO()
         np.save(buf, scene.distance.astype(np.float32))
@@ -122,24 +136,53 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
         z.writestr("room/pano.jpg", enc(room).tobytes())
         for n, e in enumerate(memory):
             base = f"{'objects' if e['kind'] == 'movable' else 'articulated'}/{names[n]}/"
-            saved = {m: dict(np.load(edits / "memory" / f)) for m, f in e["saved"].items()}
-            info = {"label": e["label"], "kind": e["kind"], "size_m": e["size"], "ids": e["ids"],
-                    "current": e["current"]}
+            info = {"label": e["label"], "kind": e["kind"], "size_m": e["size"], "ids": sorted(e["ids"]),
+                    "current": e["current"], "interacted": e.get("interacted", True)}
             if e["kind"] == "movable":
-                for k, v in enumerate(e.get("views", [])):
-                    z.write(edits / "inventory" / v, f"{base}views/{k}.png")
-                if "shape" in saved:
-                    z.writestr(base + "shape.npz", npy(**saved["shape"]))
-                    info["last_seen_base"] = [round(float(v), 3) for v in saved["shape"]["base"]]
+                for k, v in enumerate(e["views"]):
+                    z.writestr(f"{base}views/{k}.png", v)
+                if "shape" in e["saved"]:
+                    z.writestr(base + "shape.npz", npy(**e["saved"]["shape"]))
+                    info["last_seen_base"] = [round(float(v), 3) for v in e["saved"]["shape"]["base"]]
                 info["in_room"] = e["current"] != "picked up"
             else:
-                info["states"] = sorted(saved)
-                for m, a in saved.items():
+                info["states"] = sorted(e["saved"])
+                for m, a in e["saved"].items():
                     z.writestr(f"{base}{m}.npz", npy(**a))
                     z.writestr(f"{base}{m}.jpg", enc(state_view(room, a, scene.W)).tobytes())
             z.writestr(base + "info.json", json.dumps(info, indent=1))
     log(f"{len(memory)} assets, {len(state['history'])} interactions -> {out}")
     return out
+
+
+def as_seen(scene: act.Scene, k: int) -> dict:
+    """A memory entry (serve.py's) for object k as it looks now, for one added without an interaction."""
+    o = scene.objects[k]
+    e = {"ids": [k], "kind": o["kind"], "label": o["label"], "size": o.get("size"), "current": None,
+         "interacted": False, "views": []}
+    if o["kind"] == "movable":
+        e["saved"] = {"shape": act.shape(scene, [k])}
+        e["views"] = [cv2.imencode(".png", cv2.cvtColor(act.cutout(scene, [k]), cv2.COLOR_RGBA2BGRA))[1].tobytes()]
+    else:
+        idx = np.flatnonzero(scene.labels == k + 1)
+        e["current"] = "as_seen"
+        e["saved"] = {"as_seen": {"idx": idx, "pano": scene.pano.reshape(-1, 3)[idx],
+                                  "distance": scene.distance.reshape(-1)[idx], "labels": scene.labels.reshape(-1)[idx]}}
+    return e
+
+
+def where(scene: act.Scene, e: dict) -> dict:
+    """Where an asset is now (layout.json): x, y of its centre in the scene frame, from the origin."""
+    r = lambda v: [round(float(c), 3) for c in v[:2]]
+    entry = {"label": e["label"], "kind": e["kind"], "interacted": e.get("interacted", True)}
+    if e["kind"] == "movable":
+        base = r(e["saved"]["shape"]["base"]) if "shape" in e["saved"] else None
+        if e["current"] == "picked up":
+            return {**entry, "position": None, "last_seen": base, "size_m": e["size"]}
+        return {**entry, "position": base, "size_m": e["size"]}
+    k = min(e["ids"])
+    c, size = scene.objects[k]["center"], scene.objects[k].get("size")
+    return {**entry, "position": r(c), "size_m": size, "state": e["current"]}
 
 
 def interactions(state: dict, names: dict) -> list[dict]:

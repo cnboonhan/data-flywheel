@@ -3,7 +3,7 @@
 Work out the interactions a scene needs from one equirectangular panorama: walk around it in the browser, pick objects up, put them back, open and close doors and drawers, and see each end state rendered. Then download the session and turn it into simulation assets:
 
 1. Open the viewer, upload a panorama, act on its objects (below).
-2. Click **Download session**: `<scene>_session.zip` holds the interacted objects as last seen (every view, their 3D points, each state of an articulated one), the room with them erased, and `interactions.json`, the interactions in order.
+2. Click **Download session**: `<scene>_session.zip` holds the session's assets (the objects you interacted with or added) as last seen (every view, their 3D points, each state of an articulated one), `layout.json` (where each stands on the floor plane, from the origin), the room with them erased, and `interactions.json`, the interactions in order.
 3. Generate the objects with [`asset_gen`](../asset_gen/README.md).
 4. Generate the background splat with [`colmap_splat`](../colmap_splat/README.md#from-a-pano_ideate-session).
 
@@ -34,12 +34,14 @@ uv run sim/pano_ideate/serve.py
 - **Act:** hover to see an object (movable in orange, articulated in cyan), click it and type what happens ("pick it up", "open it"). Expect about 30 s per rendered change, 1 s for a state seen before.
 - **Inventory:** what you pick up waits there; pick an item, click where it goes, and it is placed (about 35 s).
 - **Edits:** stack, step back through them (click one, or `[` and `]`), Undo, Reset.
-- **Download session** in the panel: the zip for steps 3 and 4 above. It erases the interacted objects still in the room first (about 30 s each, nearby ones together).
+- **Add to session** on an object's card makes it an asset without acting on it: it is erased from the background and generated like the interacted ones. Click again to take it out.
+- **Download session** in the panel: the zip for steps 3 and 4 above. It erases the session's objects still in the room first (about 30 s each, nearby ones together).
 
 Notes:
 - Each scene's state is saved to `<scene>/edits/` after every edit and resumed on restart; Reset deletes it. `session.py <scene>` writes the session zip from it without the viewer.
 - An articulated object remembers each state's view, contents included: close the fridge with a bowl inside, open it, and the bowl is there. Changes made in that area while it was in the other state are lost.
 - `--host 0.0.0.0` serves other machines; `--radius` changes the walking limit.
+- `layout.json` gives each asset's position as x, y in the scene frame (below), without a height: one view cannot tell it when an object's bottom is hidden. Stand each asset on the surface below it.
 
 ## Run the steps from the command line
 

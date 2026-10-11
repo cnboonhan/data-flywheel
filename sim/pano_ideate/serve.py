@@ -27,8 +27,8 @@ included; going back to a state it has been in restores that instead of renderin
 close it, open it: the bowl is there). Edits stack; Undo and Reset go back. The state is saved to <scene>/edits/
 after every edit and picked up again on restart (pano.png, distance.npy, labels.npy, state.json, memory/, inventory/,
 masks/, crops/, and steps/<n>/: the viewer's files after each edit, so its Edits list can show any step).
-Download session packs it for the assets (session.py): the interacted objects, the room without them, the
-interactions in order; sim/asset_gen makes the objects from it, sim/colmap_splat the background.
+Download session packs it for the assets (session.py): the interacted objects and those added with "Add to session"
+(the object's card), where each stands, the room without them, the interactions in order; sim/asset_gen makes the objects from it, sim/colmap_splat the background.
 """
 
 import argparse
@@ -165,7 +165,8 @@ def scene_names():
 # --- State: the scene, what was removed, the inventory, the history, and each object's memory -----------------------
 # memory: one entry per physical object, {"ids", "kind", "label", "size", "current", "saved": {mode: arrays}}; a
 # movable object's one mode is "shape" (xyz, rgb, base), an articulated object's modes are its states (idx, pano,
-# distance, labels: its area on the panorama). Saved arrays are never modified, only replaced.
+# distance, labels: its area on the panorama). Saved arrays are never modified, only replaced. include: the ids of
+# objects added to the session without an interaction (not an edit: undo keeps it).
 
 def snapshot(st) -> dict:
     sc = st["scene"]
@@ -186,7 +187,8 @@ def state(name: str) -> dict:
     if name in states:
         return states[name]
     sc = act.Scene(args.root / name)
-    st = {"scene": sc, "removed": set(), "inventory": [], "history": [], "memory": [], "undo": [], "version": 0}
+    st = {"scene": sc, "removed": set(), "inventory": [], "history": [], "memory": [], "include": set(), "undo": [],
+          "version": 0}
     st["original"] = snapshot(st)
     out = sc.path / "edits"
     if (out / "state.json").exists():                      # carry on where the last session stopped
@@ -196,6 +198,7 @@ def state(name: str) -> dict:
         sc.labels = np.load(out / "labels.npy")
         sc.objects = {int(k): o for k, o in saved["objects"].items()}
         st["removed"], st["inventory"], st["history"] = set(saved["removed"]), saved["inventory"], saved["history"]
+        st["include"] = set(saved.get("include", []))
         st["memory"] = [{**e, "ids": set(e["ids"]),
                          "saved": {m: dict(np.load(out / "memory" / f)) for m, f in e["saved"].items()}}
                         for e in saved["memory"]]
@@ -221,7 +224,8 @@ def save(st):
         memory.append({**e, "ids": sorted(e["ids"]), "saved": files})
     (out / "state.json").write_text(json.dumps({
         "objects": {str(k): o for k, o in sc.objects.items()}, "removed": sorted(st["removed"]),
-        "inventory": st["inventory"], "history": st["history"], "memory": memory}, indent=1))
+        "inventory": st["inventory"], "history": st["history"], "memory": memory, "include": sorted(st["include"])},
+        indent=1))
 
 
 def memory_of(st, ids, kind, label, size=None):
@@ -247,12 +251,29 @@ def remember_view(st, n, e, ids):
     cv2.imwrite(str(out / f"{n}.png"), cut)
 
 
+def include(name, k, on):
+    """Add an object to the session without interacting with it, or take it out again."""
+    st = state(name)
+    with lock(name):
+        if in_session(st, k) != "interacted":
+            (st["include"].add if on else st["include"].discard)(k)
+        save(st)
+        st["version"] += 1
+
+
+def in_session(st, k):
+    """Why object k is in the session: "interacted", "included" or None."""
+    if any(k in e["ids"] for e in st["memory"]):
+        return "interacted"
+    return "included" if k in st["include"] else None
+
+
 def export_session(name, job):
     """The session zip (session.py): the interactions, the interacted objects, the room without them."""
     st = state(name)
     with lock(name):
         save(st)
-        stages = {"Erasing the interacted objects": "erase", "Packing the session": "pack"}
+        stages = {"Erasing the objects": "erase", "Packing the session": "pack"}
         f = session.export(st["scene"].path, triton, log=log,
                            progress=lambda stage, done, total: job.enter(stages[stage], stage, done, total))
     return {"file": f.name}
@@ -294,8 +315,10 @@ def files(st, what):
             "R": sc.frame["R_moge_to_level"], "camera_height": sc.frame["camera_height"], "radius": args.radius,
             "jump": args.jump, "version": st["version"], "history": st["history"],
             "inventory": [{"item": i, "label": st["memory"][i]["label"]} for i in st["inventory"]],
+            "session_assets": len(st["memory"]),
             "objects": {k: {"label": o["label"], "kind": o["kind"],
-                            "mode": next((e["current"] for e in st["memory"] if k in e["ids"]), None)}
+                            "mode": next((e["current"] for e in st["memory"] if k in e["ids"]), None),
+                            "session": in_session(st, k)}
                         for k, o in interactable(st).items()},
         }).encode(), "application/json"
     raise KeyError(what)
@@ -459,6 +482,7 @@ def back(name, reset):
         if reset:
             restore(st, st["original"])
             st["original"] = snapshot(st)
+            st["include"] = set()
             st["undo"] = []
             shutil.rmtree(st["scene"].path / "edits", ignore_errors=True)
         elif st["undo"]:
@@ -537,6 +561,12 @@ class Handler(BaseHTTPRequestHandler):
                 job = start(f"{state(name)['scene'].objects[k]['label']}: {action}", ["plan", "edit", "depth", "save"],
                             lambda job: act_on(name, k, action, job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
+            if what == "include":
+                k = int(body["id"])
+                if k not in interactable(state(name)):
+                    return self.fail("That object is no longer in the room.", 400)
+                include(name, k, bool(body.get("on", True)))
+                return self.reply(b"{}", "application/json")
             if what == "export":
                 job = start(f"Session of {name}", ["erase", "pack"], lambda job: export_session(name, job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
