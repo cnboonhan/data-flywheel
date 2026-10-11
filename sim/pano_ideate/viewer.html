@@ -117,8 +117,10 @@ body.placing canvas { cursor: crosshair; }
 <div id="tip" hidden></div>
 <div id="card" class="panel" hidden>
   <div><h2 id="cardLabel"></h2><span id="cardKind" class="kind"></span></div>
-  <label for="action" id="actionLabel">What happens to it?</label>
+  <label for="action" id="actionLabel">Action (recorded)</label>
   <textarea id="action" placeholder="pick it up"></textarea>
+  <label for="director" id="directorLabel">Director prompt (optional): what changes in the image</label>
+  <textarea id="director" placeholder="erase it"></textarea>
   <div id="chips" class="chips"></div>
   <div class="row"><button id="apply" class="primary">Apply</button><button id="include" title="Make it an asset of the session without changing it">Add to session</button><button id="cancel">Cancel</button></div>
   <div id="status"></div>
@@ -418,14 +420,16 @@ function openPlaceCard(hit, x, y) {
   target = hit; selected = 0;
   $("cardLabel").textContent = `Place the ${placing.label} here`;
   $("cardKind").textContent = "from the inventory"; $("cardKind").style.color = "var(--muted)";
-  $("actionLabel").textContent = "Anything about how it stands? (optional)";
-  $("action").value = ""; $("action").placeholder = "upright, facing the room";
+  $("actionLabel").textContent = "Action (recorded)";
+  $("action").value = ""; $("action").placeholder = `put the ${placing.label} here`;
+  $("director").value = ""; $("director").placeholder = "upright, facing the room (optional)";
   $("chips").innerHTML = ""; $("apply").textContent = "Place"; $("include").hidden = true;
   setStatus(""); showCard(x, y);
 }
 function openCard(id, x, y) {
   selected = id; target = null;
-  $("actionLabel").textContent = "What happens to it?"; $("apply").textContent = "Apply";
+  $("actionLabel").textContent = "Action (recorded)"; $("apply").textContent = "Apply";
+  $("director").value = ""; $("director").placeholder = "e.g. erase it (optional; else planned from the action)";
   const o = objectOf(id);
   $("cardLabel").textContent = o.label;
   $("cardKind").textContent = o.kind;
@@ -445,7 +449,8 @@ function openCard(id, x, y) {
 function closeCard() { $("card").hidden = true; selected = 0; target = null; }
 function setStatus(t, error) { $("status").textContent = t; $("status").className = error ? "error" : ""; }
 $("cancel").onclick = closeCard;
-$("action").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("apply").click(); } });
+for (const f of ["action", "director"])
+  $(f).addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("apply").click(); } });
 
 // Waiting: an overlay with a progress bar; its fraction from a job on the server, or moving while unknown.
 function showBusy(title, text = "", progress = null) {
@@ -480,10 +485,10 @@ async function post(path, body) {
 }
 $("apply").onclick = async () => {
   if (target && placing) {
-    const it = placing, note = $("action").value.trim();
+    const it = placing, action = $("action").value.trim() || $("action").placeholder, director = $("director").value.trim();
     $("apply").disabled = true;
     try {
-      const { job } = await post("place", { item: it.item, u: target.u, v: target.v, note });
+      const { job } = await post("place", { item: it.item, u: target.u, v: target.v, action, director });
       await waitJob(job, `Placing the ${it.label}`);
       startPlacing(null);
       await busy("Loading the result…", () => load(S.name, true));
@@ -496,7 +501,7 @@ $("apply").onclick = async () => {
   if (!o) return;
   $("apply").disabled = true;
   try {
-    const { job } = await post("act", { id: selected - 1, action });
+    const { job } = await post("act", { id: selected - 1, action, director: $("director").value.trim() });
     await waitJob(job, `${o.label}: ${action}`);
     await busy("Loading the result…", () => load(S.name, true));
     closeCard();

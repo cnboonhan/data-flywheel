@@ -216,24 +216,26 @@ def where(scene: act.Scene, e: dict) -> dict:
 
 
 def interactions(state: dict, names: dict) -> list[dict]:
-    """The history as steps a simulation can replay: pick up, place, set an articulated object's state."""
+    """The history as steps a simulation can replay: pick up, place, set an articulated object's state. Each carries
+    what was said (the action) and, when given, the director prompt the image was edited with."""
     steps = []
     for h in state["history"]:
+        said = {"said": h["action"], **({"director": h["director"]} if h.get("director") else {})}
         if h["what"] == "place":
             steps.append({"type": "place", "asset": names.get(h.get("memory")), "label": h["label"],
-                          "position": h.get("position"), "said": h["action"]})
+                          "position": h.get("position"), **said})
             continue
         for c in h["changes"]:
             n = c.get("memory")
             if c["after"].strip().lower().rstrip(".") == "remove":
                 steps.append({"type": "pick_up", "asset": names.get(n), "label": c["object"],
-                              "position": c.get("position"), "said": h["action"]})
+                              "position": c.get("position"), **said})
             elif c.get("state_after"):
                 steps.append({"type": "set_state", "asset": names.get(n), "label": c["object"],
-                              "from": c.get("state_before"), "to": c["state_after"], "said": h["action"],
+                              "from": c.get("state_before"), "to": c["state_after"], **said,
                               "restored": c.get("restored", False)})
             else:
-                steps.append({"type": "change", "label": c["object"], "after": c["after"], "said": h["action"]})
+                steps.append({"type": "change", "label": c["object"], "after": c["after"], **said})
     return [{"step": i + 1, **s} for i, s in enumerate(steps)]
 
 

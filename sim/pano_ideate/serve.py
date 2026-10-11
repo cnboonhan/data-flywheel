@@ -13,9 +13,12 @@ the movable and articulated objects. Add a panorama from the viewer: it runs ste
 few minutes, mostly on the server) and opens it. The viewer builds a mesh from the depth (leaving out triangles across
 depth jumps, a far sphere of the panorama behind them) and keeps the eye within --radius of the capture point, at the
 capture height, marked by a circle on the floor: a single panorama shows nothing behind objects, so further away holes
-and stretched surfaces appear. Hovering highlights an object; clicking it asks for an action. The edit is act.py's:
-the VLM plans it from the action and the clicked object (which objects change, all ids of each, their end state, and
-an articulated object's state before and after), the image editor renders it and MoGe updates the depth (~30 s).
+and stretched surfaces appear. Hovering highlights an object; clicking it asks for an action, recorded as said, and
+optionally a director prompt, what the image shows changing ("bin lid opens, revealing an empty interior"), which goes
+to the image editor as it is (the VLM only reads whether it removes the object or which state it leaves it in). Without
+one the edit is act.py's plan: the VLM works it out from the action and the clicked object (which objects change, all
+ids of each, their end state, and an articulated object's state before and after). The image editor renders it and
+MoGe updates the depth (~30 s).
 Long operations run as jobs whose progress the viewer shows.
 
 Each edit's result is the new current panorama. Every object has a memory of how it was last seen, in 3D, per mode.
@@ -357,7 +360,33 @@ def word(s):
     return SAME.get(s, s) or None
 
 
-def act_on(name, k, action, job):
+# Reading a director prompt: whether it takes the object out of view, or changes its state (one word each side, for
+# the state memory). The prompt itself goes to the image editor unchanged.
+DIRECTOR = ("An image edit is described as: \"{director}\". It concerns the {label} in a photo. Answer JSON: "
+            "{{\"removed\": true if the edit takes the {label} out of view (erases it, picks it up, takes it away), "
+            "else false, \"state_before\": one word for the {label}'s state before if the edit changes its state (for "
+            "example closed), else null, \"state_after\": one word for its state after (for example open), else "
+            "null}}.")
+
+
+def direct(sc, k: int, director: str) -> list[dict]:
+    """The change a director prompt describes for object k, as act.plan's changes: the prompt is the edit."""
+    label = sc.objects[k]["label"]
+    answer = triton.vlm(DIRECTOR.format(director=director, label=label), max_tokens=60)
+    try:
+        read = json.loads(answer[answer.index("{"):answer.rindex("}") + 1])
+    except ValueError:
+        read = {}
+    c = {"ids": [k], "labels": [label], "object": f"the {label}",
+         "after": "remove" if read.get("removed") else director.strip()}
+    if not read.get("removed") and read.get("state_after"):
+        c["state_before"], c["state_after"] = read.get("state_before"), read["state_after"]
+    return [c]
+
+
+def act_on(name, k, action, director, job):
+    """An action on object k: recorded as said; the edit is the director prompt when given, else the VLM's plan from
+    the action."""
     st = state(name)
     sc = st["scene"]
     o = sc.objects[k]
@@ -366,7 +395,7 @@ def act_on(name, k, action, job):
              f"{np.hypot(x, y):.1f} m; change other objects only if the action itself changes them)")
     with lock(name):
         job.enter("plan", "Working out what changes")
-        changes = act.plan(triton, sc, where)
+        changes = direct(sc, k, director) if director else act.plan(triton, sc, where)
         keep_step(st, len(st["history"]))
         st["undo"].append(snapshot(st))
         crops = []
@@ -427,7 +456,7 @@ def act_on(name, k, action, job):
         for e, after, idx in new_modes:                  # with its new depth
             e["saved"][after] = area(sc, idx)
         job.enter("save", "Saving")
-        st["history"].append({"what": "act", "id": k, "label": o["label"], "action": action,
+        st["history"].append({"what": "act", "id": k, "label": o["label"], "action": action, "director": director,
                               "changes": [{"object": c["object"], "ids": c["ids"], "after": c["after"],
                                            "restored": c.get("restored", False),
                                            **{f: c[f] for f in ("memory", "position", "state_before", "state_after")
@@ -439,7 +468,8 @@ def act_on(name, k, action, job):
     return st["history"][-1]
 
 
-def place_item(name, n, u, v, note, job):
+def place_item(name, n, u, v, action, director, job):
+    """Put inventory item n where (u, v) is: the director prompt tells the editor how it stands there."""
     st = state(name)
     sc = st["scene"]
     e = st["memory"][n]
@@ -449,7 +479,7 @@ def place_item(name, n, u, v, note, job):
         job.enter("place", f"Placing the {e['label']}")
         rgba = cv2.cvtColor(cv2.imread(str(sc.path / "edits" / "inventory" / f"{n}.png"), cv2.IMREAD_UNCHANGED),
                             cv2.COLOR_BGRA2RGBA)
-        changed, mask, panels = act.place(triton, sc, e["label"], e["saved"]["shape"], rgba, u, v, note,
+        changed, mask, panels = act.place(triton, sc, e["label"], e["saved"]["shape"], rgba, u, v, director,
                                                steps=args.steps, log=log)
         if not mask.any():
             restore(st, st["undo"].pop())
@@ -471,7 +501,7 @@ def place_item(name, n, u, v, note, job):
         st["inventory"] = [i for i in st["inventory"] if i != n]
         st["history"].append({"what": "place", "id": k, "label": e["label"], "memory": n,
                               "position": [round(float(v), 3) for v in e["saved"]["shape"]["base"]],
-                              "action": "place it here" + (f" ({note})" if note else ""), "changes": [],
+                              "action": action or "place it here", "director": director, "changes": [],
                               "crops": [f"{len(st['history']) + 1}_{k}.jpg"]})
         (sc.path / "edits" / "crops").mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(sc.path / "edits" / "crops" / st["history"][-1]["crops"][0]),
@@ -562,10 +592,11 @@ class Handler(BaseHTTPRequestHandler):
             name, what = path[1], path[2]
             if what == "act":
                 k, action = int(body["id"]), str(body["action"]).strip()
+                director = str(body.get("director", "")).strip()
                 if not action or k not in interactable(state(name)):
                     return self.fail("Pick an object and describe what happens to it.", 400)
                 job = start(f"{state(name)['scene'].objects[k]['label']}: {action}", ["plan", "edit", "depth", "save"],
-                            lambda job: act_on(name, k, action, job))
+                            lambda job: act_on(name, k, action, director, job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what == "include":
                 k = int(body["id"])
@@ -581,7 +612,8 @@ class Handler(BaseHTTPRequestHandler):
                 if n not in state(name)["inventory"]:
                     return self.fail("That item is no longer in the inventory.", 400)
                 job = start("Placing", ["place", "save"],
-                            lambda job: place_item(name, n, u, v, str(body.get("note", "")), job))
+                            lambda job: place_item(name, n, u, v, str(body.get("action", "")).strip(),
+                                                   str(body.get("director", body.get("note", ""))).strip(), job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what in ("undo", "reset"):
                 back(name, what == "reset")

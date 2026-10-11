@@ -2,7 +2,7 @@
 
 Turn one 360° photo of a room into a simulation scene: act on its objects in the browser, then generate them as textured rigid bodies and the room around them as a Gaussian splat.
 
-![pano_ideate end to end: throw the cup in the bin, open the bin to see it, add the heater, download the session](../../assets/pano_ideate/e2e.gif)
+![pano_ideate end to end: pick up the cup, open the bin lid, put the cup in the bin, close the bin lid, download the session](../../assets/pano_ideate/e2e.gif)
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,14 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
    ```bash
    uv run sim/pano_ideate/serve.py
    ```
-3. Click objects and say what happens ("throw it in the bin", "open its lid"); **Add to session** keeps one as it is. Then **Download session**.
+3. Click an object and give two prompts: the **action** (recorded in the session: "open the bin lid") and the **director prompt**, what the image editor changes ("bin lid opens, revealing an empty interior"; leave it empty and the VLM plans the edit from the action). **Add to session** keeps an object as it is. Then **Download session**.
+
+   | Action | Director prompt |
+   |---|---|
+   | pick up the cup | erase the cup |
+   | open the bin lid | bin lid opens, revealing an empty interior |
+   | put the cup in the bin (from the inventory) | paint cup in the bin from the inventory |
+   | close the bin lid | bin lid is closed, hiding the cup from view |
 4. Generate the objects, ticking them in the checklist (~4 min each; [asset_gen](../asset_gen/README.md)).
    ```bash
    uv run sim/asset_gen/objects.py <scene>_session.zip
@@ -38,7 +45,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
 |---|---|---|
 | Objects | `datasets/asset_gen/<scene>/objects/<asset>/model.usda` | a textured rigid body, origin at the centre of its base |
 | Layout | `layout.json` in the zip | each object's x, y now (null if picked up and not put back) |
-| Interactions | `interactions.json` in the zip | pick-ups, placements, state changes, in order |
+| Interactions | `interactions.json` in the zip | pick-ups, placements, state changes, in order, each with its action and director prompt |
 | Background | `datasets/colmap_splat/<scene>/runs/.../scene.usda` | the room without the objects |
 
 All in the scene frame: z up, metres, origin on the floor below the capture point.
@@ -65,8 +72,8 @@ Leave a variable unset for the default model on the flywheel Triton (`triton.$SE
 | Do | How | Expect |
 |---|---|---|
 | Look, move, zoom | drag; WASD or arrows; scroll | within 0.4 m of the capture point (the circle; `--radius`): further, holes show |
-| Act on an object | hover (movable orange, articulated cyan), click, type what happens | ~30 s; ~1 s for a state seen before |
-| Put back | pick it in the inventory, click where it goes | ~35 s |
+| Act on an object | hover (movable orange, articulated cyan), click, type the action and the director prompt | ~30 s; ~1 s for a state seen before |
+| Put back | pick it in the inventory, click where it goes, type the action and how it stands there | ~35 s |
 | Keep an object as it is | its card: **Add to session** (again to take it out) | erased and generated like the others |
 | Step through edits | click one, or `[` `]`; Undo, Reset | |
 | Download session | the panel | ~30 s per group of nearby objects erased, plus a retry for each still seen |
