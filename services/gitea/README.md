@@ -46,4 +46,4 @@ git -c http.sslCAInfo=flywheel-ca.crt clone https://$SERVICE_HOST:$CADDY_PORT/gi
 - **Secrets:** `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `MLFLOW_TOKEN`, and `HF_TOKEN` and `RERUN_RAW_TOKEN` when they are set in `services/.env`. `ctl.sh up` keeps them in sync.
 - **Variables:** `RERUN_BASE`, `SERVICE_URL`, `MLFLOW_USERNAME`, `STATE_DIR`, `FLYWHEEL_ROOT`, `USER_LOCAL`, `RUN_UID`, `RUN_GID`.
 - **Helper scripts:** setup and adapter scripts are in the repo under `setup/` and `adapter/`.
-- **Triggers:** use `workflow_dispatch`, `push` or `schedule`. Nothing can fire on new objects in a bucket yet (the gateway could post bucket events to a webhook).
+- **Triggers:** use `workflow_dispatch` or `push`; a `schedule` fills the Actions list with runs, each titled with the last commit message whatever its workflow. Nothing can fire on new objects in a bucket yet (the gateway could post bucket events to a webhook).

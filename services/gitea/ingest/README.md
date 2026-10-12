@@ -5,7 +5,7 @@ Upload and Sync: brings data and models into the store.
 | Workflow | Does |
 |---|---|
 | `download-datasets-hf` | a Hugging Face dataset (or subset, or a bucket with `source: bucket`) → `raw/open_datasets/<dest>/`, file by file, resumable; known datasets in the header |
-| `sync-fiftyone-raw` | `raw/` → FiftyOne datasets `raw/<group>/<name>`, every 30 min, read-only and incremental ([fiftyone/](../../fiftyone/README.md)) |
+| `sync-fiftyone-raw` | `raw/` → FiftyOne datasets `raw/<group>/<name>`, on dispatch, read-only and incremental ([fiftyone/](../../fiftyone/README.md)) |
 | `download-models-hf` | a Hugging Face model → MLflow registry (artifacts in the `mlflow` bucket, experiment `hf-models`, version tagged with the hub commit); known models in the header |
 
 1. Run one as described in [gitea/](../README.md#run-a-workflow); each workflow's header lists its inputs and the known repos.

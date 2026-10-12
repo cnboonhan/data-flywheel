@@ -9,7 +9,7 @@ Triton Inference Server on all GPUs of the service node (`SERVICE_NODE` in [`.en
    mlflow.MlflowClient().set_registered_model_alias("ACT.arx_x5.RoboDojo.stack_bowls", "triton", "3")
    mlflow.MlflowClient().delete_registered_model_alias("ACT.arx_x5.RoboDojo.stack_bowls", "triton")
    ```
-2. Wait for the Gitea workflow `sync-triton` (every 10 min), or dispatch it ([how](../gitea/README.md)). It packages the version into `s3://triton/models/<name>/<version>/`, loads it and runs a test inference.
+2. Dispatch the Gitea workflow `sync-triton` ([how](../gitea/README.md)). It packages the version into `s3://triton/models/<name>/<version>/`, loads it and runs a test inference.
 3. Check the outcome in [Tracking](#tracking).
 
 ## Call a model

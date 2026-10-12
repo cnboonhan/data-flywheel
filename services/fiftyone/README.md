@@ -1,6 +1,6 @@
 # fiftyone
 
-FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea workflow [`sync-fiftyone-raw`](../gitea/ingest/sync-fiftyone-raw.yml) mirrors `raw` every 30 minutes: each `raw/<group>/<name>/` becomes the dataset `raw/<group>/<name>`, with samples pointing at the raw files (nothing is converted or copied).
+FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea workflow [`sync-fiftyone-raw`](../gitea/ingest/sync-fiftyone-raw.yml) mirrors `raw` when dispatched: each `raw/<group>/<name>/` becomes the dataset `raw/<group>/<name>`, with samples pointing at the raw files (nothing is converted or copied).
 
 | Raw layout | Dataset |
 |---|---|
@@ -13,7 +13,7 @@ FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea
 ## Use
 
 1. Open `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` in Chrome (Safari fails to load MCAP streams), sign in, and pick a `raw/...` dataset.
-2. To see new data sooner than the next scheduled sync, dispatch `sync-fiftyone-raw` with input `datasets`, a glob such as `internal_datasets/*` ([how to dispatch](../gitea/README.md#run-a-workflow)).
+2. After uploading to `raw`, dispatch `sync-fiftyone-raw`, optionally with input `datasets`, a glob such as `internal_datasets/*` ([how to dispatch](../gitea/README.md#run-a-workflow)).
 3. Before training on a dataset, check what training will inherit: the episode count matches the collection log, every episode has all its cameras, durations are plausible, task strings are right.
 4. If the App or the sync misbehaves, read the App's log and list the datasets in the database:
    ```bash

@@ -69,7 +69,7 @@ The first web page you open asks you to sign in. Use your name and the Keycloak 
 
 ### Browse data (FiftyOne)
 
-Open `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` in Chrome (Safari can't play bags), and pick a dataset from the selector at the top left. Every folder under `raw/` appears as a dataset within 30 minutes of upload. Details: [fiftyone/](services/fiftyone/README.md).
+Open `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` in Chrome (Safari can't play bags), and pick a dataset from the selector at the top left. Every folder under `raw/` appears as a dataset once `sync-fiftyone-raw` is dispatched after the upload. Details: [fiftyone/](services/fiftyone/README.md).
 
 ![FiftyOne](assets/quickstart/fiftyone.png)
 

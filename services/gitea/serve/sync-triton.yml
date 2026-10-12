@@ -1,13 +1,11 @@
 # Serve MLflow models on Triton (services/triton/sync.py): every registered model whose alias `triton` names a version is
 # packaged into s3://triton/models/ and loaded; a model whose alias is gone is unloaded. Each model's outcome goes back to
-# its MLflow model version as tags triton.* and to s3://triton/sync/ (status.json, log/). Runs every 10 minutes and on demand.
+# its MLflow model version as tags triton.* and to s3://triton/sync/ (status.json, log/). Runs on demand only: a schedule filled the Actions list with runs.
 name: sync-triton
 concurrency:
   group: sync-triton
   cancel-in-progress: false
 on:
-  schedule:
-    - cron: "*/10 * * * *"   # how soon an alias change is served; untuned
   workflow_dispatch:
     inputs:
       force:
