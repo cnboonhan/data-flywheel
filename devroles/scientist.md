@@ -11,7 +11,7 @@ Turns raw data into better models: processes it into training sets, experiments 
 | Item | Example |
 |---|---|
 | Upload and Sync | Identify promising Public Datasets and upload them into Data Storage |
-| Data Cleaning | |
+| Data Cleaning | Understand what are unhelpful features in data or misconfigurations in relation to the hardware configuration. Filter out bad data (e.g pauses, still frames) and validate data ingress assumptions against input hardware specs (camera fisheye vs pinhole, resolution) |
 | Data Conversion | |
 | Data Mixing | |
 | Architecture Experiments | |
