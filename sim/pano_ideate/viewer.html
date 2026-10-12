@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pano Walk</title>
+<title>pano_ideate</title>
 <style>
 /* Layout: the room fills the window; a slim control panel top-left, the action card where you click. */
 :root {
   --bg: #101418; --panel: rgba(16, 22, 28, 0.86); --line: rgba(160, 190, 210, 0.22); --fg: #e6edf2;
-  --muted: #93a4b1; --accent: #ffb547; --object: #ff8c1a; --danger: #ff6b6b;
+  --muted: #93a4b1; --accent: #ffb547; --object: #ff8c1a; --modes: #34c6ff; --placed: #7bd88f; --danger: #ff6b6b;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: dark;
 }
@@ -18,7 +18,6 @@ canvas { display: block; touch-action: none; }
 .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   backdrop-filter: blur(6px); padding: 12px 14px; display: grid; gap: 10px; }
 #controls { top: calc(12px + env(safe-area-inset-top, 0px)); left: 12px; width: min(300px, calc(100vw - 48px)); }
-#controls h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
 select, textarea, button { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06);
@@ -32,20 +31,29 @@ button.primary { background: var(--accent); color: #1a1206; border-color: var(--
 .meter { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .meter b { color: var(--fg); font-weight: 500; }
 .meter.edge b { color: var(--accent); }
-.legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
-#history { margin: 0; padding-left: 18px; font-size: 13px; max-height: 30vh; overflow: auto; }
-#history li { margin: 2px 0; }
-#history .after { color: var(--muted); }
-#history:empty::before { content: "No edits yet. Click an object to change it."; color: var(--muted); margin-left: -18px; }
+/* Action history: one line per step, details on hover (#histTip). */
+#history { margin: 0; padding: 0; list-style: none; font-size: 13px; max-height: 26vh; overflow-y: auto; display: grid;
+  gap: 2px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+#history:empty::before { content: "Nothing yet. Click an object to act on it."; color: var(--muted); }
+#history li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+#history .n { font: 11px var(--mono); color: var(--muted); text-align: right; }
+#history .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 99px; white-space: nowrap; border: 1px solid; }
+.tag.pick { color: var(--object); border-color: var(--object); }
+.tag.place { color: var(--placed); border-color: var(--placed); }
+.tag.mode { color: var(--modes); border-color: var(--modes); }
+#histTip { position: fixed; width: min(340px, calc(100vw - 48px)); font-size: 13px; gap: 6px; pointer-events: none; z-index: 5; }
+#histTip img { width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+#histTip .grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; align-items: baseline; }
+#histTip b { font-weight: 600; }
+#histTip .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 #tip { position: fixed; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: var(--panel);
   border: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
 #card { width: min(320px, calc(100vw - 48px)); }
 #card h2 { margin: 0; font-size: 16px; }
 #card .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
 #card textarea { width: 100%; box-sizing: border-box; min-height: 58px; padding: 7px 9px; resize: vertical; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chips button { font-size: 12px; padding: 3px 9px; border-radius: 99px; }
 #status { font-size: 13px; color: var(--muted); }
 #status.error { color: var(--danger); }
 #help { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
@@ -72,7 +80,6 @@ body.placing canvas { cursor: crosshair; }
 #stepAction { color: var(--muted); font-size: 13px; }
 #stepCrops { display: flex; gap: 6px; overflow-x: auto; }
 #stepCrops img { height: 64px; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
-#history li { cursor: pointer; border-radius: 5px; padding: 1px 4px; }
 #history li:hover { background: rgba(255, 255, 255, 0.06); }
 #history li.on { background: rgba(255, 181, 71, 0.16); }
 #zoom { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 16, 0.85); cursor: zoom-out; padding: 16px; }
@@ -99,6 +106,16 @@ body.placing canvas { cursor: crosshair; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
 #objCard { width: min(300px, calc(100vw - 48px)); }
 .note { color: var(--muted); font-size: 13px; }
+#card input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
+  border-radius: 7px; padding: 5px 8px; width: 100%; box-sizing: border-box; }
+.modes { display: flex; gap: 6px; overflow-x: auto; }
+.modes button { display: grid; gap: 2px; padding: 3px; font-size: 12px; justify-items: center; }
+.modes img { height: 64px; border-radius: 5px; display: block; }
+.modes button.now { opacity: 1; border-color: var(--modes); box-shadow: 0 0 0 1px var(--modes); cursor: default; }
+.modeItem { position: relative; }
+.modeItem .del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; border-radius: 50%;
+  font-size: 13px; line-height: 1; background: var(--panel); }
+.modeItem .del:hover { border-color: var(--danger); color: var(--danger); }
 #objCard h2 { margin: 0; font-size: 16px; }
 #objCard input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
   border-radius: 7px; padding: 5px 8px; min-width: 0; flex: 1; }
@@ -108,7 +125,6 @@ body.rect canvas { cursor: crosshair; }
 </head>
 <body>
 <div id="controls" class="panel">
-  <h1>Pano Walk</h1>
   <div class="row"><label for="scene">Scene</label><select id="scene"></select></div>
   <div class="row seg" aria-label="Mode"><button id="toolObjects" title="Find the objects in the room">1 · Objects</button><button id="toolAct" title="Pick objects up, open and close them">2 · Act</button></div>
   <div id="objectsPanel" style="display:grid;gap:6px">
@@ -119,11 +135,11 @@ body.rect canvas { cursor: crosshair; }
   <div id="meter" class="meter"></div>
   <div id="actPanel" style="display:grid;gap:10px">
   <div><label>Inventory</label><div id="inventory"></div></div>
-  <div><label>Edits</label><ol id="history"></ol></div>
+  <div><label>Action history</label><ol id="history"></ol></div>
   <div class="row"><button id="undo">Undo</button><button id="reset">Reset</button></div>
   <div><label>Session</label>
     <div id="sessionList" class="meter"></div>
-    <div class="row"><button id="export" title="The interacted and added objects, where each stands, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
+    <div class="row"><button id="export" title="Every object found, where each stands, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
     <div id="exportHint" class="meter"></div></div>
   </div>
   <div id="add"><label for="file">Add a panorama</label>
@@ -132,6 +148,7 @@ body.rect canvas { cursor: crosshair; }
     <div id="addHint">An equirectangular 360° image, twice as wide as tall. Takes a few minutes.</div></div>
 </div>
 <div id="tip" hidden></div>
+<div id="histTip" class="panel" hidden></div>
 <div id="rect" hidden></div>
 <div id="objCard" class="panel" hidden>
   <h2 id="objTitle"></h2>
@@ -142,13 +159,19 @@ body.rect canvas { cursor: crosshair; }
   <div id="objStatus" class="meter"></div>
 </div>
 <div id="card" class="panel" hidden>
+  <label>Object Editor</label>
   <div><h2 id="cardLabel"></h2><span id="cardKind" class="kind"></span></div>
+  <div id="editRow" class="row" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" id="take" style="margin:2px 0 0"><label for="take" style="flex:1;text-transform:none;letter-spacing:0;font-size:13px;color:var(--fg)">Take into the inventory <span style="color:var(--muted)">(erases it from the room)</span></label></div>
+  <div id="modeRow" style="display:grid;gap:6px">
+    <div id="modes" class="modes" aria-label="Its modes as last seen"></div>
+    <label for="mode">Mode</label><input type="text" id="mode" placeholder="open">
+    <div id="nowRow" style="display:grid;gap:6px"><label for="now">Its mode now</label><input type="text" id="now" placeholder="closed"></div>
+  </div>
   <label for="action" id="actionLabel">Action (recorded)</label>
-  <textarea id="action" placeholder="pick it up"></textarea>
-  <label for="director" id="directorLabel">Director prompt (optional): what changes in the image</label>
-  <textarea id="director" placeholder="erase it"></textarea>
-  <div id="chips" class="chips"></div>
-  <div class="row"><button id="apply" class="primary">Apply</button><button id="include" title="Make it an asset of the session without changing it">Add to session</button><button id="cancel">Cancel</button></div>
+  <textarea id="action"></textarea>
+  <label for="director" id="directorLabel">Director prompt</label>
+  <textarea id="director"></textarea>
+  <div class="row"><button id="apply" class="primary">Apply</button><button id="cancel">Cancel</button></div>
   <div id="status"></div>
 </div>
 <div id="placing" hidden></div>
@@ -170,8 +193,7 @@ body.rect canvas { cursor: crosshair; }
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const COLOR = [1.0, 0.55, 0.1];   // --object orange
-const SUGGEST = ["pick it up", "open it", "close it"];
+const COLOR = [1.0, 0.55, 0.1], MODAL = [0.2, 0.78, 1.0];   // --object orange; --modes cyan: an object with modes
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));   // at most 2x (untuned)
@@ -187,17 +209,17 @@ const keys = new Set();
 
 const material = new THREE.ShaderMaterial({
   uniforms: { map: { value: null }, ids: { value: null }, hover: { value: 0 }, selected: { value: 0 }, show: { value: 1 },
-              tint: { value: new THREE.Vector3(...COLOR) } },
+              tint: { value: new THREE.Vector3(...COLOR) }, modal: { value: new THREE.Vector3(...MODAL) } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D map, ids; uniform float hover, selected, show; uniform vec3 tint; varying vec2 vUv;
+    uniform sampler2D map, ids; uniform float hover, selected, show; uniform vec3 tint, modal; varying vec2 vUv;
     void main() {
       vec3 c = texture2D(map, vUv).rgb;
       vec3 t = floor(texture2D(ids, vec2(vUv.x, 1.0 - vUv.y)).rgb * 255.0 + 0.5);   // raw rows: top first
       float id = t.r * 256.0 + t.g;
       if (id > 0.0) {
         float a = id == selected ? 0.55 : id == hover ? 0.42 : 0.16 * show;   // tint strength (untuned)
-        c = mix(c, tint, a);
+        c = mix(c, t.b > 1.5 ? modal : tint, a);   // B 2: an object with modes (ids.png in serve.py)
       }
       gl_FragColor = vec4(c, 1.0);
     }`,
@@ -304,7 +326,7 @@ function renderTool() {
   $("objCount").textContent = `${n} object${n === 1 ? "" : "s"}`;
   $("help").textContent = tool === "objects"
     ? "Drag a box to find objects · click one to rename or remove it · right-drag to look around · WASD to move"
-    : "Drag to look · WASD or arrows to move · scroll to zoom · click an object to change it · click an edit, or [ and ], to step through them";
+    : "Drag to look · WASD or arrows to move · scroll to zoom · click an object to act on it · click a step in the action history, or [ and ], to look back";
 }
 $("toolAct").onclick = () => { tool = "act"; closeCard(); renderTool(); };
 $("toolObjects").onclick = () => { tool = "objects"; closeCard(); startPlacing(null); renderTool(); };
@@ -341,17 +363,18 @@ $("zoom").onclick = () => { $("zoom").hidden = true; };
 function renderHistory() {
   $("history").innerHTML = "";
   S.meta.history.forEach((e, i) => {
-    const li = document.createElement("li");
-    li.title = "Show the room after this edit";
+    const li = document.createElement("li"), t = stepTag(e);
     li.classList.toggle("on", step === i + 1);
     li.onclick = () => showStep(i + 1);
-    li.innerHTML = `<span></span> <span class="after"></span>`;
-    li.children[0].textContent = `${e.label}: ${e.action}`;
-    li.children[1].textContent = e.what === "place" ? "(placed)" : "(" + e.changes.map((c) =>
-      c.after.trim().toLowerCase().replace(/\.$/, "") === "remove" ? `${c.object} picked up`
-      : c.restored ? `${c.object}: restored as it was` : c.after).join("; ") + ")";
+    li.innerHTML = `<span class="n"></span><span class="what"></span><span class="tag"></span>`;
+    li.children[0].textContent = i + 1;
+    li.children[1].textContent = e.action || e.label;
+    li.children[2].textContent = t.text; li.children[2].classList.add(t.kind);
+    li.onmouseenter = () => showHistTip(e, i, li);
+    li.onmouseleave = () => { $("histTip").hidden = true; };
     $("history").append(li);
   });
+  $("history").scrollTop = $("history").scrollHeight;    // the latest in view
   $("inventory").innerHTML = "";
   for (const it of S.meta.inventory) {
     const b = document.createElement("button");
@@ -363,6 +386,53 @@ function renderHistory() {
     b.onclick = () => startPlacing(placing?.item === it.item ? null : it);
     $("inventory").append(b);
   }
+}
+
+// A step's tag in the action history: what kind of edit, colour-coded, and its result in a word or two.
+function stepTag(e) {
+  if (e.what === "place") return { kind: "place", text: "placed" };
+  const c = e.changes[0] || {};
+  if ((c.after || "").trim().toLowerCase().replace(/\.$/, "") === "remove") return { kind: "pick", text: "picked up" };
+  if (c.state_after) return { kind: "mode", text: `${c.restored ? "↺ " : ""}${c.state_after}` };
+  return { kind: "mode", text: "changed" };
+}
+// All its details on hover, in a box beside the panel: the object, the kind of edit, its modes, the director prompt,
+// where the agent stood and the edit up close.
+function showHistTip(e, i, li) {
+  const c = e.changes[0] || {}, t = stepTag(e), tip = $("histTip"), rows = [];
+  const add = (k, v) => { if (v !== undefined && v !== null && v !== "") rows.push([k, String(v)]); };
+  add("Object", e.label);
+  add("Edit", { pick: "taken into the inventory (erased from the room)", place: "put back from the inventory",
+                mode: c.restored ? "mode, switched back to as last seen" : "mode, drawn by the image editor" }[t.kind]);
+  if (c.state_after) add("Mode", `${c.state_before} → ${c.state_after}`);
+  add("Director prompt", e.director);
+  const p = e.position || c.position;
+  if (p) add(t.kind === "pick" ? "Was at" : "Put at", `x ${p[0]}, y ${p[1]} m`);
+  const a = e.agent;
+  if (a) add("Agent", `x ${a.x}, y ${a.y}, z ${a.z} m · yaw ${Math.round(a.yaw_deg)}°, pitch ${Math.round(a.pitch_deg)}°`);
+  tip.innerHTML = `<b></b><div class="grid"></div>`;
+  tip.children[0].textContent = `${i + 1} · ${e.action || e.label}`;
+  for (const [k, v] of rows) {
+    const kd = document.createElement("span"), vd = document.createElement("span");
+    kd.className = "k"; kd.textContent = k; vd.textContent = v;
+    tip.children[1].append(kd, vd);
+  }
+  for (const f of e.crops || []) {
+    const img = document.createElement("img");
+    img.src = `api/${S.name}/crop/${f}`; img.alt = "before, outlined, the editor's output, after";
+    img.onload = () => place();
+    tip.append(img);
+  }
+  const hint = document.createElement("div");
+  hint.className = "k"; hint.style.cssText = "text-transform:none;letter-spacing:0"; hint.textContent = "Click to see the room after it";
+  tip.append(hint);
+  tip.hidden = false;
+  const place = () => {
+    const r = li.getBoundingClientRect(), panel = $("controls").getBoundingClientRect();
+    tip.style.left = panel.right + 10 + "px";
+    tip.style.top = Math.max(12, Math.min(innerHeight - tip.offsetHeight - 12, r.top - 8)) + "px";
+  };
+  place();
 }
 
 // Placing an inventory item: pick it, then click where it goes.
@@ -444,7 +514,7 @@ el.addEventListener("pointermove", (e) => {
   if (placing || step !== null) { hover = 0; $("tip").hidden = true; return; }
   const o = objectOf(hover);
   $("tip").hidden = !o;
-  if (o) { $("tip").textContent = o.label; $("tip").style.left = e.clientX + 14 + "px"; $("tip").style.top = e.clientY + 12 + "px"; }
+  if (o) { $("tip").textContent = o.mode ? `${o.label} · ${o.mode}` : o.label; $("tip").style.left = e.clientX + 14 + "px"; $("tip").style.top = e.clientY + 12 + "px"; }
 });
 el.addEventListener("pointerup", (e) => {
   if (rectDrag) {
@@ -493,32 +563,64 @@ function showCard(x, y) {
 }
 function openPlaceCard(hit, x, y) {
   target = hit; selected = 0;
+  $("editRow").hidden = $("modeRow").hidden = true;
   $("cardLabel").textContent = `Place the ${placing.label} here`;
   $("cardKind").textContent = "from the inventory"; $("cardKind").style.color = "var(--muted)";
-  $("actionLabel").textContent = "Action (recorded)";
   $("action").value = ""; $("action").placeholder = `put the ${placing.label} here`;
-  $("director").value = ""; $("director").placeholder = "upright, facing the room (optional)";
-  $("chips").innerHTML = ""; $("apply").textContent = "Place"; $("include").hidden = true;
+  $("directorLabel").textContent = "Director prompt (optional): how it stands there";
+  $("director").value = ""; $("director").placeholder = "upright, facing the room";
+  $("apply").textContent = "Place";
   setStatus(""); showCard(x, y);
 }
+// The act card: Pick up erases the object into the inventory; Mode puts it in a named mode, drawn from the director
+// prompt the first time, after that as it was last seen (its previews).
+let editKind = "pick";
+function setEdit(kind) {
+  editKind = kind;
+  const o = objectOf(selected), m = $("mode").value.trim().toLowerCase(), known = o && o.modes && o.modes.includes(m);
+  $("modeRow").hidden = kind !== "mode";
+  $("take").checked = kind === "pick";
+  $("nowRow").hidden = !!(o && o.mode);
+  $("action").placeholder = kind === "pick" ? `pick up the ${o.label}` : `make the ${o.label} ${m || "open"}`;
+  $("directorLabel").textContent = kind === "pick" ? "Director prompt (optional; it is erased)" : "Director prompt: how it looks in this mode";
+  $("directorLabel").hidden = kind === "mode" && known;
+  $("director").placeholder = kind === "pick" ? "erase it" : `the ${o.label} is ${m || "open"}: say what moves and what it shows or hides`;
+  $("director").hidden = $("director").disabled = kind === "mode" && known;
+}
+$("take").onchange = () => setEdit($("take").checked ? "pick" : "mode");
+$("mode").addEventListener("input", () => setEdit("mode"));
 function openCard(id, x, y) {
   selected = id; target = null;
-  $("actionLabel").textContent = "Action (recorded)"; $("apply").textContent = "Apply";
-  $("director").value = ""; $("director").placeholder = "e.g. erase it (optional; else planned from the action)";
-  const o = objectOf(id);
+  const o = objectOf(id), modes = o.modes || [];
+  $("editRow").hidden = false; $("apply").textContent = "Apply";
   $("cardLabel").textContent = o.label;
-  $("cardKind").textContent = "object";
-  $("cardKind").style.color = "var(--object)";
-  $("action").value = ""; $("action").placeholder = SUGGEST[0];
-  $("chips").innerHTML = "";
-  for (const s of SUGGEST) {
-    const b = document.createElement("button"); b.textContent = s;
-    b.onclick = () => { $("action").value = s; $("action").focus(); };
-    $("chips").append(b);
+  $("cardKind").textContent = modes.length ? `${o.mode} · ${modes.length} modes` : "object";
+  $("cardKind").style.color = modes.length > 1 ? "var(--modes)" : "var(--object)";
+  $("action").value = ""; $("director").value = ""; $("mode").value = ""; $("now").value = "";
+  $("modes").innerHTML = "";
+  // Each mode as last seen, the current one first and highlighted; click another to switch back to it.
+  for (const m of [...modes].sort((a, b) => (b === o.mode) - (a === o.mode))) {
+    const b = document.createElement("button");
+    b.dataset.mode = m; b.disabled = m === o.mode; b.classList.toggle("now", m === o.mode);
+    b.title = m === o.mode ? `${m}: how it is now` : `Switch back to ${m}, as it was last seen`;
+    b.innerHTML = `<img alt=""><span></span>`;
+    b.children[0].src = `api/${S.name}/mode/${o.memory}/${encodeURIComponent(m)}.jpg?v=${S.meta.version}`;
+    b.children[1].textContent = m;
+    b.onclick = () => { $("mode").value = m; setEdit("mode"); $("action").focus(); };
+    const item = document.createElement("div"); item.className = "modeItem"; item.append(b);
+    if (m !== o.mode) {                            // a mode it is not in can be deleted
+      const d = document.createElement("button"); d.className = "del"; d.textContent = "×";
+      d.title = `Delete the ${m} mode`; d.setAttribute("aria-label", d.title);
+      d.onclick = async () => {
+        if (!confirm(`Delete the ${o.label}'s ${m} mode? How it looked in it is forgotten.`)) return;
+        try { await post("unmode", { memory: o.memory, mode: m }); await load(S.name, true); openCard(id, x, y); }
+        catch (err) { setStatus(`Deleting failed: ${err.message}`, true); }
+      };
+      item.append(d);
+    }
+    $("modes").append(item);
   }
-  $("include").hidden = false;
-  $("include").disabled = o.session === "interacted";
-  $("include").textContent = { interacted: "In the session", included: "Remove from session" }[o.session] || "Add to session";
+  setEdit("mode");                                 // a mode change unless "Take into the inventory" is ticked
   setStatus(""); showCard(x, y);
 }
 function closeCard() { $("card").hidden = true; $("objCard").hidden = true; drawRect(null); selected = 0; target = null; objFor = null; }
@@ -573,7 +675,7 @@ $("objCancel").onclick = closeCard;
 $("objLabel").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("objSave").click(); } });
 function setStatus(t, error) { $("status").textContent = t; $("status").className = error ? "error" : ""; }
 $("cancel").onclick = closeCard;
-for (const f of ["action", "director"])
+for (const f of ["action", "director", "mode", "now"])
   $(f).addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("apply").click(); } });
 
 // Waiting: an overlay with a progress bar; its fraction from a job on the server, or moving while unknown.
@@ -631,30 +733,18 @@ $("apply").onclick = async () => {
   if (!o) return;
   $("apply").disabled = true;
   try {
-    const { job } = await post("act", { id: selected - 1, action, director: $("director").value.trim(), agent: agent() });
+    if (editKind === "mode" && !$("mode").value.trim()) throw new Error("name the mode, for example open");
+    const { job } = await post("act", { id: selected - 1, edit: editKind, mode: $("mode").value.trim(), now: $("now").value.trim(),
+      action, director: $("director").disabled ? "" : $("director").value.trim(), agent: agent() });
     await waitJob(job, `${o.label}: ${action}`);
     await busy("Loading the result…", () => load(S.name, true));
     closeCard();
   } catch (err) { setStatus(`The edit failed: ${err.message}`, true); }
   finally { $("apply").disabled = false; }
 };
-$("include").onclick = async () => {
-  const id = selected, o = objectOf(id);
-  if (!o) return;
-  $("include").disabled = true;
-  try {
-    await post("include", { id: id - 1, on: o.session !== "included" });
-    await load(S.name, true);
-    closeCard();
-  } catch (err) { setStatus(`Failed: ${err.message}`, true); }
-  finally { $("include").disabled = false; }
-};
-function renderSession() {
-  const os = Object.values(S.meta.objects), names = (w) => os.filter((o) => o.session === w).map((o) => o.label);
-  const acted = S.meta.session_assets, added = names("included");
-  $("sessionList").textContent = acted || added.length
-    ? `Assets: ${acted} interacted${added.length ? `, added: ${added.join(", ")}` : ""}.`
-    : "Act on objects, or click one and Add to session.";
+function renderSession() {      // every object found is an asset of the session
+  const n = S.meta.assets;
+  $("sessionList").textContent = n ? `${n} asset${n === 1 ? "" : "s"}: every object found.` : "Find objects first: they are its assets.";
 }
 $("export").onclick = async () => {
   $("export").disabled = true;

@@ -73,4 +73,4 @@ Set each as in [pano_ideate](../pano_ideate/README.md#model-endpoints). The text
 - **Texture:** the editor is given only the grey render and the colours in words (given the drawing too, it redraws the drawing's pose). A painting whose outline overlaps its render under 0.8 is dropped (good ones 0.94–0.99); what no view sees (an underside) takes the nearest painted colour. Paintings ask for flat light, since Isaac Sim lights the asset itself.
 - **Fit:** scaled to the measured height, turned in 5° steps until its silhouette from the capture point matches the last-seen 3D points (`silhouette_overlap` in `pose.json`; low means a poor turn).
 - **Mass:** 400 kg/m³ over the convex hull, 0.02–50 kg; set it in `model.usda` when you know it.
-- Articulated objects (the zip's `articulated/`) are not generated yet.
+- An object with modes (the zip's `objects/<asset>/modes/`) is generated as it looks at export, as one rigid body; its modes are not generated as parts or variants yet.

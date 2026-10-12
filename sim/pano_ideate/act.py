@@ -247,8 +247,8 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
     prompt = EDIT.format(object=c["object"], change=change[0].upper() + change[1:])
 
     # What goes back: for a removal, the object's box grown by a fifth of its size (its contact shadow goes too, which
-    # changes too little to detect), less every other object of about its size; for a new state, the regions
-    # that changed within the object's box grown by its full size (a door or lid swings out) and touching it.
+    # changes too little to detect), less every other object of about its size; for a new state, the object and the
+    # regions that changed within its box grown by its full size (a door or lid swings out) and touching it.
     zone = box_zone(obj, 0.2 if remove else 1.0)
     core = cv2.dilate(obj, np.ones((15, 15), np.uint8)) > 0             # the object + 7 px: unfeathered (untuned)
     # Colour reference: outside the zone or, if that is under 5% of the view, over 30 px from the object (untuned).
@@ -268,18 +268,21 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
         big = np.bincount(lab.ravel()) > 4 * max(int((obj > 0).sum()), 1)
         other = (lab > 0) & ~np.isin(lab, np.array(c["ids"]) + 1) & ~big[lab]
         keep = (zone | core) & ~(other & ~core)
-        # Match the fill's shading to its surroundings: the colour offset on the unchanged pixels around it, spread
-        # smoothly across it (one global offset leaves the object's silhouette in a slightly different tone): measured
-        # 4 px clear of the kept area, spread over a quarter of its size (untuned).
-        ky, kx = np.nonzero(keep)
-        sigma = max(np.ptp(kx), np.ptp(ky), 8) / 4
-        w = (~cv2.dilate(keep.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)).astype(np.float32)
-        num = cv2.GaussianBlur((img - res) * w[..., None], (0, 0), sigma)
-        res = (res + num / np.maximum(cv2.GaussianBlur(w, (0, 0), sigma), 1e-3)[..., None]).clip(0, 255)
         ys, xs = np.nonzero(obj)
         feather = max(3.0, 0.06 * max(np.ptp(xs), np.ptp(ys)))        # px: 6% of the object's size (untuned)
     else:
-        keep, feather = changed_near(diff, zone, obj), 3.0              # px, untuned
+        # The whole object goes back, not only what changed a lot: where the new look is close to the old one (frosted
+        # glass on a white wall) the old one showed through, a ghost of a door leaf.
+        keep, feather = changed_near(diff, zone, obj) | core, 3.0       # px, untuned
+    # Match what goes back to its surroundings' shading: the colour offset on the unchanged pixels around it, spread
+    # smoothly across it (one global offset leaves its outline in a slightly different tone; without it a closed door
+    # sat in a lighter rectangle of wall): measured 4 px clear of the kept area, spread over a quarter of its size
+    # (untuned).
+    ky, kx = np.nonzero(keep)
+    sigma = max(np.ptp(kx), np.ptp(ky), 8) / 4
+    w = (~cv2.dilate(keep.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)).astype(np.float32)
+    num = cv2.GaussianBlur((img - res) * w[..., None], (0, 0), sigma)
+    res = (res + num / np.maximum(cv2.GaussianBlur(w, (0, 0), sigma), 1e-3)[..., None]).clip(0, 255)
     alpha = np.maximum(cv2.GaussianBlur(keep.astype(np.float32), (0, 0), feather), (keep & core).astype(np.float32))
     after = (img * (1 - alpha[..., None]) + res * alpha[..., None]).astype(np.uint8)
     changed = paste(scene, res, alpha, (mx, my, yaw, pitch, fov))

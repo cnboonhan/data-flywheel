@@ -343,8 +343,7 @@ def choose(z: zipfile.ZipFile, scene: dict, out_root: Path) -> list[str]:
     for name in scene["assets"]["objects"]:
         info = json.loads(z.read(f"objects/{name}/info.json"))
         done = (out_root / scene["scene"] / "objects" / name / "model.glb").exists()
-        how = "interacted" if info.get("interacted", True) else "added"
-        title = f"{name:<16} {info['label']:<14} {how}{', generated before' if done else ''}"
+        title = f"{name:<16} {info['label']:<14}{' generated before' if done else ''}"
         choices.append(questionary.Choice(title, name, checked=not done))
     picked = questionary.checkbox("Objects to generate (space ticks, enter starts)", choices=choices).ask()
     if picked is None:                                                # Ctrl-C
