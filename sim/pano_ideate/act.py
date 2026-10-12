@@ -144,13 +144,13 @@ def parse_plan(scene: Scene, answer: str) -> list[dict]:
     return changes
 
 
-def crop_camera(scene: Scene, mask: np.ndarray, margin: float, least: float = 40):
+def crop_camera(scene: Scene, mask: np.ndarray, margin: float, least: float = 40, pct: float = 98):
     """A view centred on the mask: yaw, pitch and a fov of `margin` times its angular extent plus 10 deg (at least
-    `least`, at most 120), in degrees. The extent is the 98th percentile of its pixels' angles from the centre (at most
-    40000 of them, every n-th). All untuned."""
+    `least`, at most 120), in degrees. The extent is the pct-th percentile of its pixels' angles from the centre (at
+    most 40000 of them, every n-th). All untuned."""
     d = scene.dirs[mask][:: max(1, mask.sum() // 20000)] @ scene.R.T
     c = d.mean(0) / np.linalg.norm(d.mean(0))
-    extent = np.degrees(np.percentile(np.arccos(np.clip(d @ c, -1, 1)), 98))
+    extent = np.degrees(np.percentile(np.arccos(np.clip(d @ c, -1, 1)), pct))
     return (float(np.degrees(np.arctan2(c[1], c[0]))), float(np.degrees(np.arcsin(c[2]))),
             float(np.clip(margin * extent + 10, least, 120)))
 
@@ -454,7 +454,7 @@ def view_to_pano(scene: Scene, m: np.ndarray, view: tuple) -> np.ndarray:
 def update_depth(triton: models.Triton, scene: Scene, changed: np.ndarray, size: int = 768):
     """scene.distance for the changed pixels: per changed region, MoGe on one perspective view around it (not the
     whole panorama), scaled to the old depth on the unchanged ring around the region. The ring is 20 px wide; the
-    view `size` px, crop_camera's margin 1.2, at least 30 deg (all untuned)."""
+    view `size` px, at least 30 deg (all untuned)."""
     H, W = scene.H, scene.W
     changed = cv2.dilate(changed.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0    # with the blended edge
     n, regions = cv2.connectedComponents(changed.astype(np.uint8))
@@ -462,7 +462,10 @@ def update_depth(triton: models.Triton, scene: Scene, changed: np.ndarray, size:
     for k in range(1, n):
         region = regions == k
         ring = (cv2.dilate(region.astype(np.uint8), np.ones((41, 41), np.uint8)) > 0) & ~changed
-        yaw, pitch, fov = crop_camera(scene, region | ring, 1.2, least=30)
+        # All of it in view, ring included: the extent is an angle from the centre, so 2.4 times it is the width plus
+        # 20%. At 1.2 (the edits' framing) a wide region (a door and a bin erased together) had its ring out of view
+        # and kept its old depth.
+        yaw, pitch, fov = crop_camera(scene, region | ring, 2.4, least=30, pct=100)
         mx, my = common.view(scene.frame, H, W, yaw, pitch, size, fov)
         img = cv2.remap(scene.pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
         new = triton.depth(img, fov)[0]
@@ -470,6 +473,7 @@ def update_depth(triton: models.Triton, scene: Scene, changed: np.ndarray, size:
         d = d[:, 0]
         inring = ring.reshape(-1)[idx]
         if not inring.any():
+            print(f"  WARNING: a changed region of {region.sum()} px kept its old depth (its ring is out of view)")
             continue
         scale = np.median(scene.distance.reshape(-1)[idx[inring]] / np.maximum(d[inring], 1e-3))
         depth.reshape(-1)[idx[~inring]] = d[~inring] * scale
