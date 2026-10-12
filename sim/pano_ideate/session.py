@@ -186,19 +186,12 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
 
 
 def as_seen(scene: act.Scene, k: int) -> dict:
-    """A memory entry (serve.py's) for object k as it looks now, for one added without an interaction."""
+    """A memory entry (serve.py's) for object k as it looks now, for one added without an interaction: its points and
+    cutout, as for an object picked up."""
     o = scene.objects[k]
-    e = {"ids": [k], "kind": o["kind"], "label": o["label"], "size": o.get("size"), "current": None,
-         "interacted": False, "views": []}
-    if o["kind"] == "movable":
-        e["saved"] = {"shape": act.shape(scene, [k])}
-        e["views"] = [cv2.imencode(".png", cv2.cvtColor(act.cutout(scene, [k]), cv2.COLOR_RGBA2BGRA))[1].tobytes()]
-    else:
-        idx = np.flatnonzero(scene.labels == k + 1)
-        e["current"] = "as_seen"
-        e["saved"] = {"as_seen": {"idx": idx, "pano": scene.pano.reshape(-1, 3)[idx],
-                                  "distance": scene.distance.reshape(-1)[idx], "labels": scene.labels.reshape(-1)[idx]}}
-    return e
+    return {"ids": [k], "kind": "movable", "label": o["label"], "size": o.get("size"), "current": None,
+            "interacted": False, "saved": {"shape": act.shape(scene, [k])},
+            "views": [cv2.imencode(".png", cv2.cvtColor(act.cutout(scene, [k]), cv2.COLOR_RGBA2BGRA))[1].tobytes()]}
 
 
 def where(scene: act.Scene, e: dict) -> dict:

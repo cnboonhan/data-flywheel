@@ -8,7 +8,7 @@
 /* Layout: the room fills the window; a slim control panel top-left, the action card where you click. */
 :root {
   --bg: #101418; --panel: rgba(16, 22, 28, 0.86); --line: rgba(160, 190, 210, 0.22); --fg: #e6edf2;
-  --muted: #93a4b1; --accent: #ffb547; --movable: #ff8c1a; --articulated: #34c6ff; --danger: #ff6b6b;
+  --muted: #93a4b1; --accent: #ffb547; --object: #ff8c1a; --danger: #ff6b6b;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: dark;
 }
@@ -92,16 +92,32 @@ body.placing canvas { cursor: crosshair; }
 #add input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
   border-radius: 7px; padding: 4px 8px; min-width: 0; flex: 1; }
 #addHint { color: var(--muted); font-size: 12px; }
+.seg { gap: 0; flex-wrap: nowrap; }
+.seg button { border-radius: 0; flex: 1; }
+.seg button:first-child { border-radius: 7px 0 0 7px; }
+.seg button:last-child { border-radius: 0 7px 7px 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
+#objCard { width: min(300px, calc(100vw - 48px)); }
+.note { color: var(--muted); font-size: 13px; }
+#objCard h2 { margin: 0; font-size: 16px; }
+#objCard input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
+  border-radius: 7px; padding: 5px 8px; min-width: 0; flex: 1; }
+#rect { position: fixed; border: 2px dashed var(--accent); background: rgba(255, 181, 71, 0.12); pointer-events: none; }
+body.rect canvas { cursor: crosshair; }
 </style>
 </head>
 <body>
 <div id="controls" class="panel">
   <h1>Pano Walk</h1>
   <div class="row"><label for="scene">Scene</label><select id="scene"></select></div>
+  <div class="row seg" aria-label="Mode"><button id="toolObjects" title="Find the objects in the room">1 · Objects</button><button id="toolAct" title="Pick objects up, open and close them">2 · Act</button></div>
+  <div id="objectsPanel" style="display:grid;gap:6px">
+    <div class="note">Drag a box over part of the room to find the objects in it. Click an object to rename or remove it.</div>
+    <div id="objCount" class="meter"></div>
+  </div>
   <div class="row"><input type="checkbox" id="show" checked><label for="show" style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--fg)">Show objects</label></div>
-  <div class="legend"><span><span class="dot" style="background:var(--movable)"></span>movable</span>
-    <span><span class="dot" style="background:var(--articulated)"></span>articulated</span></div>
   <div id="meter" class="meter"></div>
+  <div id="actPanel" style="display:grid;gap:10px">
   <div><label>Inventory</label><div id="inventory"></div></div>
   <div><label>Edits</label><ol id="history"></ol></div>
   <div class="row"><button id="undo">Undo</button><button id="reset">Reset</button></div>
@@ -109,12 +125,22 @@ body.placing canvas { cursor: crosshair; }
     <div id="sessionList" class="meter"></div>
     <div class="row"><button id="export" title="The interacted and added objects, where each stands, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
     <div id="exportHint" class="meter"></div></div>
+  </div>
   <div id="add"><label for="file">Add a panorama</label>
     <input type="file" id="file" accept="image/jpeg,image/png">
     <div class="row"><input type="text" id="newName" placeholder="name" aria-label="Scene name"><button id="addBtn" disabled>Add</button></div>
     <div id="addHint">An equirectangular 360° image, twice as wide as tall. Takes a few minutes.</div></div>
 </div>
 <div id="tip" hidden></div>
+<div id="rect" hidden></div>
+<div id="objCard" class="panel" hidden>
+  <h2 id="objTitle"></h2>
+  <div class="row" id="objDetectRow"><button id="objDetect" class="primary" title="Finds every object in the box (~20 s); ones already found are skipped">Find all objects</button></div>
+  <div id="objName"><label for="objLabel" id="objNameLabel"></label>
+    <div class="row"><input type="text" id="objLabel"><button id="objSave"></button></div></div>
+  <div class="row"><button id="objRemove">Remove</button><button id="objCancel">Cancel</button></div>
+  <div id="objStatus" class="meter"></div>
+</div>
 <div id="card" class="panel" hidden>
   <div><h2 id="cardLabel"></h2><span id="cardKind" class="kind"></span></div>
   <label for="action" id="actionLabel">Action (recorded)</label>
@@ -137,15 +163,15 @@ body.placing canvas { cursor: crosshair; }
   <div id="busyTitle"></div><div id="busyText"></div>
   <div class="bar" id="busyBarBox"><span id="busyBar"></span></div><div id="busyPct" class="meter"></div>
 </div></div>
-<div id="help">Drag to look · WASD or arrows to move · scroll to zoom · click an object to change it · click an edit, or [ and ], to step through them</div>
+<div id="help"></div>
 <div id="pad"><span></span><button data-k="KeyW" aria-label="Forward">▲</button><span></span>
   <button data-k="KeyA" aria-label="Left">◀</button><button data-k="KeyS" aria-label="Back">▼</button><button data-k="KeyD" aria-label="Right">▶</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const COLORS = { 1: [1.0, 0.55, 0.1], 2: [0.2, 0.78, 1.0] };   // by kind: --movable orange, --articulated cyan
-const SUGGEST = { movable: ["pick it up", "knock it over", "take it away"], articulated: ["open it", "close it", "open it halfway"] };
+const COLOR = [1.0, 0.55, 0.1];   // --object orange
+const SUGGEST = ["pick it up", "open it", "close it"];
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));   // at most 2x (untuned)
@@ -161,18 +187,17 @@ const keys = new Set();
 
 const material = new THREE.ShaderMaterial({
   uniforms: { map: { value: null }, ids: { value: null }, hover: { value: 0 }, selected: { value: 0 }, show: { value: 1 },
-              movable: { value: new THREE.Vector3(...COLORS[1]) }, articulated: { value: new THREE.Vector3(...COLORS[2]) } },
+              tint: { value: new THREE.Vector3(...COLOR) } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D map, ids; uniform float hover, selected, show; uniform vec3 movable, articulated; varying vec2 vUv;
+    uniform sampler2D map, ids; uniform float hover, selected, show; uniform vec3 tint; varying vec2 vUv;
     void main() {
       vec3 c = texture2D(map, vUv).rgb;
       vec3 t = floor(texture2D(ids, vec2(vUv.x, 1.0 - vUv.y)).rgb * 255.0 + 0.5);   // raw rows: top first
       float id = t.r * 256.0 + t.g;
-      vec3 k = t.b > 1.5 ? articulated : movable;   // kind 2: articulated (KIND in serve.py)
       if (id > 0.0) {
         float a = id == selected ? 0.55 : id == hover ? 0.42 : 0.16 * show;   // tint strength (untuned)
-        c = mix(c, k, a);
+        c = mix(c, tint, a);
       }
       gl_FragColor = vec4(c, 1.0);
     }`,
@@ -262,10 +287,27 @@ async function load(name, keepView, at = null) {
   if (!keepView) { yaw = 0; pitch = 0; offset.set(0, 0); }
   hover = selected = 0;
   step = at;
+  if (!keepView && !Object.keys(meta.objects).length) tool = "objects";   // a new scene: add its objects first
   renderHistory();
   renderStep();
   renderSession();
+  renderTool();
 }
+
+// Tools: Act on objects, or correct the object list (Objects: drag a rectangle, right-drag to look around).
+let tool = "act";
+function renderTool() {
+  $("toolAct").setAttribute("aria-pressed", String(tool === "act")); $("toolObjects").setAttribute("aria-pressed", String(tool === "objects"));
+  document.body.classList.toggle("rect", tool === "objects");
+  $("objectsPanel").hidden = tool !== "objects"; $("actPanel").hidden = tool !== "act";
+  const n = Object.keys(S.meta.objects).length;
+  $("objCount").textContent = `${n} object${n === 1 ? "" : "s"}`;
+  $("help").textContent = tool === "objects"
+    ? "Drag a box to find objects · click one to rename or remove it · right-drag to look around · WASD to move"
+    : "Drag to look · WASD or arrows to move · scroll to zoom · click an object to change it · click an edit, or [ and ], to step through them";
+}
+$("toolAct").onclick = () => { tool = "act"; closeCard(); renderTool(); };
+$("toolObjects").onclick = () => { tool = "objects"; closeCard(); startPlacing(null); renderTool(); };
 
 // Looking back: the room after edit n (0: the original), read-only.
 let step = null;
@@ -363,8 +405,30 @@ const objectOf = (label) => S && label ? S.meta.objects[label - 1] : null;
 // Look and move.
 let drag = null;
 const el = renderer.domElement;
-el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; el.setPointerCapture(e.pointerId); });
+let rectDrag = null;
+const rectTool = () => tool === "objects" && step === null;
+el.addEventListener("contextmenu", (e) => e.preventDefault());
+el.addEventListener("pointerdown", (e) => {
+  el.setPointerCapture(e.pointerId);
+  if (rectTool() && e.button === 0) { rectDrag = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY }; return; }
+  drag = { x: e.clientX, y: e.clientY, moved: false };
+});
+function drawRect(r) {
+  $("rect").hidden = !r;
+  if (r) Object.assign($("rect").style, { left: Math.min(r.x0, r.x1) + "px", top: Math.min(r.y0, r.y1) + "px",
+    width: Math.abs(r.x1 - r.x0) + "px", height: Math.abs(r.y1 - r.y0) + "px" });
+}
+// A rectangle on the panorama: where a 9 x 9 grid of rays across it meets the room (untuned).
+function rectPoints(r) {
+  const pts = [];
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) {
+    pick(r.x0 + (r.x1 - r.x0) * i / 8, r.y0 + (r.y1 - r.y0) * j / 8);
+    if (lastHit) pts.push([+lastHit.u.toFixed(5), +lastHit.v.toFixed(5)]);
+  }
+  return pts;
+}
 el.addEventListener("pointermove", (e) => {
+  if (rectDrag) { rectDrag.x1 = e.clientX; rectDrag.y1 = e.clientY; drawRect(rectDrag); return; }
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;   // over 4 px: a drag, not a click (untuned)
@@ -380,12 +444,23 @@ el.addEventListener("pointermove", (e) => {
   if (placing || step !== null) { hover = 0; $("tip").hidden = true; return; }
   const o = objectOf(hover);
   $("tip").hidden = !o;
-  if (o) { $("tip").textContent = `${o.label} · ${o.kind}`; $("tip").style.left = e.clientX + 14 + "px"; $("tip").style.top = e.clientY + 12 + "px"; }
+  if (o) { $("tip").textContent = o.label; $("tip").style.left = e.clientX + 14 + "px"; $("tip").style.top = e.clientY + 12 + "px"; }
 });
 el.addEventListener("pointerup", (e) => {
+  if (rectDrag) {
+    const r = rectDrag; rectDrag = null;
+    if (Math.abs(r.x1 - r.x0) < 8 || Math.abs(r.y1 - r.y0) < 8) {   // under 8 px: a click (untuned)
+      drawRect(null);
+      const id = pick(e.clientX, e.clientY);
+      if (objectOf(id)) openObjCard({ id }, e.clientX, e.clientY); else closeCard();
+      return;
+    }
+    openObjCard({ rect: r, pts: rectPoints(r) }, e.clientX, e.clientY);
+    return;
+  }
   const click = drag && !drag.moved;
   drag = null;
-  if (!click || step !== null) return;
+  if (!click || step !== null || tool === "objects") return;   // Objects: a right-click only looks
   const id = pick(e.clientX, e.clientY);
   if (placing) { if (lastHit) openPlaceCard(lastHit, e.clientX, e.clientY); return; }
   if (objectOf(id)) openCard(id, e.clientX, e.clientY); else closeCard();
@@ -432,11 +507,11 @@ function openCard(id, x, y) {
   $("director").value = ""; $("director").placeholder = "e.g. erase it (optional; else planned from the action)";
   const o = objectOf(id);
   $("cardLabel").textContent = o.label;
-  $("cardKind").textContent = o.kind;
-  $("cardKind").style.color = o.kind === "articulated" ? "var(--articulated)" : "var(--movable)";
-  $("action").value = ""; $("action").placeholder = SUGGEST[o.kind][0];
+  $("cardKind").textContent = "object";
+  $("cardKind").style.color = "var(--object)";
+  $("action").value = ""; $("action").placeholder = SUGGEST[0];
   $("chips").innerHTML = "";
-  for (const s of SUGGEST[o.kind]) {
+  for (const s of SUGGEST) {
     const b = document.createElement("button"); b.textContent = s;
     b.onclick = () => { $("action").value = s; $("action").focus(); };
     $("chips").append(b);
@@ -446,7 +521,56 @@ function openCard(id, x, y) {
   $("include").textContent = { interacted: "In the session", included: "Remove from session" }[o.session] || "Add to session";
   setStatus(""); showCard(x, y);
 }
-function closeCard() { $("card").hidden = true; selected = 0; target = null; }
+function closeCard() { $("card").hidden = true; $("objCard").hidden = true; drawRect(null); selected = 0; target = null; objFor = null; }
+
+// The object list by hand: a rectangle adds an object (named here, outlined by SAM) or removes the objects it covers;
+// a clicked object is renamed or removed.
+let objFor = null;
+function openObjCard(f, x, y) {
+  $("card").hidden = true;
+  objFor = f; selected = f.id || 0;
+  const o = f.id ? objectOf(f.id) : null;
+  $("objTitle").textContent = o ? o.label : "Find objects here";
+  $("objLabel").value = o ? o.label : ""; $("objLabel").placeholder = o ? o.label : "its name, e.g. mug";
+  $("objNameLabel").textContent = o ? "Name" : "Or find one thing";
+  $("objSave").textContent = o ? "Rename" : "Find it";
+  $("objDetectRow").hidden = !!o;
+  $("objRemove").hidden = !o;
+  $("objStatus").textContent = "";
+  const card = $("objCard"); card.hidden = false;
+  card.style.left = Math.max(12, Math.min(innerWidth - card.offsetWidth - 12, x + 16)) + "px";
+  card.style.top = Math.max(12, Math.min(innerHeight - card.offsetHeight - 12, y - 20)) + "px";
+  $("objLabel").focus();
+}
+async function objOp(body, title) {
+  $("objSave").disabled = $("objRemove").disabled = true;
+  try {
+    await busy(title, async () => { await post("objects", body); await load(S.name, true); });
+    closeCard();
+  } catch (err) { $("objStatus").textContent = err.message; }
+  finally { $("objSave").disabled = $("objRemove").disabled = false; }
+}
+$("objSave").onclick = () => {
+  const label = $("objLabel").value.trim();
+  if (!label) { $("objStatus").textContent = "Name it first."; return; }
+  if (objFor.id) objOp({ op: "rename", id: objFor.id - 1, label }, `Renaming to ${label}…`);
+  else objOp({ op: "add", area: objFor.pts, label }, `Finding the ${label}…`);
+};
+async function detect(area, button) {
+  button.disabled = true;
+  try {
+    const { job } = await post("detect", { area });
+    const r = await waitJob(job, "Finding objects…");
+    await busy("Loading…", () => load(S.name, true));
+    closeCard();
+    $("objCount").textContent += r.added.length ? ` · found ${r.added.length} new` : " · nothing new found there";
+  } catch (err) { $("objStatus").textContent = err.message; }
+  finally { button.disabled = false; }
+}
+$("objDetect").onclick = () => detect(objFor.pts, $("objDetect"));
+$("objRemove").onclick = () => objOp({ op: "remove", ids: [objFor.id - 1] }, "Removing…");
+$("objCancel").onclick = closeCard;
+$("objLabel").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("objSave").click(); } });
 function setStatus(t, error) { $("status").textContent = t; $("status").className = error ? "error" : ""; }
 $("cancel").onclick = closeCard;
 for (const f of ["action", "director"])

@@ -8,12 +8,15 @@ panorama shows the end state. Runs anywhere that reaches Triton, a laptop includ
 
     uv run sim/pano_ideate/serve.py datasets/pano_ideate        # then open http://localhost:8765
 
-Serves viewer.html and, per scene in the folder (steps 1 and 2 done), the current panorama, its depth and a map of
-the movable and articulated objects. Add a panorama from the viewer: it runs steps 1 and 2 (depth.py, objects.py; a
-few minutes, mostly on the server) and opens it. The viewer builds a mesh from the depth (leaving out triangles across
-depth jumps, a far sphere of the panorama behind them) and keeps the eye within --radius of the capture point, at the
-capture height, marked by a circle on the floor: a single panorama shows nothing behind objects, so further away holes
-and stretched surfaces appear. Hovering highlights an object; clicking it asks for an action, recorded as said, and
+Serves viewer.html and, per scene in the folder (step 1 done), the current panorama, its depth and a map of its
+objects. Add a panorama from the viewer: it runs step 1 (depth.py; ~2 min, mostly on the server) and opens it with no
+objects. The viewer builds a mesh from the depth (leaving out triangles across depth jumps, a far sphere of the
+panorama behind them) and keeps the eye within --radius of the capture point, at the capture height, marked by a
+circle on the floor: a single panorama shows nothing behind objects, so further away holes and stretched surfaces
+appear. Objects are found by hand (the viewer's Objects tool): drag a rectangle to find the objects in it (VLM, then
+SAM) or one object you name (SAM outlines it from the box); click an object to rename or remove it. That writes the
+scene's objects/objects.json (a list made by objects.py first is kept as objects.detected.json); an object with edits
+can be renamed but not removed. Hovering highlights an object; clicking it asks for an action, recorded as said, and
 optionally a director prompt, what the image shows changing ("bin lid opens, revealing an empty interior"), which goes
 to the image editor as it is (the VLM only reads whether it removes the object or which state it leaves it in). Without
 one the edit is act.py's plan: the VLM works it out from the action and the clicked object (which objects change, all
@@ -49,6 +52,7 @@ import cv2
 import numpy as np
 
 import act
+import common
 import depth as depth_step
 import models
 import objects as objects_step
@@ -67,7 +71,6 @@ p.add_argument("--steps", type=int, default=40, help="image edit steps (the edit
 p.add_argument("--host", default="127.0.0.1", help="address to listen on (0.0.0.0: reachable from other machines)")
 args = p.parse_args()
 VIEWER = Path(__file__).with_name("viewer.html")
-KIND = {"movable": 1, "articulated": 2}
 SAME = {"opened": "open", "shut": "closed", "close": "closed"}
 triton = models.Triton()
 locks: dict[str, threading.Lock] = {}
@@ -80,11 +83,9 @@ log = lambda s: print(s, flush=True)
 # A job is a list of phases; a phase reports done/total when it can count, otherwise its progress is its elapsed time
 # over how long it took before (EXPECTED, seconds, updated as jobs run). The starting values are rough: edit, place and
 # pano_depth as the README's timings, the rest untuned.
+# list, segment and save_objects: finding the objects in a dragged area (~20 s in all).
 EXPECTED = {"plan": 3, "edit": 30, "restore": 2, "depth": 3, "save": 3, "place": 35, "erase": 40, "pack": 10,
-            "pano_depth": 120, "list": 25, "detect": 15, "segment": 15, "merge": 80, "check": 8, "save_objects": 20}
-OBJECT_PHASES = {"Listing the objects in each view": "list", "Looking for missed objects": "detect",
-                 "Outlining the objects": "segment", "Merging views": "merge", "Checking each object": "check",
-                 "Saving the objects": "save_objects"}
+            "pano_depth": 120, "list": 12, "segment": 4, "save_objects": 4}
 jobs: dict[str, "Job"] = {}
 
 
@@ -139,7 +140,7 @@ def start(title: str, phases: list[str], work) -> Job:
 
 
 def add_scene(name: str, image: bytes) -> Job:
-    """A new scene from a panorama: steps 1 and 2."""
+    """A new scene from a panorama: step 1, and an empty object list (objects are added in the viewer)."""
     folder = args.root / name
     pano = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
     if pano is None:
@@ -154,14 +155,13 @@ def add_scene(name: str, image: bytes) -> Job:
             with lock(name):
                 job.enter("pano_depth", "Estimating depth on the server")
                 depth_step.run(folder, triton, log=log)
-                objects_step.run(folder, triton, log=log,
-                                 progress=lambda stage, done, total: job.enter(OBJECT_PHASES.get(stage, stage), stage,
-                                                                               done, total if total > 1 else None))
+                (folder / "objects" / "masks").mkdir(parents=True)
+                (folder / "objects" / "objects.json").write_text("[]")
         except Exception:
             shutil.rmtree(folder, ignore_errors=True)      # so the name can be used again
             raise
         return {"scene": name}
-    return start(f"Adding {name}", ["pano_depth", *dict.fromkeys(OBJECT_PHASES.values())], work)
+    return start(f"Adding {name}", ["pano_depth"], work)
 
 
 def scene_names():
@@ -195,7 +195,7 @@ def state(name: str) -> dict:
         return states[name]
     sc = act.Scene(args.root / name)
     st = {"scene": sc, "removed": set(), "inventory": [], "history": [], "memory": [], "include": set(), "undo": [],
-          "version": 0}
+          "version": 0, "area": {}}
     st["original"] = snapshot(st)
     out = sc.path / "edits"
     if (out / "state.json").exists():                      # carry on where the last session stopped
@@ -306,17 +306,13 @@ def files(st, what):
         mm = np.clip(np.round(cv2.resize(sc.distance, (args.grid, args.grid // 2), interpolation=cv2.INTER_NEAREST)
                               * 1000), 0, 2 ** 24 - 1).astype(np.uint32)   # makes a surface that isn't there
         return encode(np.stack([mm & 255, (mm >> 8) & 255, mm >> 16], -1).astype(np.uint8), ".png"), "image/png"
-    if what == "ids.png":      # object id + 1 in R (high) and G (low), its kind in B; nothing = 0
+    if what == "ids.png":      # object id + 1 in R (high) and G (low), 1 in B; nothing = 0
         lab = sc.labels.astype(np.int32)
         if st["removed"]:
             lab[np.isin(lab - 1, list(st["removed"]))] = 0
         # 2048 x 1024: the resolution of the viewer's hover, click and tint map (untuned).
         lab = cv2.resize(lab.astype(np.float32), (2048, 1024), interpolation=cv2.INTER_NEAREST).astype(np.int32)
-        kinds = np.zeros(lab.max() + 1, np.uint8)
-        for k, o in sc.objects.items():
-            if k + 1 < len(kinds):
-                kinds[k + 1] = KIND.get(o["kind"], 0)
-        rgb = np.stack([lab >> 8, lab & 255, kinds[lab]], -1).astype(np.uint8)
+        rgb = np.stack([lab >> 8, lab & 255, lab > 0], -1).astype(np.uint8)
         return encode(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), ".png"), "image/png"
     if what == "meta.json":
         return json.dumps({
@@ -324,7 +320,7 @@ def files(st, what):
             "jump": args.jump, "version": st["version"], "history": st["history"],
             "inventory": [{"item": i, "label": st["memory"][i]["label"]} for i in st["inventory"]],
             "session_assets": len(st["memory"]),
-            "objects": {k: {"label": o["label"], "kind": o["kind"],
+            "objects": {k: {"label": o["label"],
                             "mode": next((e["current"] for e in st["memory"] if k in e["ids"]), None),
                             "session": in_session(st, k)}
                         for k, o in interactable(st).items()},
@@ -489,10 +485,8 @@ def place_item(name, n, u, v, action, director, agent, job):
         (sc.path / "edits" / "masks").mkdir(parents=True, exist_ok=True)
         path = (sc.path / "edits" / "masks" / f"{k}.png").resolve()
         cv2.imwrite(str(path), mask.astype(np.uint8) * 255)
-        sc.objects = {**sc.objects, k: {"id": f"{k}_{e['label']}", "label": e["label"], "kind": "movable",
-                                        "movable": True, "interactable": True,
-                                        "center": None, "size": e["size"],
-                                        "mask": str(path)}}
+        sc.objects = {**sc.objects, k: {"id": f"{k}_{e['label']}", "label": e["label"], "center": None,
+                                        "size": e["size"], "mask": str(path)}}
         sc.labels[mask] = k + 1
         job.enter("save", "Saving")
         e["ids"].add(k)                                  # the same object, back in the room
@@ -512,6 +506,171 @@ def place_item(name, n, u, v, action, director, agent, job):
         st["version"] += 1
         save(st)
     return st["history"][-1]
+
+
+# --- Correcting the object list ------------------------------------------------------------------------------------
+
+def area_box(sc, uv):
+    """A view around the panorama points uv ([[u, v], ...], 0-1: a grid across a rectangle dragged in the viewer) and
+    their bounding box in it: (view, image, box). The view: crop_camera's margin 1.5, at least 20 deg (untuned)."""
+    uv = np.asarray(uv, np.float64).reshape(-1, 2)
+    px = np.minimum((uv[:, 0] * sc.W).astype(int), sc.W - 1)
+    py = np.minimum((uv[:, 1] * sc.H).astype(int), sc.H - 1)
+    seed = np.zeros((sc.H, sc.W), bool)
+    seed[py, px] = True
+    yaw, pitch, fov = act.crop_camera(sc, seed, 1.5, least=20)
+    S = 1024                                                         # the view's px, as act.render's (untuned)
+    vx, vy, front = common.project(sc.frame, sc.dirs[py, px], yaw, pitch, S, fov)
+    if front.sum() < 2:
+        raise ValueError("Draw the box over something in the room.")
+    mx, my = common.view(sc.frame, sc.H, sc.W, yaw, pitch, S, fov)
+    img = cv2.remap(sc.pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
+    box = [vx[front].min(), vy[front].min(), vx[front].max(), vy[front].max()]
+    return (mx, my, yaw, pitch, fov), img, box
+
+
+def base_objects(sc, objects: dict):
+    """Write the corrected object list to objects/objects.json, keeping the detected one the first time."""
+    f = sc.path / "objects" / "objects.json"
+    if not f.with_name("objects.detected.json").exists():
+        shutil.copy(f, f.with_name("objects.detected.json"))
+    f.write_text(json.dumps([objects[k] for k in sorted(objects)], indent=1))
+
+
+def relabel_under(st, region):
+    """The object map in region, as the remaining objects' masks give it (largest first, as act.Scene's), in the
+    current state (less what was removed) and in the original."""
+    sc = st["scene"]
+    fresh = np.zeros(int(region.sum()), np.int16)
+    todo = [(k, sc.mask(k)[region]) for k in st["original"]["objects"]]
+    for k, m in sorted(todo, key=lambda t: -t[1].sum()):
+        fresh[m] = k + 1
+    st["original"]["labels"][region] = fresh
+    fresh[np.isin(fresh - 1, list(st["removed"]))] = 0
+    sc.labels[region] = fresh
+
+
+def add_object(st, mask, label, base, dedupe=False):
+    """Add an object (its panorama mask) to the list: the current state, the original and base, the list to write.
+    dedupe: skip it when an object already covers it (IoU over 0.5 with one under it; untuned). Its id, or None."""
+    sc = st["scene"]
+    if mask.sum() <= 50:                                             # as objects.py's smallest object
+        return None
+    if dedupe:
+        under = np.bincount(st["original"]["labels"][mask].astype(np.int64))
+        for j in np.argsort(-under)[:3]:                             # the 3 most overlapped objects (untuned)
+            if j > 0 and j - 1 in sc.objects and under[j]:
+                other = sc.mask(j - 1)
+                if (other & mask).sum() / (other | mask).sum() > 0.5:
+                    return None
+    mask, lo, hi, near = objects_step.extent(mask, sc.distance, common.points(sc.distance, sc.frame))
+    k = max([*sc.objects, *base], default=-1) + 1
+    oid = f"{k:02d}_{'_'.join(re.findall(r'[a-z0-9]+', label))}"
+    (sc.path / "objects" / "masks").mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(sc.path / "objects" / "masks" / f"{oid}.png"), mask.astype(np.uint8) * 255)
+    o = {"id": oid, "label": label, "center": ((lo + hi) / 2).round(3).tolist(), "size": (hi - lo).round(3).tolist(),
+         "distance": round(near, 2), "views": [], "mask": f"masks/{oid}.png"}
+    base[k], sc.objects = o, {**sc.objects, k: o}
+    st["area"][k] = int(mask.sum())
+    for labels in (sc.labels, st["original"]["labels"]):              # above larger objects, under smaller ones
+        under = labels[mask].astype(np.int64)
+        labels[mask] = np.where((under == 0) | (pixel_area(st, under - 1) >= st["area"][k]), k + 1, under)
+    return k
+
+
+def pixel_area(st, ks: np.ndarray) -> np.ndarray:
+    """The objects' sizes on the panorama (mask pixels; act.Scene draws larger ones first), read once."""
+    out = np.zeros(len(ks), np.int64)
+    for j in np.unique(ks):
+        if j >= 0 and j not in st["area"]:
+            st["area"][j] = int(st["scene"].mask(j).sum()) if j in st["scene"].objects else 0
+        out[ks == j] = st["area"].get(j, 0)
+    return out
+
+
+def objects_changed(st, base):
+    st["original"]["objects"] = base
+    base_objects(st["scene"], base)
+    save(st)
+    st["version"] += 1
+
+
+def edit_objects(name, body):
+    """Correct the object list by hand: add one named object in a dragged area (SAM outlines it), remove some, rename
+    one. Not an edit (no undo): it changes the scene's base list, which Reset goes back to."""
+    st = state(name)
+    sc = st["scene"]
+    op = body.get("op")
+    with lock(name):
+        base = dict(st["original"]["objects"])
+        edited = {k for e in st["memory"] for k in e["ids"]}
+        if op == "add":
+            label = " ".join(str(body.get("label", "")).lower().split())
+            if not label:
+                raise ValueError("Name the object.")
+            view, img, box = area_box(sc, body["area"])
+            seg = triton.segment(img, [box])[0]
+            k = add_object(st, act.view_to_pano(sc, seg.astype(np.float32), view), label, base)
+            if k is None:
+                raise ValueError("Nothing found there: draw the box tighter around it.")
+            log(f"{name}: added {base[k]['id']}")
+            result = {"id": k, "label": base[k]["label"]}
+        elif op == "remove":
+            ids = {int(k) for k in body.get("ids", [])} & set(base)
+            if ids & edited:
+                raise ValueError("Undo what you did with the " + ", ".join(sc.objects[k]["label"] for k in ids & edited)
+                                 + " before removing it.")
+            if not ids:
+                raise ValueError("Nothing to remove.")
+            gone = np.array(sorted(ids)) + 1
+            region = np.isin(st["original"]["labels"], gone) | np.isin(sc.labels, gone)
+            for k in ids:
+                base.pop(k)
+                st["include"].discard(k)
+                st["area"].pop(k, None)
+            sc.objects = {j: o for j, o in sc.objects.items() if j not in ids}
+            st["original"]["objects"] = base
+            relabel_under(st, region)
+            log(f"{name}: removed objects {sorted(ids)}")
+            result = {"removed": sorted(ids)}
+        elif op == "rename":
+            k, label = int(body["id"]), " ".join(str(body.get("label", "")).lower().split())
+            if not label or k not in sc.objects:
+                raise ValueError("Name the object.")
+            sc.objects = {**sc.objects, k: {**sc.objects[k], "label": label}}
+            if k in base:
+                base[k] = {**base[k], "label": label}
+            for e in st["memory"]:
+                if k in e["ids"]:
+                    e["label"] = label
+            result = {"id": k, "label": label}
+        else:
+            raise ValueError(f"unknown op {op!r}")
+        objects_changed(st, base)
+    return result
+
+
+def detect(name, area, job):
+    """Find the objects in a dragged area and add the ones not in the list yet: the VLM lists what is in a view around
+    it, the boxes centred inside the area are kept, SAM outlines them."""
+    st = state(name)
+    sc = st["scene"]
+    with lock(name):
+        base = dict(st["original"]["objects"])
+        job.enter("list", "Listing the objects in the area")
+        view, img, box = area_box(sc, area)
+        inside = lambda b: box[0] <= (b[0] + b[2]) / 2 <= box[2] and box[1] <= (b[1] + b[3]) / 2 <= box[3]
+        dets = [d for d in objects_step.parse(triton.vlm(objects_step.PROMPT, img, 3000), img.shape[0])
+                if inside(d["box"])]
+        job.enter("segment", "Outlining them")
+        masks = triton.segment(img, [d["box"] for d in dets]) if dets else []
+        found = [(act.view_to_pano(sc, m.astype(np.float32), view), d["label"]) for m, d in zip(masks, dets)]
+        job.enter("save_objects", "Adding them")
+        added = [k for m, label in sorted(found, key=lambda f: -f[0].sum())   # largest first, as act.Scene's
+                 if (k := add_object(st, m, label, base, dedupe=True)) is not None]
+        objects_changed(st, base)
+        log(f"{name}: found {len(found)} in the area, added {len(added)}")
+    return {"found": len(found), "added": [base[k]["label"] for k in added]}
 
 
 def back(name, reset):
@@ -617,6 +776,14 @@ class Handler(BaseHTTPRequestHandler):
                             lambda job: place_item(name, n, u, v, str(body.get("action", "")).strip(),
                                                    str(body.get("director", body.get("note", ""))).strip(),
                                                    body.get("agent"), job))
+                return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
+            if what == "objects":
+                return self.reply(json.dumps(edit_objects(name, body)).encode(), "application/json")
+            if what == "detect":
+                if not body.get("area"):
+                    return self.fail("Draw a box to look in.", 400)
+                job = start("Finding objects", ["list", "segment", "save_objects"],
+                            lambda job: detect(name, body["area"], job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what in ("undo", "reset"):
                 back(name, what == "reset")

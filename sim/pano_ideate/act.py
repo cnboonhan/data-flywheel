@@ -11,7 +11,7 @@ object list, and names the objects the action changes, with what each looks like
 thrown away) or a new state ("the fridge door open"). For each, a perspective view around the object goes to
 Qwen-Image-Edit-2511 (Apache-2.0) with a second copy that outlines the object in red, and only the edit near that
 object goes back onto the panorama: for a removal, the object's surroundings (shading-matched, with its contact
-shadow) less every other movable or articulated object; for a new state, the regions that changed and touch it.
+shadow) less every other object of about its size; for a new state, the regions that changed and touch it.
 The depth of the changed pixels comes from MoGe-3 on a view around each changed region, scaled to the old
 depth around it.
 Writes <scene>/act/<action>/: plan.json (the objects and changes; reused on a rerun, --replan to redo), pano.jpg,
@@ -32,8 +32,8 @@ import models
 
 PLAN = (
     "This is a 360-degree panorama of a room. Direction 0 deg is the middle of the image; directions grow to the left "
-    "and are negative to the right; 180 deg is at both edges. The objects found in it, one per line as id: label "
-    "(kind), direction, distance from the camera, height of its centre above the floor:\n{objects}\n\n"
+    "and are negative to the right; 180 deg is at both edges. The objects found in it, one per line as id: label, "
+    "direction, distance from the camera, height of its centre above the floor:\n{objects}\n\n"
     "Action: {action}\n\n"
     "Which objects look different once the action is complete? Leave out every object the action does not change. "
     "Change exactly as many objects as the action names: \"a chair\" or \"one of the chairs\" is one chair (the "
@@ -84,11 +84,10 @@ class Scene:
 
     @property
     def labels(self) -> np.ndarray:
-        """The movable and articulated objects, by id + 1, largest first so smaller ones stay visible on top (not
-        the static ones: the surface under a removed object must change with it)."""
+        """The objects, by id + 1, largest first so smaller ones stay visible on top."""
         if self._labels is None:
             self._labels = np.zeros((self.H, self.W), np.int16)
-            todo = [(k, self.mask(k)) for k, o in self.objects.items() if o["kind"] != "static"]
+            todo = [(k, self.mask(k)) for k in self.objects]
             for k, m in sorted(todo, key=lambda t: -t[1].sum()):
                 self._labels[m] = k + 1
         return self._labels
@@ -103,7 +102,7 @@ def plan(triton: models.Triton, scene: Scene, action: str) -> list[dict]:
     lines = []
     for k, o in scene.objects.items():
         x, y, z = o["center"]
-        lines.append(f"{k}: {o['label']} ({o['kind']}), {np.degrees(np.arctan2(y, x)):.0f} deg, "
+        lines.append(f"{k}: {o['label']}, {np.degrees(np.arctan2(y, x)):.0f} deg, "
                      f"{np.hypot(x, y):.1f} m, {z:.1f} m")
     text = PLAN.format(objects="\n".join(lines), action=action)
     image = cv2.resize(scene.pano, (2048, 1024), interpolation=cv2.INTER_AREA)   # the VLM's view of the room, untuned
@@ -248,7 +247,7 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
     prompt = EDIT.format(object=c["object"], change=change[0].upper() + change[1:])
 
     # What goes back: for a removal, the object's box grown by a fifth of its size (its contact shadow goes too, which
-    # changes too little to detect), less every other movable or articulated object; for a new state, the regions
+    # changes too little to detect), less every other object of about its size; for a new state, the regions
     # that changed within the object's box grown by its full size (a door or lid swings out) and touching it.
     zone = box_zone(obj, 0.2 if remove else 1.0)
     core = cv2.dilate(obj, np.ones((15, 15), np.uint8)) > 0             # the object + 7 px: unfeathered (untuned)
@@ -263,8 +262,12 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
         images = [img, marked]
     res, raw, diff = edit(triton, images, prompt, img, obj, ref, steps, log, c["object"])
     if remove:
-        lab = cv2.remap(scene.labels, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
-        keep = (zone | core) & ~((lab > 0) & ~np.isin(lab, np.array(c["ids"]) + 1) & ~core)   # other objects stay
+        lab = cv2.remap(scene.labels, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP).astype(np.int64)
+        # Other objects stay, except ones over 4 times its size in the view: the desk it stands on, the wall unit
+        # behind it, whose surface loses its shadow with it (4: untuned).
+        big = np.bincount(lab.ravel()) > 4 * max(int((obj > 0).sum()), 1)
+        other = (lab > 0) & ~np.isin(lab, np.array(c["ids"]) + 1) & ~big[lab]
+        keep = (zone | core) & ~(other & ~core)
         # Match the fill's shading to its surroundings: the colour offset on the unchanged pixels around it, spread
         # smoothly across it (one global offset leaves the object's silhouette in a slightly different tone): measured
         # 4 px clear of the kept area, spread over a quarter of its size (untuned).
