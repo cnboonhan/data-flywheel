@@ -2,7 +2,7 @@
 
 Gaussian splats of real rooms for Isaac Sim and IsaacLab-Arena backgrounds, trained with [3DGRUT](https://github.com/nv-tlabs/3dgrut) (3DGUT + MCMC, the trainer behind NVIDIA NuRec; an untouched submodule at `sim/colmap_splat/3dgrut`). Data lives in `datasets/colmap_splat/` (gitignored).
 
-![The office splat from pano_ideate, circling its capture point](../../assets/colmap_splat/office_splat.gif)
+![The office splat from pano_ideate's example, circling its capture point: the room without its bin, bag and doors](../../assets/colmap_splat/office_splat.gif)
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ bash sim/colmap_splat/install.sh
 
 | Input | Commands |
 |---|---|
-| A [`pano_ideate`](../pano_ideate/README.md) session (the office above; ~7 + 3 min) | `uv run sim/colmap_splat/from_pano.py <scene>_session.zip datasets/colmap_splat/<scene>`<br>`uv run sim/colmap_splat/train.py datasets/colmap_splat/<scene> datasets/colmap_splat/<scene>/runs --floor` |
+| A [`pano_ideate`](../pano_ideate/README.md) session (the office above; ~7 + 9 min) | `uv run sim/colmap_splat/from_pano.py <scene>_session.zip datasets/colmap_splat/<scene>`<br>`uv run sim/colmap_splat/train.py datasets/colmap_splat/<scene> datasets/colmap_splat/<scene>/runs --floor` |
 | A COLMAP dataset: NVIDIA's zh_lounge (gated: accept the terms, `hf auth login`) | `uvx hf download nvidia/PhysicalAI-Robotics-NuRec --repo-type dataset --include 'zh_lounge/*' --local-dir datasets/colmap_splat/zh_lounge`<br>`uv run sim/colmap_splat/train.py datasets/colmap_splat/zh_lounge/zh_lounge/colmap datasets/colmap_splat/zh_lounge/runs` |
 | A [`sensors/real2sim`](../../sensors/real2sim/README.md) capture: refine the robot's poses first (x86_64 only; ~5 min for 1000 images) | `uv run sim/colmap_splat/refine_poses.py datasets/real2sim/run1/colmap datasets/real2sim/run1/colmap_refined`<br>`uv run sim/colmap_splat/train.py datasets/real2sim/run1/colmap_refined datasets/real2sim/run1/runs --floor` |
 | Any of these on the S3 gateway ([client setup](../../services/versitygw/README.md#client-setup)) | `uv run sim/colmap_splat/train.py s3://raw/open_datasets/nurec-zh_lounge/zh_lounge/colmap s3://processed/splats/zh_lounge` |
@@ -53,7 +53,7 @@ As an Arena background: [isaaclab_arena](../isaaclab_arena/README.md#notes). Gau
 ## Notes
 
 - **Expect:**
-  - **office pano:** 30 dB held out at 7k iterations in ~3 min on a GB300.
+  - **office pano:** 30 dB / 0.88 SSIM held out at the default 30k iterations in ~9 min on a GB300 (30 dB at 7k in ~3 min).
   - **zh_lounge:** ~27 dB / 0.92 SSIM at 30k in ~19 min (GB300; ~31 min on an RTX 5090 Laptop), ~25 dB at 7k in ~5 min plus a few minutes of JIT compile on a machine's first run.
   - **real2sim ridgeback_demo (1008 images, 7k):** 17.4 dB with a pinhole lens and localisation poses, 18.9 with the right lens, 33.1 / 0.96 with refined poses.
 - **Pano datasets:** 26 views from the capture point cut from the panorama, and 288 from points up to 0.6 m around it drawn from its depth, with OpenCV filling what the panorama never saw (`--fill editor`: Qwen-Image-Edit for views over 1% missing, ~10 s each, `EDIT_ENDPOINT`). Starting points: 600k from the depth. The splat holds up within ~0.6 m of the capture point; the frame is the session's (metric, z up, origin on the floor below the capture point).

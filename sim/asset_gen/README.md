@@ -36,7 +36,7 @@ flowchart LR
 
 ## In IsaacLab-Arena
 
-![Generated objects in Arena on a GB300, in front of the mesh room: scene camera, wrist camera](../../assets/asset_gen/arena.jpg)
+![Generated objects in Arena on a GB300, in front of the mesh room: the bin and the bag of rubbish, a Franka at the capture point](../../assets/asset_gen/arena.jpg)
 
 1. Make the background a textured mesh room (the erased panorama on its depth; renders on any GPU, where colmap_splat's splat needs RT cores).
    ```bash
@@ -44,7 +44,7 @@ flowchart LR
    ```
 2. Write an Arena spec of the objects where the session saw them (position and yaw), with a Franka at the capture point picking one and placing it at another; it prints the environment to export.
    ```bash
-   uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 04_cup --place 03_book
+   uv run sim/asset_gen/arena.py datasets/asset_gen/<scene> --pick 00_plastic_bag_of_rubbish --place 01_bin
    ```
 3. Record it ([isaaclab_arena](../isaaclab_arena/README.md#run); on a GB300, see [Which GPU](../isaaclab_arena/README.md#which-gpu)).
    ```bash
@@ -54,6 +54,7 @@ flowchart LR
 Notes:
 - The room is a static collider, so objects rest on its counters; it shows the photo as it is (emissive), whatever the sim's lights. View it from near the capture point: further away, what the panorama never saw shows.
 - The robot spawns at the panorama's capture point (`ARENA_SPLAT_ORIGIN='0 0'`), and each object stands where the session saw it, turned by its `pose.json` yaw. A capture point next to a counter puts the robot's base against it.
+- An object whose footprint overlaps the room (the office bin's edge on the step) tips over as the sim starts: move its `at_position` in `arena.yaml` clear of it (the bin: 6 cm). Leave doors out: a door asset has no hinge or frame to stand in.
 
 ## Model endpoints
 

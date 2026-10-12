@@ -47,7 +47,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
    ```bash
    uv run sim/asset_gen/objects.py <scene>_session.zip
    ```
-6. Generate the background on a machine with an NVIDIA GPU (~7 + 3 min; [colmap_splat](../colmap_splat/README.md#train)).
+6. Generate the background on a machine with an NVIDIA GPU (~7 + 9 min; [colmap_splat](../colmap_splat/README.md#train)).
    ```bash
    uv run sim/colmap_splat/from_pano.py <scene>_session.zip datasets/colmap_splat/<scene>
    uv run sim/colmap_splat/train.py datasets/colmap_splat/<scene> datasets/colmap_splat/<scene>/runs --floor

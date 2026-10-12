@@ -2,7 +2,7 @@
 
 Helpers around the [IsaacLab-Arena](../../eval/system2/README.md) submodule: generate environments with an LLM, put them in captured or generated rooms, record scripted demos. Nothing here modifies the submodule; `hooks/sitecustomize.py` adds to it from outside.
 
-![The office in Arena on a GB300: the generated objects, the mesh room, a Franka at the capture point](../../assets/isaaclab_arena/office.gif)
+![The office in Arena on a GB300: the generated bin and bag of rubbish, the mesh room, a Franka at the capture point](../../assets/isaaclab_arena/office.gif)
 
 ```mermaid
 flowchart LR
@@ -15,14 +15,14 @@ flowchart LR
 
 ## Run
 
-The office above, end to end from a [pano_ideate](../pano_ideate/README.md) session (`asset_gen` objects, its [mesh room](../asset_gen/README.md#in-isaaclab-arena)):
+The office above, end to end from [pano_ideate's example](../pano_ideate/README.md#run-it) session (`asset_gen` objects, its [mesh room](../asset_gen/README.md#in-isaaclab-arena)); the doors are left out of the spec, since an asset of a door doesn't stand on its own:
 
 ```bash
 uv run sim/asset_gen/background.py datasets/pano_ideate/office/session.zip
-uv run sim/asset_gen/arena.py datasets/asset_gen/office --pick 04_cup --place 03_book   # prints the exports below
+uv run sim/asset_gen/arena.py datasets/asset_gen/office --pick 00_plastic_bag_of_rubbish --place 01_bin   # prints the exports below
 export ARENA_SPLAT_SCENE=$PWD/datasets/asset_gen/office/background/scene.usda ARENA_ASSET_DIR=$PWD/datasets/asset_gen/office/objects ARENA_SPLAT_ORIGIN='0 0'
 bash sim/isaaclab_arena/envgen.sh record --env_spec datasets/asset_gen/office/arena.yaml --video_dir datasets/videos/office \
-  --num_steps 150 --eye -1.2 -1.0 1.6 --target 1.0 0.8 0.6 --kit_args --/crashreporter/enabled=false
+  --num_steps 150 --eye -0.9 1.1 1.7 --target 1.7 0.3 0.4 --kit_args --/crashreporter/enabled=false
 ```
 
 Generate an environment with an LLM ([CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) for `resolve` and the GUI; `build` needs only Isaac Sim). Specs go to [`eval/system2/environments/`](../../eval/system2/environments/) unless `--out_dir` is given.
