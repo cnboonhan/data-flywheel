@@ -100,7 +100,7 @@ Details: [mlflow/](services/mlflow/README.md), naming: [slurm/](services/slurm/R
 
 ### Store and fetch data (S3)
 
-The buckets: `raw` (collected data as it arrived), `processed` (converted datasets, splats, recordings) and admin-only ones ([versitygw/](services/versitygw/README.md)). **Depending on your user, you may not see every bucket, or see none in a list**: your key may only read some buckets, or only upload into one folder. Open the ones you were given by name.
+The buckets: `raw` (collected data as it arrived), `processed` (converted datasets, splats) and admin-only ones ([versitygw/](services/versitygw/README.md)). **Depending on your user, you may not see every bucket, or see none in a list**: your key may only read some buckets, or only upload into one folder. Open the ones you were given by name.
 
 In the browser:
 

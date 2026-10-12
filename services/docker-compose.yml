@@ -30,7 +30,6 @@ services:
       - ../assets:/srv/assets:ro   # the architecture diagram on the landing page; a folder, since git replaces files and a file mount would go stale
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
-      - ${STATE_DIR}/versitygw/buckets/processed/rerun:/rerun:ro   # episode recordings served on rerun.<host>/data/
       - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro   # raw files Rerun imports by URL, served on rerun.<host>/raw/
     depends_on: [mlflow, grafana, loki, versitygw, gitea, keycloak, oauth2-proxy]
 
@@ -231,7 +230,7 @@ services:
       - ${STATE_DIR}/versitygw/buckets:/buckets:ro
     depends_on: [mongo]
 
-  # Rerun web viewer for recordings in processed/rerun/<dataset>/<episode>.rrd. No login of its own: Caddy fronts it with SSO on rerun.<host>.
+  # Rerun web viewer for bags in the raw bucket. No login of its own: Caddy fronts it with SSO on rerun.<host>.
   rerun:
     <<: *common
     build: ./rerun
