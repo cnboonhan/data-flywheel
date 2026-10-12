@@ -1,6 +1,6 @@
 # services
 
-The **Store** column of the [architecture diagram](../README.md#architecture): Docker Compose behind Caddy on one port, run on `$SERVICE_NODE`. `$SERVICE_HOST`, `$CADDY_PORT`, `$SERVICE_NODE`, `$STATE_DIR` below are the values in `.env`. How data moves through it: [the flywheel](../README.md#the-flywheel-end-to-end).
+The **Infra** column of the [architecture diagram](../README.md#architecture): Docker Compose behind Caddy on one port, run on `$SERVICE_NODE`. `$SERVICE_HOST`, `$CADDY_PORT`, `$SERVICE_NODE`, `$STATE_DIR` below are the values in `.env`. How data moves through it: [the flywheel](../README.md#the-flywheel-end-to-end).
 
 | Service | Folder | URL |
 |---|---|---|

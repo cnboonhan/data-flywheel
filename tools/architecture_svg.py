@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Write architecture.svg from architecture.html (the source), so the README can show the diagram inline.
+"""Write architecture.svg from architecture.html (the source), so the README can show the diagram inline, and one
+variant per role (architecture-<role>.svg) with the boxes that role covers (data-roles) in green, for devroles/.
 
-    python3 tools/architecture_svg.py [assets/architecture.html [assets/architecture.svg]]
+    python3 tools/architecture_svg.py [assets/architecture.html [assets/]]
 
 GitHub renders READMEs without iframes, scripts or page styles, so the HTML can't be embedded; the SVG inside it can,
-once its styles travel with it. Light and dark follow the viewer's colour scheme. Links aren't clickable in a README
-image; the README links to the HTML for that.
+once its styles travel with it. Light and dark follow the viewer's colour scheme.
 """
 
 import re
@@ -14,9 +14,10 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 src = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "assets" / "architecture.html"
-dst = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "assets" / "architecture.svg"
+out = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "assets"
+ROLES = ("scientist", "engineering")
 html = src.read_text()
-css = re.search(r"<style>(.*?)</style>", html, re.S).group(1)
+css = re.sub(r"/\*.*?\*/", "", re.search(r"<style>(.*?)</style>", html, re.S).group(1), flags=re.S)  # comments would hide the rule after them
 svg = re.search(r"<svg\b.*?</svg>", html, re.S).group(0)
 
 # Keep the colour variables and the rules for SVG classes; drop page layout (body, main, h1, figure, legend).
@@ -33,5 +34,8 @@ view = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg)
 w, h = view.groups()
 svg = svg.replace("<svg ", f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" ', 1)
 svg = re.sub(r"(<svg\b[^>]*>)", rf'\1\n<style>\n{style}\n</style>\n<rect class="bg" width="{w}" height="{h}"/>', svg, count=1)
-dst.write_text("<!-- Generated from architecture.html by tools/architecture_svg.py; edit the HTML. -->\n" + svg + "\n")
-print(f"{dst.name} ({w}x{h})")
+for role in (None, *ROLES):
+    dst = out / (f"architecture-{role}.svg" if role else "architecture.svg")
+    body = svg.replace("<svg ", f'<svg class="{role}" ', 1) if role else svg
+    dst.write_text("<!-- Generated from architecture.html by tools/architecture_svg.py; edit the HTML. -->\n" + body + "\n")
+    print(f"{dst.name} ({w}x{h})")

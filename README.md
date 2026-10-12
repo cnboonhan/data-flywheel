@@ -6,9 +6,9 @@ Using the stack (browse data, upload, train, read results)? Start with the [quic
 
 ## Architecture
 
-[![Data Flywheel architecture](assets/architecture.svg)](https://htmlpreview.github.io/?https://github.com/cnboonhan/data-flywheel/blob/main/assets/architecture.html)
+![Data Flywheel architecture](assets/architecture.svg)
 
-Click the diagram for the interactive version, with links to each component ([source](assets/architecture.html); `assets/architecture.svg` is generated from it by `tools/architecture_svg.py`, run by the git hooks in `.githooks/`).
+Edit the [source](assets/architecture.html); `assets/architecture.svg` and its role variants are generated from it by `tools/architecture_svg.py`, run by the git hooks in `.githooks/`.
 
 ## Folder structure
 
@@ -16,9 +16,10 @@ Click the diagram for the interactive version, with links to each component ([so
 |---|---|
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) and the real2sim capture robot |
-| [`services/`](services/README.md) | Store stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
+| [`services/`](services/README.md) | Infra stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
 | [`sim/`](sim/README.md) | Simulation tooling: IsaacLab-Arena environment generation, Gaussian splats of real scenes |
-| `assets/` | The architecture diagram, quickstart screenshots, the images and demo GIF the sim READMEs show, and the `bufo` image submodule |
+| [`devroles/`](devroles/) | The developer roles that push the flywheel along: [Scientist](devroles/scientist.md), [Engineering](devroles/engineering.md) |
+| `assets/` | The architecture diagram and its role variants, quickstart screenshots, the images and demo GIF the sim READMEs show, and the `bufo` image submodule |
 | `tools/` | Repo maintenance scripts |
 
 ## Setup
@@ -44,9 +45,9 @@ Click the diagram for the interactive version, with links to each component ([so
 
 ## The flywheel, end to end
 
-The diagram reads left to right: data is built, stored raw, processed into training sets, trained on and evaluated, and evaluation feeds back into what to build next. Below, each box of the diagram and what implements it here. Gitea Actions jobs on the service node do the data work; training and evaluation are Slurm GPU jobs; all state is on `/tier1`, so containers, jobs and your shell see the same bytes.
+The diagram reads left to right: tooling gathers data, the infra stores it raw, it is processed into training sets, trained on and evaluated, and evaluation feeds back into the tooling and the processing. Below, each box of the diagram and what implements it here. Gitea Actions jobs on the service node do the data work; training and evaluation are Slurm GPU jobs; all state is on `/tier1`, so containers, jobs and your shell see the same bytes.
 
-### Build
+### Tooling
 
 | Box | Here |
 |---|---|
@@ -59,7 +60,7 @@ The diagram reads left to right: data is built, stored raw, processed into train
 
 **Upload and Sync:** collections go to `s3://raw/<open|internal>_datasets/<dataset>/` with `aws s3 sync` ([versitygw/](services/versitygw/README.md)) or the download workflows.
 
-### Store (Raw)
+### Infra
 
 | Box | Here |
 |---|---|

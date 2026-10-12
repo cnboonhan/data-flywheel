@@ -1,0 +1,165 @@
+<!-- Generated from architecture.html by tools/architecture_svg.py; edit the HTML. -->
+<svg class="scientist" xmlns="http://www.w3.org/2000/svg" width="1570" height="582" viewBox="0 0 1570 582" role="img" aria-label="Data Flywheel pipeline, left to right: Tooling, Infra, Processed, Train, Evaluate, with a feedback loop from Evaluate back to Tooling and Processed.">
+<style>
+:root {
+    --bg: #fbfaf8;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --box: #ffffff;
+    --accent: #0f7b6c;
+    --io: #a14f05;
+    --io-bg: #fdf1e3;
+    --sci: #0969da;
+    --sci-bg: #ddf4ff;
+    --eng: #cf222e;
+    --eng-bg: #ffebe9;
+    --shared: #1a7f37;
+    --shared-bg: #dafbe1;
+  }
+.box { fill: var(--box); stroke: currentColor; stroke-width: 1.25; }
+.planned { stroke-dasharray: 5 4; }
+.t { font-size: 13px; font-weight: 600; fill: currentColor; }
+.s { font-size: 11.5px; fill: var(--muted); }
+.p { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--muted); }
+.h { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
+.e { fill: none; stroke: currentColor; stroke-width: 1.25; }
+.scientist { --role: var(--sci); --role-bg: var(--sci-bg); }
+.engineering { --role: var(--eng); --role-bg: var(--eng-bg); }
+.scientist .box[data-roles~="scientist"], .engineering .box[data-roles~="engineering"] { fill: var(--role-bg); stroke: var(--role); stroke-width: 2; }
+.scientist path[data-roles~="scientist"], .engineering path[data-roles~="engineering"] { stroke: var(--role); stroke-width: 2.5; }
+.scientist path[data-roles~="scientist"][marker-end], .engineering path[data-roles~="engineering"][marker-end] { marker-end: url(#arrow-role); }
+.scientist path[data-roles~="scientist"][marker-start], .engineering path[data-roles~="engineering"][marker-start] { marker-start: url(#arrow-role); }
+.scientist text[data-roles~="scientist"], .engineering text[data-roles~="engineering"] { fill: var(--role); }
+.scientist [data-roles="scientist engineering"], .engineering [data-roles="scientist engineering"] { --role: var(--shared); --role-bg: var(--shared-bg); }
+.scientist path[data-roles="scientist engineering"][marker-end], .engineering path[data-roles="scientist engineering"][marker-end] { marker-end: url(#arrow-shared); }
+.scientist path[data-roles="scientist engineering"][marker-start], .engineering path[data-roles="scientist engineering"][marker-start] { marker-start: url(#arrow-shared); }
+.el { font-size: 11px; fill: currentColor; }
+.loop { fill: none; stroke: currentColor; stroke-width: 2; }
+.looplabel { font-size: 12px; font-weight: 600; fill: currentColor; }
+.lane { fill: none; stroke: var(--muted); stroke-opacity: .35; stroke-dasharray: 4 4; }
+.io { fill: var(--io-bg); stroke: var(--io); stroke-width: 1.25; }
+.iot { font-size: 12px; font-weight: 500; fill: var(--io); }
+@media (prefers-color-scheme: dark) { :root {
+      --bg: #16181c;
+      --fg: #e6e8eb;
+      --muted: #9aa4af;
+      --box: #1f2228;
+      --accent: #4fd1b5;
+      --io: #f5b25b;
+      --io-bg: #2e2416;
+      --sci: #58a6ff;
+      --sci-bg: #0c2d4f;
+      --eng: #ff7b72;
+      --eng-bg: #3d1517;
+      --shared: #3fb950;
+      --shared-bg: #12301c;
+    } }
+svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.bg { fill: var(--bg); }
+</style>
+<rect class="bg" width="1570" height="582"/>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="arrow-role" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" style="fill: var(--role)"/>
+        </marker>
+        <marker id="arrow-shared" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" style="fill: var(--shared)"/>
+        </marker>
+      </defs>
+
+      <!-- Stages -->
+      <text class="h" x="105" y="26" text-anchor="middle">Tooling</text>
+      <rect class="lane" x="10" y="44" width="190" height="432" rx="10"/>
+      <text class="h" x="445" y="26" text-anchor="middle">Infra</text>
+      <rect class="lane" x="350" y="44" width="190" height="432" rx="10"/>
+      <text class="h" x="785" y="26" text-anchor="middle">Processed</text>
+      <rect class="lane" x="690" y="44" width="190" height="432" rx="10"/>
+      <text class="h" x="1125" y="26" text-anchor="middle">Train</text>
+      <rect class="lane" x="1030" y="44" width="190" height="432" rx="10"/>
+      <text class="h" x="1465" y="26" text-anchor="middle">Evaluate</text>
+      <rect class="lane" x="1370" y="44" width="190" height="432" rx="10"/>
+
+      <!-- 1 Tooling -->
+      <rect class="box" data-roles="engineering" x="15" y="60" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="86" text-anchor="middle">Egocentric UMI</text>
+      <rect class="box" data-roles="engineering" x="15" y="124" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="150" text-anchor="middle">Robot Teleoperation</text>
+      <rect class="box" data-roles="engineering" x="15" y="188" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="214" text-anchor="middle">Public Datasets</text>
+      <rect class="box" data-roles="engineering" x="15" y="268" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="294" text-anchor="middle">Sim Scenes</text>
+      <rect class="box" data-roles="engineering" x="15" y="348" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="374" text-anchor="middle">Physical Scenes</text>
+      <!-- Sim Scenes ↔ Physical Scenes -->
+      <path class="e" data-roles="engineering" d="M197 290 H216 V370 H197" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="engineering" x="221" y="334">Sync Specs</text>
+      <rect class="box" data-roles="engineering" x="15" y="412" width="180" height="44" rx="8"/>
+      <text class="t" x="105" y="438" text-anchor="middle">Inference Compute</text>
+
+      <!-- 2 Infra -->
+      <rect class="box" data-roles="engineering" x="355" y="60" width="180" height="44" rx="8"/>
+      <text class="t" x="445" y="86" text-anchor="middle">Connectivity</text>
+      <rect class="box" data-roles="engineering" x="355" y="124" width="180" height="44" rx="8"/>
+      <text class="t" x="445" y="150" text-anchor="middle">Data Storage</text>
+      <rect class="box" data-roles="engineering" x="355" y="188" width="180" height="44" rx="8"/>
+      <text class="t" x="445" y="214" text-anchor="middle">Logging</text>
+      <rect class="box" data-roles="scientist engineering" x="355" y="268" width="180" height="44" rx="8"/>
+      <text class="t" x="445" y="294" text-anchor="middle">Model Registry</text>
+
+      <!-- Tooling → Infra -->
+      <path class="e" data-roles="scientist engineering" d="M200 244 H348" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="scientist engineering" x="275" y="237" text-anchor="middle">Upload and Sync</text>
+
+      <!-- 3 Process -->
+      <rect class="box" data-roles="scientist" x="695" y="60" width="180" height="44" rx="8"/>
+      <text class="t" x="785" y="86" text-anchor="middle">Data Cleaning</text>
+      <rect class="box" data-roles="scientist" x="695" y="124" width="180" height="44" rx="8"/>
+      <text class="t" x="785" y="150" text-anchor="middle">Data Conversion</text>
+      <rect class="box" data-roles="scientist" x="695" y="188" width="180" height="44" rx="8"/>
+      <text class="t" x="785" y="214" text-anchor="middle">Data Mixing</text>
+
+      <!-- 4 Train -->
+      <rect class="box" data-roles="scientist" x="1035" y="60" width="180" height="60" rx="8"/>
+      <text class="t" x="1125" y="86" text-anchor="middle">Model Training</text>
+      <text class="t" x="1125" y="102" text-anchor="middle">and Pre-Evals</text>
+      <rect class="box" data-roles="scientist" x="1035" y="140" width="180" height="60" rx="8"/>
+      <text class="t" x="1125" y="166" text-anchor="middle">Inference / Model</text>
+      <text class="t" x="1125" y="182" text-anchor="middle">Optimizations</text>
+      <rect class="box" data-roles="scientist" x="1035" y="220" width="180" height="44" rx="8"/>
+      <text class="t" x="1125" y="246" text-anchor="middle">Distillation</text>
+
+      <!-- 5 Evaluate -->
+      <rect class="box" data-roles="scientist engineering" x="1375" y="60" width="180" height="44" rx="8"/>
+      <text class="t" x="1465" y="86" text-anchor="middle">Sim Evals</text>
+      <rect class="box" data-roles="engineering" x="1375" y="140" width="180" height="44" rx="8"/>
+      <text class="t" x="1465" y="166" text-anchor="middle">Physical Evals</text>
+      <path class="e" data-roles="engineering" d="M1440 184 C1436 222, 1494 222, 1490 186" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="engineering" x="1465" y="232" text-anchor="middle">Reset Automation</text>
+
+      <!-- Process ↔ Train: Data Mixing ⇄ Scalable Model Training -->
+      <path class="e" data-roles="scientist" d="M875 210 H955 V196 M1035 90 H955 V96"/>
+      <path class="e" data-roles="scientist" d="M905 146 A50 50 0 0 1 1005 146" marker-end="url(#arrow)"/>
+      <path class="e" data-roles="scientist" d="M1005 146 A50 50 0 0 1 905 146" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="scientist" x="955" y="143" text-anchor="middle">Architecture</text>
+      <text class="el" data-roles="scientist" x="955" y="157" text-anchor="middle">Experiments</text>
+
+      <!-- Train → Infra: trained model deployed to the registry (gap where it passes the feedback branch) -->
+      <path class="e" data-roles="scientist" d="M1125 476 V498 H791 M779 498 H445 V314" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="scientist" x="615" y="491" text-anchor="middle">Deploy</text>
+
+      <!-- Infra → Tooling: model deployed from the registry to inference compute -->
+      <path class="e" data-roles="engineering" d="M400 312 V434 H197" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="engineering" x="275" y="427" text-anchor="middle">Deploy</text>
+
+      <!-- Evaluate → Infra: evaluation logs written back to storage (below the columns, gap where it passes the feedback branch) -->
+      <path class="e" data-roles="engineering" d="M1420 476 V524 H791 M779 524 H420 V478" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="engineering" x="1275" y="517" text-anchor="middle">Eval Logs</text>
+
+      <!-- Feedback loop: Evaluate → Tooling and Process -->
+      <path class="loop" data-roles="engineering" d="M1465 476 V550 H105 V478" marker-end="url(#arrow)"/>
+      <path class="loop" data-roles="engineering" d="M785 550 V478" marker-end="url(#arrow)"/>
+      <text class="looplabel" data-roles="engineering" x="785" y="570" text-anchor="middle">Feedback Loop</text>
+    </svg>

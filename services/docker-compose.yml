@@ -1,4 +1,4 @@
-# Store stack: Caddy, Versity S3 Gateway, MLflow, Loki, Grafana.
+# Infra stack: Caddy, Versity S3 Gateway, MLflow, Loki, Grafana.
 # Every image is a multi-arch manifest (linux/arm64 + linux/amd64), so the same
 # file runs on the GB300 node and on an Intel box. See README.md.
 # Container ports (7070, 5000, 3000, 4180, 8080, ...) are each app's default or the one it is told here; only Caddy's

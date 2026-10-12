@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Regenerate assets/architecture.svg when assets/architecture.html is part of the commit, and commit them together.
+# Regenerate assets/architecture*.svg when assets/architecture.html is part of the commit, and commit them together.
 set -euo pipefail
 if git diff --cached --name-only | grep -qx assets/architecture.html; then
   python3 tools/architecture_svg.py >/dev/null
-  git add assets/architecture.svg
+  git add assets/architecture*.svg
 fi
