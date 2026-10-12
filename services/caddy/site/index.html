@@ -22,11 +22,15 @@
   small { display: block; color: var(--muted); }
   #bufo { position: fixed; z-index: 10; pointer-events: none; display: none; max-width: 160px; max-height: 160px;
           background: var(--box); border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 8px; padding: 6px; }
+  #flywheel { cursor: default; }
+  #flyer { position: absolute; z-index: 10; display: none; width: min(518px, 90vw); margin-top: 8px;   /* the GIF's own width */
+           border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 8px; }
+  #flywheel:hover + #flyer { display: block; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Data Flywheel</h1>
+  <h1><span id="flywheel">Data Flywheel</span><img id="flyer" alt="The Singapore Flyer with a bufo in every capsule"></h1>
   <p>Store stack on {{placeholder "http.request.host"}}</p>
   <ul>
     <li><a href="/gitea/">Gitea</a> <small>Pipelines repo and Actions runners for processing and mixing datasets</small></li>
@@ -40,6 +44,10 @@
 </main>
 <img id="bufo" alt="">
 <script>
+  // The title's GIF is 4.6 MB: fetch it on the first hover, not with the page.
+  document.getElementById("flywheel").addEventListener("mouseenter", () => {
+    const f = document.getElementById("flyer"); if (!f.src) f.src = "/flywheel.gif";
+  });
   // Hovering a link pops up a random bufo (assets/bufo), never the same one twice in a row.
   const bufos = {{listFiles "/bufo" | toJson}}.filter(f => /\.(png|gif|jpe?g)$/i.test(f));
   const pop = document.getElementById("bufo");
