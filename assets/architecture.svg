@@ -108,16 +108,18 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
       <!-- 2 Infra -->
       <rect class="box" data-roles="engineering" x="355" y="60" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="86" text-anchor="middle">Connectivity</text>
-      <rect class="box" data-roles="engineering" x="355" y="124" width="180" height="44" rx="8"/>
+      <rect class="box" data-roles="scientist engineering" x="355" y="124" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="150" text-anchor="middle">Data Storage</text>
       <rect class="box" data-roles="engineering" x="355" y="188" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="214" text-anchor="middle">Logging</text>
       <rect class="box" data-roles="scientist engineering" x="355" y="268" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="294" text-anchor="middle">Model Registry</text>
 
-      <!-- Tooling → Infra -->
-      <path class="e" data-roles="scientist engineering" d="M200 244 H348" marker-end="url(#arrow)"/>
-      <text class="el" data-roles="scientist engineering" x="275" y="237" text-anchor="middle">Upload and Sync</text>
+      <!-- Tooling → Infra: off-robot, teleoperation and public data into Data Storage, one arrowhead each -->
+      <path class="e" data-roles="engineering" d="M197 82 H310 V136 H353" marker-end="url(#arrow)"/>
+      <path class="e" data-roles="engineering" d="M197 146 H353" marker-end="url(#arrow)"/>
+      <path class="e" data-roles="scientist engineering" d="M197 210 H310 V156 H353" marker-end="url(#arrow)"/>
+      <text class="el" data-roles="scientist engineering" x="253" y="139" text-anchor="middle">Upload and Sync</text>
 
       <!-- 3 Process -->
       <rect class="box" data-roles="scientist" x="695" y="60" width="180" height="44" rx="8"/>
