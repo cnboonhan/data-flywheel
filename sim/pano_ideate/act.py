@@ -57,6 +57,18 @@ DESCRIBE = ("Name the object or objects outlined in red and say where each is re
             "phrase.")
 ONLY = ("Edit this picture: {change} Keep everything else exactly as it is: the same framing, lighting and every other "
         "object.")
+# Editing a dragged area from a prompt, with a reference picture when given (the room behind a door, a material): the
+# area is painted grey and filled (shown the area outlined in red instead, the editor tinted it red and kept it).
+AREA = ("The grey area in picture 1 is a gap to fill. Fill it with: {prompt}. {reference}Keep everything outside the "
+        "grey area exactly as it is: the same framing, lighting and every other object.")
+REFERENCE = ("Picture 2 is a reference: what it shows is what appears there (its content, colours and materials), "
+             "fitted to picture 1's perspective and lighting. ")
+GAP = 128                                              # the grey the area is painted: mid grey, untuned
+# A prompt that takes something away or changes what is there is an edit of the area as it is, not a fill: greyed
+# out, "erase the vase" drew the vase again.
+CHANGE = re.compile(r"\b(erase|remove|delete|clear|get rid of|take (?:away|out)|without|clean|empty)\b", re.I)
+AS_IS = ("Edit picture 1: {prompt}. {reference}Keep everything else exactly as it is: the same framing, lighting and "
+         "every other object.")
 REMOVE = ("remove {object} completely, with no trace, outline or shadow of it left, showing the empty surface where it "
           "stood and whatever it hid.")
 
@@ -66,7 +78,9 @@ class Scene:
 
     def __init__(self, path: Path, source: str = "depth"):
         self.path = path
-        self.pano = cv2.cvtColor(cv2.imread(str(path / source / "pano.jpg")), cv2.COLOR_BGR2RGB)
+        png = path / source / "pano.png"                    # an edited panorama (serve.py's image edits), lossless
+        self.pano = cv2.cvtColor(cv2.imread(str(png if png.exists() else path / source / "pano.jpg")),
+                                 cv2.COLOR_BGR2RGB)
         self.distance = np.load(path / source / "distance.npy")
         self.frame = common.load_frame(path)
         self.objects = {int(o["id"].split("_")[0]): o
@@ -150,11 +164,11 @@ def outline(img: np.ndarray, obj: np.ndarray) -> np.ndarray:
 
 
 def edit(triton: models.Triton, images: list, prompt: str, img: np.ndarray, obj: np.ndarray, ref: np.ndarray,
-         steps: int, log, name: str):
+         steps: int, log, name: str, retry: bool = True):
     """The editor's result for the view img (colour-matched on ref, a copied red outline painted over), its raw
-    output and where it differs from img. A second seed when the object barely changed."""
+    output and where it differs from img. A second seed when the object barely changed (retry)."""
     S = img.shape[0]
-    for seed in (0, 1):
+    for seed in ((0, 1) if retry else (0,)):
         res = cv2.resize(triton.edit(images, prompt, steps, seed), (S, S), interpolation=cv2.INTER_LANCZOS4)
         res = res.astype(np.float32)
         raw = res.astype(np.uint8)
@@ -172,7 +186,7 @@ def edit(triton: models.Triton, images: list, prompt: str, img: np.ndarray, obj:
         diff = cv2.GaussianBlur(np.abs(res - img).mean(-1), (0, 0), 2) > 25   # changed: over 25 levels, untuned
         if np.mean(diff[obj > 0]) > 0.3:                                    # over 30% of the object (untuned)
             break
-        log(f"  {name}: barely changed" + (", trying another seed" if seed == 0 else ", kept anyway"))
+        log(f"  {name}: barely changed" + (", trying another seed" if retry and seed == 0 else ", kept anyway"))
     return res, raw, diff
 
 
@@ -228,13 +242,15 @@ def paste(scene: Scene, res: np.ndarray, alpha: np.ndarray, view: tuple) -> np.n
 
 
 def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps: int = 40, least: float = 40,
-           described: bool = False, log=print):
+           described: bool = False, items: list | None = None, log=print):
     """Apply one change to scene.pano in place. Returns the panorama pixels that changed and the crop panels (view
     before, marked, the editor's output, after). size: the view in px; steps: the editor's (both untuned; an edit
     takes ~16 s at these, services/triton/README.md); least: the view's smallest fov in degrees (crop_camera; a
     small object in a 40 deg view can be left in place, its outline redrawn as a red box); described: the editor gets
     only the view and the VLM's description of the outlined object and where it is, not the outlined copy (for a
-    retry: given the outline, the editor sometimes returns the outlined picture unchanged)."""
+    retry: given the outline, the editor sometimes returns the outlined picture unchanged); items: (label, RGB picture)
+    of things the change puts there (the cup put in the bin), shown to the editor after the view, at most 2 (the
+    editor takes 3 pictures; described only)."""
     S = size
     remove = c["after"].strip().lower().rstrip(".") == "remove"
     mask = np.any([scene.mask(i) for i in c["ids"]], 0)
@@ -258,6 +274,9 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
         log(f"  {c['object']}: described as {where!r}")
         change = REMOVE.format(object=where) if remove else f"{where}: {c['after'].rstrip('.')}."
         images, prompt = [img], ONLY.format(change=change[0].upper() + change[1:])
+        for n, (label, pic) in enumerate((items or [])[:2], 2):
+            images.append(pic)
+            prompt += f" Picture {n} shows the {label}: draw it as it looks there."
     else:
         images = [img, marked]
     res, raw, diff = edit(triton, images, prompt, img, obj, ref, steps, log, c["object"])
@@ -288,6 +307,41 @@ def render(triton: models.Triton, scene: Scene, c: dict, size: int = 1024, steps
     changed = paste(scene, res, alpha, (mx, my, yaw, pitch, fov))
     log(f"  {c['object']}: {keep.mean() * 100:.1f}% of the view changed")
     return changed, np.hstack([img, marked, raw, after])
+
+
+def edit_area(triton: models.Triton, scene: Scene, region: np.ndarray, prompt: str,
+              reference: np.ndarray | None = None, size: int = 1024, steps: int = 40, log=print):
+    """Fill the panorama pixels in region (a dragged area) from a prompt, in place: the editor sees a view around it
+    with the area painted grey (and the reference picture after it), and only the region goes back, grown 2 px and
+    feathered 2 px (untuned), its shading matched to the unchanged pixels around it as in render(). What was there is
+    replaced, not restyled. Returns the panorama pixels that changed and the crop panels as render()'s (view, grey,
+    the editor's output, after). View: crop_camera's margin 1.5, at least 30 deg (untuned)."""
+    S = size
+    yaw, pitch, fov = crop_camera(scene, region, 1.5, least=30)
+    mx, my = common.view(scene.frame, scene.H, scene.W, yaw, pitch, S, fov)
+    img = cv2.remap(scene.pano, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
+    obj = cv2.remap(region.astype(np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_WRAP)
+    refs = [] if reference is None else [reference]
+    if CHANGE.search(prompt):                       # the area as it is, edited; only the area goes back
+        gap = img
+        text = AS_IS.format(prompt=prompt.strip().rstrip("."), reference=REFERENCE if refs else "")
+    else:                                           # the area greyed out and filled
+        gap = np.where(obj[..., None] > 0, np.uint8(GAP), img)
+        text = AREA.format(prompt=prompt.strip().rstrip("."), reference=REFERENCE if refs else "")
+    ref = cv2.dilate(obj, np.ones((61, 61), np.uint8)) == 0             # colours: over 30 px from it, as render()'s
+    # No second seed: how much of a box changes says little (a vase added in a box over the floor changes a tenth).
+    res, raw, _ = edit(triton, [gap, *refs], text, img, obj, ref, steps, log, "the area", retry=False)
+    keep = cv2.dilate(obj, np.ones((5, 5), np.uint8)) > 0
+    ky, kx = np.nonzero(keep)                                           # shading match, as render()'s
+    sigma = max(np.ptp(kx), np.ptp(ky), 8) / 4
+    w = (~cv2.dilate(keep.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)).astype(np.float32)
+    num = cv2.GaussianBlur((img - res) * w[..., None], (0, 0), sigma)
+    res = (res + num / np.maximum(cv2.GaussianBlur(w, (0, 0), sigma), 1e-3)[..., None]).clip(0, 255)
+    alpha = np.maximum(cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 2.0), (obj > 0).astype(np.float32))
+    after = (img * (1 - alpha[..., None]) + res * alpha[..., None]).astype(np.uint8)
+    changed = paste(scene, res, alpha, (mx, my, yaw, pitch, fov))
+    log(f"  area: {'edited' if gap is img else 'filled'}, {obj.mean() * 100:.1f}% of the view")
+    return changed, np.hstack([img, gap, raw, after])
 
 
 def cutout(scene: Scene, ids: list[int], size: int = 512) -> np.ndarray:

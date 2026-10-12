@@ -30,7 +30,6 @@ button:disabled { opacity: 0.45; cursor: default; }
 button.primary { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
 .meter { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .meter b { color: var(--fg); font-weight: 500; }
-.meter.edge b { color: var(--accent); }
 /* Action history: one line per step, details on hover (#histTip). */
 #history { margin: 0; padding: 0; list-style: none; font-size: 13px; max-height: 26vh; overflow-y: auto; display: grid;
   gap: 2px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
@@ -50,25 +49,31 @@ button.primary { background: var(--accent); color: #1a1206; border-color: var(--
 #histTip .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 #tip { position: fixed; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: var(--panel);
   border: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
-#card { width: min(320px, calc(100vw - 48px)); }
+#card { z-index: 10; width: min(320px, calc(100vw - 48px)); resize: both; overflow: auto; min-width: 260px; min-height: 220px;
+  max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); align-content: start; }
 #card h2 { margin: 0; font-size: 16px; }
 #card .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
 #card textarea { width: 100%; box-sizing: border-box; min-height: 58px; padding: 7px 9px; resize: vertical; }
 #status { font-size: 13px; color: var(--muted); }
 #status.error { color: var(--danger); }
-#help { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+#help { pointer-events: none; position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 50%;
+  transform: translateX(-50%);
   font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
   padding: 4px 12px; white-space: nowrap; }
-#pad { position: fixed; right: 16px; bottom: calc(48px + env(safe-area-inset-bottom, 0px)); display: grid;
-  grid-template-columns: repeat(3, 40px); gap: 4px; }
-#pad button { height: 40px; padding: 0; }
-@media (hover: hover) and (pointer: fine) { #pad { display: none; } }
 @media (max-width: 600px) { #help { display: none; } }
-#inventory { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
-#inventory:empty::before { content: "Empty. Objects you pick up land here."; color: var(--muted); font-size: 13px; grid-column: 1 / -1; }
-.item { display: grid; gap: 2px; padding: 4px; justify-items: center; font-size: 11px; color: var(--muted);
-  background: repeating-conic-gradient(rgba(255,255,255,0.05) 0 25%, transparent 0 50%) 0 0 / 10px 10px; }
-.item img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+/* Inventory: a scrollable list, a bigger picture on hover (#invPreview, also the modes'). */
+#inventory { display: grid; gap: 2px; max-height: 22vh; overflow-y: auto; scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent; }
+.slot { height: 34px; border: 1px dashed var(--line); border-radius: 6px; }
+.item { display: flex; align-items: center; gap: 8px; padding: 3px 6px; text-align: left; font-size: 13px; color: var(--fg);
+  background: transparent; border-color: transparent; }
+.item:hover { background: rgba(255, 255, 255, 0.06); }
+.item img { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; flex: none;
+  background: repeating-conic-gradient(rgba(255,255,255,0.08) 0 25%, transparent 0 50%) 0 0 / 8px 8px; }
+#invPreview { position: fixed; padding: 8px; gap: 6px; pointer-events: none; z-index: 20; font-size: 13px; }
+#invPreview.mode img { width: auto; height: auto; max-width: min(420px, calc(100vw - 40px)); max-height: 320px; }
+#invPreview img { width: 200px; height: 200px; object-fit: contain; border-radius: 6px;
+  background: repeating-conic-gradient(rgba(255,255,255,0.08) 0 25%, transparent 0 50%) 0 0 / 12px 12px; }
 .item[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--fg); }
 #placing { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
   background: var(--accent); color: #1a1206; font-weight: 600; border-radius: 99px; padding: 5px 14px; }
@@ -95,28 +100,85 @@ body.placing canvas { cursor: crosshair; }
 .bar.unknown span { width: 30%; animation: slide 1.4s ease-in-out infinite; }
 @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .bar.unknown span { animation: none; width: 100%; opacity: 0.4; } }
-#add input[type=file] { max-width: 100%; font-size: 12px; color: var(--muted); }
-#add input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
+/* The start: one card in the middle until a panorama is added. */
+#start { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 48px)); padding: 22px;
+  gap: 14px; display: none; }
+body.empty #start { display: grid; }
+#start h2 { margin: 0; font-size: 18px; }
+#start p { margin: 0; color: var(--muted); font-size: 13px; }
+#drop { display: grid; place-items: center; gap: 6px; padding: 28px 16px; border: 1.5px dashed var(--line);
+  border-radius: 10px; cursor: pointer; text-align: center; color: var(--muted); font-size: 13px; text-transform: none;
+  letter-spacing: 0; transition: border-color 0.15s, background 0.15s; }
+#drop:hover, #drop.over { border-color: var(--accent); background: rgba(255, 181, 71, 0.06); }
+#drop svg { width: 34px; height: 34px; stroke: var(--accent); }
+#drop b { color: var(--fg); font-size: 14px; font-weight: 600; }
+#drop .file { color: var(--fg); font: 12px var(--mono); }
+#start input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
   border-radius: 7px; padding: 4px 8px; min-width: 0; flex: 1; }
-#addHint { color: var(--muted); font-size: 12px; }
+#addHint { color: var(--muted); font-size: 12px; min-height: 1em; }
+body.empty #controls, body.empty #help, body.empty #tools, body.empty #keepEdit { display: none !important; }
+#tools { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; display: flex; gap: 8px; }
+#tools button { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; background: var(--panel);
+  backdrop-filter: blur(6px); border-radius: 10px; }
+#tools svg { width: 20px; height: 20px; stroke: var(--fg); }
+#tools #tintBtn .off { display: none; }
+#tools #tintBtn[aria-pressed="false"] .off { display: inline; }
+#tools #tintBtn[aria-pressed="false"] svg { stroke: var(--muted); }
+#tools #clearBtn:hover { border-color: var(--danger); }
+#tools #clearBtn:hover svg { stroke: var(--danger); }
+#confirm { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 12, 16, 0.55); z-index: 20; }
+#confirm .panel { position: static; width: min(340px, calc(100vw - 48px)); }
+#confirm h2 { margin: 0; font-size: 16px; }
+#confirm p { margin: 0; color: var(--muted); font-size: 13px; }
+#confirm .row { justify-content: flex-end; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #1a0606; font-weight: 600; }
+#keepEdit { bottom: calc(52px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 15;
+  display: flex; align-items: center; gap: 16px; padding: 10px 12px 10px 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); }
+#keepEdit[hidden] { display: none; }
+#toast { position: fixed; top: calc(62px + env(safe-area-inset-top, 0px)); right: 12px; max-width: min(360px, calc(100vw - 48px));
+  font-size: 13px; padding: 8px 12px; }
 .seg { gap: 0; flex-wrap: nowrap; }
 .seg button { border-radius: 0; flex: 1; }
 .seg button:first-child { border-radius: 7px 0 0 7px; }
 .seg button:last-child { border-radius: 0 7px 7px 0; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
-#objCard { width: min(300px, calc(100vw - 48px)); }
-.note { color: var(--muted); font-size: 13px; }
+#objCard { z-index: 10; width: min(320px, calc(100vw - 48px)); max-height: calc(100vh - 24px); overflow: auto;
+  resize: both; min-width: 260px; min-height: 160px; }
 #card input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
   border-radius: 7px; padding: 5px 8px; width: 100%; box-sizing: border-box; }
 .modes { display: flex; gap: 6px; overflow-x: auto; }
 .modes button { display: grid; gap: 2px; padding: 3px; font-size: 12px; justify-items: center; }
 .modes img { height: 64px; border-radius: 5px; display: block; }
-.modes button.now { opacity: 1; border-color: var(--modes); box-shadow: 0 0 0 1px var(--modes); cursor: default; }
+.modes button.now { opacity: 1; border-color: var(--modes); box-shadow: 0 0 0 1px var(--modes); }
+.modes button.now:disabled { cursor: default; }
+.modes button.chosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.modes .takeTile { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 5px;
+  background: rgba(255, 107, 107, 0.10); }
+.modes .takeTile svg { width: 28px; height: 28px; stroke: var(--danger); }
 .modeItem { position: relative; }
 .modeItem .del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; border-radius: 50%;
   font-size: 13px; line-height: 1; background: var(--panel); }
 .modeItem .del:hover { border-color: var(--danger); color: var(--danger); }
-#objCard h2 { margin: 0; font-size: 16px; }
+#objCard h2 { margin: 0; font-size: 16px; padding-right: 28px; }
+.drag { cursor: grab; user-select: none; display: grid; gap: 6px; margin: -4px -6px 0; padding: 4px 6px; border-radius: 7px; }
+.drag:hover { background: rgba(255, 255, 255, 0.04); }
+.drag.dragging { cursor: grabbing; }
+#objCard textarea { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
+  border-radius: 7px; padding: 6px 8px; min-height: 58px; resize: vertical; width: 100%; box-sizing: border-box; }
+#refPick { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1.5px dashed var(--line); border-radius: 8px;
+  cursor: pointer; text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--muted); }
+#refPick:hover { border-color: var(--accent); }
+#refPick img { height: 44px; max-width: 88px; object-fit: cover; border-radius: 5px; }
+.foot { justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 2px; }
+.ghost-danger { display: inline-flex; align-items: center; gap: 6px; color: var(--danger); background: transparent;
+  border-color: transparent; font-size: 13px; }
+.ghost-danger svg { width: 15px; height: 15px; stroke: var(--danger); }
+.ghost-danger:hover:not(:disabled) { background: rgba(255, 107, 107, 0.12); border-color: transparent; }
+.close { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; display: grid; place-items: center;
+  border: none; background: transparent; border-radius: 7px; }
+.close:hover { background: rgba(255, 255, 255, 0.08); }
+.close svg { width: 16px; height: 16px; stroke: var(--muted); }
+.close:hover svg { stroke: var(--fg); }
 #objCard input[type=text] { font: inherit; color: var(--fg); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
   border-radius: 7px; padding: 5px 8px; min-width: 0; flex: 1; }
 #rect { position: fixed; border: 2px dashed var(--accent); background: rgba(255, 181, 71, 0.12); pointer-events: none; }
@@ -125,53 +187,100 @@ body.rect canvas { cursor: crosshair; }
 </head>
 <body>
 <div id="controls" class="panel">
-  <div class="row"><label for="scene">Scene</label><select id="scene"></select></div>
-  <div class="row seg" aria-label="Mode"><button id="toolObjects" title="Find the objects in the room">1 · Objects</button><button id="toolAct" title="Pick objects up, open and close them">2 · Act</button></div>
+  <div class="row seg" aria-label="Mode"><button id="toolObjects" title="Find the objects in the room">Objects</button><button id="toolAct" title="Pick objects up, open and close them">Act</button></div>
   <div id="objectsPanel" style="display:grid;gap:6px">
-    <div class="note">Drag a box over part of the room to find the objects in it. Click an object to rename or remove it.</div>
     <div id="objCount" class="meter"></div>
   </div>
-  <div class="row"><input type="checkbox" id="show" checked><label for="show" style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--fg)">Show objects</label></div>
-  <div id="meter" class="meter"></div>
   <div id="actPanel" style="display:grid;gap:10px">
   <div><label>Inventory</label><div id="inventory"></div></div>
   <div><label>Action history</label><ol id="history"></ol></div>
   <div class="row"><button id="undo">Undo</button><button id="reset">Reset</button></div>
-  <div><label>Session</label>
-    <div id="sessionList" class="meter"></div>
-    <div class="row"><button id="export" title="Every object found, where each stands, the room without them and the interactions, for sim/asset_gen and sim/colmap_splat">Download session</button></div>
-    <div id="exportHint" class="meter"></div></div>
   </div>
-  <div id="add"><label for="file">Add a panorama</label>
-    <input type="file" id="file" accept="image/jpeg,image/png">
-    <div class="row"><input type="text" id="newName" placeholder="name" aria-label="Scene name"><button id="addBtn" disabled>Add</button></div>
-    <div id="addHint">An equirectangular 360° image, twice as wide as tall. Takes a few minutes.</div></div>
 </div>
+<div id="start" class="panel">
+  <h2>Start from a 360° photo</h2>
+  <p>An equirectangular panorama of a room (JPEG or PNG, twice as wide as tall), or a session downloaded before.</p>
+  <label id="drop" for="file">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+    <b>Drop the panorama or session here</b><span>or click to choose a file</span><span class="file" id="fileName"></span>
+  </label>
+  <input type="file" id="file" accept="image/jpeg,image/png,.zip,application/zip" hidden>
+  <div class="row" id="startRow"><input type="text" id="newName" placeholder="scene name" aria-label="Scene name" style="flex:1;min-width:0;padding:6px 9px"><button id="addBtn" class="primary" disabled>Start</button></div>
+  <div id="addHint">Working out its depth takes about 2 minutes.</div>
+</div>
+<div id="tools">
+  <button id="tintBtn" title="Hide the highlighting" aria-label="Highlight objects" aria-pressed="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="off" d="M4 4l16 16"/></svg></button>
+  <button id="saveBtn" title="Download the session" aria-label="Download the session">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg></button>
+  <button id="clearBtn" title="Clear the scene" aria-label="Clear the scene">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+<div id="toast" class="panel" hidden role="status"></div>
+<div id="keepEdit" class="panel" hidden role="dialog" aria-label="Keep this edit?">
+  <b>Keep this edit?</b>
+  <div class="row"><button id="keepNo">Discard</button><button id="keepYes" class="primary">Keep</button></div>
+</div>
+<div id="confirm" hidden><div class="panel" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <h2 id="confirmTitle">Clear scene?</h2>
+  <p>The session will not be saved.</p>
+  <div class="row"><button id="confirmNo">Cancel</button><button id="confirmYes" class="danger">Clear</button></div>
+</div></div>
 <div id="tip" hidden></div>
 <div id="histTip" class="panel" hidden></div>
+<div id="invPreview" class="panel" hidden><img alt=""><span></span></div>
 <div id="rect" hidden></div>
 <div id="objCard" class="panel" hidden>
-  <h2 id="objTitle"></h2>
-  <div class="row" id="objDetectRow"><button id="objDetect" class="primary" title="Finds every object in the box (~20 s); ones already found are skipped">Find all objects</button></div>
-  <div id="objName"><label for="objLabel" id="objNameLabel"></label>
-    <div class="row"><input type="text" id="objLabel"><button id="objSave"></button></div></div>
-  <div class="row"><button id="objRemove">Remove</button><button id="objCancel">Cancel</button></div>
+  <button id="objCancel" class="close" title="Close" aria-label="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div id="objDrag" class="drag" title="Drag to move"><label id="objHead">Object Editor</label>
+    <h2 id="objTitle"></h2></div>
+  <div id="objTabs" class="row seg" aria-label="What to do with the box"><button id="tabObject">Object</button><button id="tabImage">Image</button></div>
+  <div id="objPanel" style="display:grid;gap:10px">
+    <div id="objModeRow" style="display:grid;gap:4px"><label for="objMode">Mode</label>
+      <input type="text" id="objMode" value="default" aria-label="The mode the object is in"></div>
+    <div id="objName"><label for="objLabel" id="objNameLabel"></label>
+      <div class="row"><input type="text" id="objLabel"><button id="objSave"></button></div></div>
+  </div>
+  <div id="objModes" style="display:grid;gap:10px">
+    <div style="display:grid;gap:6px"><label>Modes</label><div id="objModeList" class="modes" aria-label="Its modes"></div></div>
+    <div id="modeEdit" style="display:grid;gap:6px" hidden>
+      <label for="newModeName" id="newModeLabel">Mode name</label>
+      <input type="text" id="newModeName" placeholder="open">
+      <label for="newModeDirector">Director prompt</label>
+      <textarea id="newModeDirector"></textarea>
+      <div class="row"><button id="newModeBtn" class="primary">Apply</button></div></div>
+  </div>
+  <div id="imgPanel" style="display:grid;gap:10px">
+    <div style="display:grid;gap:4px"><label for="imgPrompt">Prompt</label>
+      <textarea id="imgPrompt" placeholder="the hallway behind the open door"></textarea></div>
+    <div style="display:grid;gap:4px"><label>Reference image (optional)</label>
+      <label id="refPick" for="imgRef"><img id="refThumb" alt="" hidden><span id="refText">Choose an image</span></label>
+      <input type="file" id="imgRef" accept="image/*" hidden></div>
+    <div class="row"><button id="imgApply" class="primary">Apply</button></div>
+  </div>
+  <div class="row foot" id="objRemoveRow"><button id="objRemove" class="ghost-danger">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>Remove object</button></div>
   <div id="objStatus" class="meter"></div>
 </div>
 <div id="card" class="panel" hidden>
-  <label>Object Editor</label>
-  <div><h2 id="cardLabel"></h2><span id="cardKind" class="kind"></span></div>
-  <div id="editRow" class="row" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" id="take" style="margin:2px 0 0"><label for="take" style="flex:1;text-transform:none;letter-spacing:0;font-size:13px;color:var(--fg)">Take into the inventory <span style="color:var(--muted)">(erases it from the room)</span></label></div>
+  <button id="cancel" class="close" title="Close" aria-label="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div id="cardHead" class="drag" title="Drag to move"><label id="cardTitle">Action Editor</label>
+    <div><h2 id="cardLabel"></h2><span id="cardKind" class="kind"></span></div></div>
   <div id="modeRow" style="display:grid;gap:6px">
-    <div id="modes" class="modes" aria-label="Its modes as last seen"></div>
-    <label for="mode">Mode</label><input type="text" id="mode" placeholder="open">
-    <div id="nowRow" style="display:grid;gap:6px"><label for="now">Its mode now</label><input type="text" id="now" placeholder="closed"></div>
+    <label>Go to</label>
+    <div id="modes" class="modes" aria-label="Where the action takes it"></div>
+  </div>
+  <div id="putRow" style="display:grid;gap:6px">
+    <label>Inventory (optional, up to 2)</label>
+    <div id="putItems" class="modes" aria-label="Inventory items to add"></div>
   </div>
   <label for="action" id="actionLabel">Action (recorded)</label>
   <textarea id="action"></textarea>
   <label for="director" id="directorLabel">Director prompt</label>
   <textarea id="director"></textarea>
-  <div class="row"><button id="apply" class="primary">Apply</button><button id="cancel">Cancel</button></div>
+  <div class="row"><button id="apply" class="primary">Apply</button></div>
   <div id="status"></div>
 </div>
 <div id="placing" hidden></div>
@@ -187,13 +296,10 @@ body.rect canvas { cursor: crosshair; }
   <div class="bar" id="busyBarBox"><span id="busyBar"></span></div><div id="busyPct" class="meter"></div>
 </div></div>
 <div id="help"></div>
-<div id="pad"><span></span><button data-k="KeyW" aria-label="Forward">▲</button><span></span>
-  <button data-k="KeyA" aria-label="Left">◀</button><button data-k="KeyS" aria-label="Back">▼</button><button data-k="KeyD" aria-label="Right">▶</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const COLOR = [1.0, 0.55, 0.1], MODAL = [0.2, 0.78, 1.0];   // --object orange; --modes cyan: an object with modes
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));   // at most 2x (untuned)
@@ -204,22 +310,34 @@ const camera = new THREE.PerspectiveCamera(75, 1, 0.02, 200);   // fov 75 deg to
 camera.rotation.order = "YXZ";
 
 let S = null;            // the loaded scene: meta, depth grid, id grid, mesh
-let yaw = 0, pitch = 0, offset = new THREE.Vector2(0, 0), hover = 0, selected = 0;
-const keys = new Set();
+let yaw = 0, pitch = 0, hover = 0, selected = 0;   // the eye stays at the capture point: moving shows parallax
 
 const material = new THREE.ShaderMaterial({
-  uniforms: { map: { value: null }, ids: { value: null }, hover: { value: 0 }, selected: { value: 0 }, show: { value: 1 },
-              tint: { value: new THREE.Vector3(...COLOR) }, modal: { value: new THREE.Vector3(...MODAL) } },
+  uniforms: { map: { value: null }, ids: { value: null }, texel: { value: new THREE.Vector2(1 / 2048, 1 / 1024) },
+              hover: { value: 0 }, selected: { value: 0 }, shown: { value: 1 } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  // Each object tinted and outlined in a colour of its own: hues a golden angle apart by id, so neighbours rarely match;
+  // saturation 0.75 (untuned). The fill 30% (55% selected, 45% under the pointer), the outline 85%, 1.5 texels of the
+  // object map wide, 3 for an object with modes. All untuned; at 16% and no outline objects were hard to tell from the
+  // room. Highlighting off (shown 0, the eye top right): only the objects hovered and selected.
   fragmentShader: `
-    uniform sampler2D map, ids; uniform float hover, selected, show; uniform vec3 tint, modal; varying vec2 vUv;
+    uniform sampler2D map, ids; uniform vec2 texel; uniform float hover, selected, shown; varying vec2 vUv;
+    float idAt(vec2 p) { vec3 t = floor(texture2D(ids, p).rgb * 255.0 + 0.5); return t.r * 256.0 + t.g; }
+    vec3 colourOf(float id) {
+      vec3 k = clamp(abs(fract(fract(id * 0.618034) + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+      return mix(vec3(1.0), k, 0.75);
+    }
     void main() {
       vec3 c = texture2D(map, vUv).rgb;
-      vec3 t = floor(texture2D(ids, vec2(vUv.x, 1.0 - vUv.y)).rgb * 255.0 + 0.5);   // raw rows: top first
+      vec2 p = vec2(vUv.x, 1.0 - vUv.y);                                   // the object map's rows: top first
+      vec3 t = floor(texture2D(ids, p).rgb * 255.0 + 0.5);
       float id = t.r * 256.0 + t.g;
-      if (id > 0.0) {
-        float a = id == selected ? 0.55 : id == hover ? 0.42 : 0.16 * show;   // tint strength (untuned)
-        c = mix(c, t.b > 1.5 ? modal : tint, a);   // B 2: an object with modes (ids.png in serve.py)
+      if (id > 0.0 && (shown > 0.5 || id == hover || id == selected)) {
+        vec2 d = texel * (t.b > 1.5 ? 3.0 : 1.5);   // B 2: an object with modes (ids.png in serve.py)
+        bool edge = idAt(p + vec2(d.x, 0.0)) != id || idAt(p - vec2(d.x, 0.0)) != id ||
+                    idAt(p + vec2(0.0, d.y)) != id || idAt(p - vec2(0.0, d.y)) != id;
+        float a = edge ? 0.85 : id == selected ? 0.55 : id == hover ? 0.45 : 0.30;
+        c = mix(c, colourOf(id), a);
       }
       gl_FragColor = vec4(c, 1.0);
     }`,
@@ -229,21 +347,6 @@ const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
 const backdrop = new THREE.Mesh(new THREE.BufferGeometry(), material);
 backdrop.renderOrder = -1;
 world.add(backdrop, mesh);
-
-// The limit: a circle on the floor (the scene origin is on the floor below the capture point).
-const limit = new THREE.Group();
-world.add(limit);
-function drawLimit(r) {
-  limit.clear();
-  // A 2.4 cm line at r, a faint disc inside it, a 5 cm dot at the capture point, 4 mm up (cosmetic, untuned).
-  const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.012, r + 0.012, 128),
-    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.95, depthTest: false }));
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 128),
-    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.08, depthTest: false }));
-  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.025, 32),
-    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.8, depthTest: false }));
-  for (const m of [disc, ring, dot]) { m.rotation.x = -Math.PI / 2; m.position.y = 0.004; m.renderOrder = 10; limit.add(m); }
-}
 
 async function pixels(url) {
   const blob = await (await fetch(url, { cache: "no-store" })).blob();
@@ -304,15 +407,14 @@ async function load(name, keepView, at = null) {
   backdrop.geometry.dispose(); backdrop.geometry = buildMesh(meta, depth, 150, 4).geometry;
   material.uniforms.map.value?.dispose(); material.uniforms.ids.value?.dispose();
   material.uniforms.map.value = map; material.uniforms.ids.value = idTex;
+  material.uniforms.texel.value.set(1 / ids.w, 1 / ids.h);
   S = { name, meta, dist, gw: depth.w, gh: depth.h, ids: ids.data, iw: ids.w, ih: ids.h };
-  drawLimit(meta.radius);
-  if (!keepView) { yaw = 0; pitch = 0; offset.set(0, 0); }
+  if (!keepView) { yaw = 0; pitch = 0; }
   hover = selected = 0;
   step = at;
   if (!keepView && !Object.keys(meta.objects).length) tool = "objects";   // a new scene: add its objects first
   renderHistory();
   renderStep();
-  renderSession();
   renderTool();
 }
 
@@ -324,9 +426,10 @@ function renderTool() {
   $("objectsPanel").hidden = tool !== "objects"; $("actPanel").hidden = tool !== "act";
   const n = Object.keys(S.meta.objects).length;
   $("objCount").textContent = `${n} object${n === 1 ? "" : "s"}`;
+  $("keepEdit").hidden = !S.meta.edit_pending;
   $("help").textContent = tool === "objects"
-    ? "Drag a box to find objects · click one to rename or remove it · right-drag to look around · WASD to move"
-    : "Drag to look · WASD or arrows to move · scroll to zoom · click an object to act on it · click a step in the action history, or [ and ], to look back";
+    ? "Drag a box round an object to create it · click one to rename or remove it · right-drag to look around · scroll to zoom"
+    : "Drag to look · scroll to zoom · click an object to take it or switch its mode · click a step in the action history, or [ and ], to look back";
 }
 $("toolAct").onclick = () => { tool = "act"; closeCard(); renderTool(); };
 $("toolObjects").onclick = () => { tool = "objects"; closeCard(); startPlacing(null); renderTool(); };
@@ -360,6 +463,20 @@ $("nextStep").onclick = () => showStep(step + 1);
 $("nowStep").onclick = () => showStep(null);
 $("zoom").onclick = () => { $("zoom").hidden = true; };
 
+// The bigger picture of an inventory item or a mode on hover, beside the panel it is in (left of it if no room right).
+function hoverPreview(el, src, label, panel, mode = false) {
+  el.onmouseenter = () => {
+    const p = $("invPreview"), r = el.getBoundingClientRect(), box = panel.getBoundingClientRect();
+    const place = () => {                               // again once loaded: its size is known then
+      const right = box.right + 10, w = p.offsetWidth;
+      p.style.left = (right + w < innerWidth - 12 ? right : Math.max(12, box.left - w - 10)) + "px";
+      p.style.top = Math.max(12, Math.min(innerHeight - p.offsetHeight - 12, r.top - 8)) + "px";
+    };
+    p.classList.toggle("mode", mode); p.children[0].onload = place; p.children[0].src = src;
+    p.children[1].textContent = label; p.hidden = false; place();
+  };
+  el.onmouseleave = () => { $("invPreview").hidden = true; };
+}
 function renderHistory() {
   $("history").innerHTML = "";
   S.meta.history.forEach((e, i) => {
@@ -376,14 +493,19 @@ function renderHistory() {
   });
   $("history").scrollTop = $("history").scrollHeight;    // the latest in view
   $("inventory").innerHTML = "";
+  if (!S.meta.inventory.length) {                          // empty: an empty slot, where what you take lands
+    const d = document.createElement("div"); d.className = "slot"; d.title = "Empty: objects you take land here";
+    $("inventory").append(d);
+  }
   for (const it of S.meta.inventory) {
-    const b = document.createElement("button");
+    const b = document.createElement("button"), src = `api/${S.name}/item/${it.item}.png?v=${S.meta.version}`;
     b.className = "item"; b.setAttribute("aria-pressed", String(placing?.item === it.item));
     b.title = `Place the ${it.label}`;
     b.innerHTML = `<img alt=""><span></span>`;
-    b.children[0].src = `api/${S.name}/item/${it.item}.png?v=${S.meta.version}`;
+    b.children[0].src = src;
     b.children[1].textContent = it.label;
     b.onclick = () => startPlacing(placing?.item === it.item ? null : it);
+    hoverPreview(b, src, it.label, $("controls"));
     $("inventory").append(b);
   }
 }
@@ -540,18 +662,15 @@ el.addEventListener("pointerleave", () => { hover = 0; $("tip").hidden = true; }
 el.addEventListener("wheel", (e) => { camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.04)); camera.updateProjectionMatrix(); e.preventDefault(); }, { passive: false });
 const typing = () => ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
 addEventListener("keydown", (e) => {
-  if (!typing()) keys.add(e.code);
-  if (e.code === "Escape") { if (!$("zoom").hidden) $("zoom").hidden = true; else { closeCard(); startPlacing(null); } }
+  if (e.code === "Escape") {
+    if (!$("confirm").hidden) $("confirm").hidden = true;
+    else if (!$("zoom").hidden) $("zoom").hidden = true; else { closeCard(); startPlacing(null); }
+  }
   if (!typing() && S && S.meta.history.length && (e.key === "[" || e.key === "]")) {
     const n = S.meta.history.length, at = step === null ? n : step, to = at + (e.key === "]" ? 1 : -1);
     if (to >= 0 && to <= n) showStep(to);
   }
 });
-addEventListener("keyup", (e) => keys.delete(e.code));
-for (const b of document.querySelectorAll("#pad button")) {
-  b.addEventListener("pointerdown", () => keys.add(b.dataset.k));
-  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => keys.delete(b.dataset.k));
-}
 
 // The action card.
 function showCard(x, y) {
@@ -572,58 +691,195 @@ function openPlaceCard(hit, x, y) {
   $("apply").textContent = "Place";
   setStatus(""); showCard(x, y);
 }
-// The act card: Pick up erases the object into the inventory; Mode puts it in a named mode, drawn from the director
-// prompt the first time, after that as it was last seen (its previews).
-let editKind = "pick";
-function setEdit(kind) {
-  editKind = kind;
-  const o = objectOf(selected), m = $("mode").value.trim().toLowerCase(), known = o && o.modes && o.modes.includes(m);
-  $("modeRow").hidden = kind !== "mode";
-  $("take").checked = kind === "pick";
-  $("nowRow").hidden = !!(o && o.mode);
-  $("action").placeholder = kind === "pick" ? `pick up the ${o.label}` : `make the ${o.label} ${m || "open"}`;
-  $("directorLabel").textContent = kind === "pick" ? "Director prompt (optional; it is erased)" : "Director prompt: how it looks in this mode";
-  $("directorLabel").hidden = kind === "mode" && known;
-  $("director").placeholder = kind === "pick" ? "erase it" : `the ${o.label} is ${m || "open"}: say what moves and what it shows or hides`;
-  $("director").hidden = $("director").disabled = kind === "mode" && known;
-}
-$("take").onchange = () => setEdit($("take").checked ? "pick" : "mode");
-$("mode").addEventListener("input", () => setEdit("mode"));
-function openCard(id, x, y) {
-  selected = id; target = null;
-  const o = objectOf(id), modes = o.modes || [];
-  $("editRow").hidden = false; $("apply").textContent = "Apply";
-  $("cardLabel").textContent = o.label;
-  $("cardKind").textContent = modes.length ? `${o.mode} · ${modes.length} modes` : "object";
-  $("cardKind").style.color = modes.length > 1 ? "var(--modes)" : "var(--object)";
-  $("action").value = ""; $("director").value = ""; $("mode").value = ""; $("now").value = "";
-  $("modes").innerHTML = "";
-  // Each mode as last seen, the current one first and highlighted; click another to switch back to it.
-  for (const m of [...modes].sort((a, b) => (b === o.mode) - (a === o.mode))) {
+// Mode tiles: each mode's preview (the one it is in first, framed cyan), optionally a Take tile and deleting.
+function modeTiles(box, o, id, { take = false, add = false, onPick = null, onDelete = null, pickNow = false } = {}) {
+  box.innerHTML = "";
+  const tile = (key, label, title, inner) => {
     const b = document.createElement("button");
-    b.dataset.mode = m; b.disabled = m === o.mode; b.classList.toggle("now", m === o.mode);
-    b.title = m === o.mode ? `${m}: how it is now` : `Switch back to ${m}, as it was last seen`;
-    b.innerHTML = `<img alt=""><span></span>`;
-    b.children[0].src = `api/${S.name}/mode/${o.memory}/${encodeURIComponent(m)}.jpg?v=${S.meta.version}`;
-    b.children[1].textContent = m;
-    b.onclick = () => { $("mode").value = m; setEdit("mode"); $("action").focus(); };
+    b.dataset.key = key; b.title = title; b.innerHTML = inner + "<span></span>"; b.lastChild.textContent = label;
+    if (key === o.mode) b.classList.add("now");
+    if (onPick && (key !== o.mode || pickNow)) b.onclick = () => onPick(key); else if (key === o.mode) b.disabled = true;
     const item = document.createElement("div"); item.className = "modeItem"; item.append(b);
-    if (m !== o.mode) {                            // a mode it is not in can be deleted
+    box.append(item);
+    return item;
+  };
+  for (const m of [...o.modes].sort((a, b) => (b === o.mode) - (a === o.mode))) {
+    const src = `api/${S.name}/mode/${id - 1}/${encodeURIComponent(m)}.jpg?v=${S.meta.version}`;
+    const item = tile(m, m, "", `<img alt="" src="${src}">`);
+    hoverPreview(item.firstChild, `${src}&h=400`, m === o.mode ? `${m}: how it is now` : `${m}, as last seen`, box.closest(".panel"), true);
+    if (onDelete && m !== o.mode && m !== o.found) {             // not the mode it is in or was found in
       const d = document.createElement("button"); d.className = "del"; d.textContent = "×";
       d.title = `Delete the ${m} mode`; d.setAttribute("aria-label", d.title);
-      d.onclick = async () => {
-        if (!confirm(`Delete the ${o.label}'s ${m} mode? How it looked in it is forgotten.`)) return;
-        try { await post("unmode", { memory: o.memory, mode: m }); await load(S.name, true); openCard(id, x, y); }
-        catch (err) { setStatus(`Deleting failed: ${err.message}`, true); }
-      };
+      d.onclick = () => onDelete(m);
       item.append(d);
     }
-    $("modes").append(item);
   }
-  setEdit("mode");                                 // a mode change unless "Take into the inventory" is ticked
+  if (add) tile("new", "New", "A new mode, drawn from a director prompt", `<div class="takeTile"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></div>`);
+  if (take) tile("take", "Take", "Take it into the inventory: it is erased from the room", `<div class="takeTile"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg></div>`);
+}
+// The Action Editor (Act): what the action is, as said (recorded), and where it takes the object: one of its modes, as
+// last seen, or Take (into the inventory, erased from the room).
+let choice = null;
+let putIn = [];
+function choose_(key) {
+  choice = key;
+  const o = objectOf(selected), mode = key && key !== "take";
+  for (const b of $("modes").querySelectorAll("button[data-key]")) b.classList.toggle("chosen", b.dataset.key === key);
+  // Going to a mode (or staying in it): optionally put inventory items in and say how it looks, which redraws it.
+  $("putRow").hidden = !mode || !S.meta.inventory.length;
+  $("directorLabel").hidden = $("director").hidden = !mode;
+  const names = putIn.map((i) => S.meta.inventory.find((it) => it.item === i)?.label).filter(Boolean);
+  $("action").placeholder = key === "take" ? `pick up the ${o.label}`
+    : names.length ? `put the ${names.join(" and the ")} in the ${o.label}` : mode ? `make the ${o.label} ${key}` : "";
+  $("apply").disabled = !key;
+}
+function renderPutIn() {
+  $("putItems").innerHTML = "";
+  for (const it of S.meta.inventory) {
+    const b = document.createElement("button");
+    b.dataset.item = it.item; b.title = `Put the ${it.label} in it`;
+    b.innerHTML = `<img alt="" style="object-fit:contain"><span></span>`;
+    b.children[0].src = `api/${S.name}/item/${it.item}.png?v=${S.meta.version}`; b.children[1].textContent = it.label;
+    b.classList.toggle("chosen", putIn.includes(it.item));
+    b.onclick = () => {
+      putIn = putIn.includes(it.item) ? putIn.filter((i) => i !== it.item) : [...putIn, it.item].slice(-2);
+      renderPutIn(); choose_(choice);
+    };
+    const item = document.createElement("div"); item.className = "modeItem"; item.append(b);
+    $("putItems").append(item);
+  }
+}
+function openPlaceCard(hit, x, y) {
+  target = hit; selected = 0;
+  $("modeRow").hidden = $("putRow").hidden = true; $("directorLabel").hidden = $("director").hidden = false;
+  $("apply").disabled = false;
+  $("cardTitle").textContent = "Action Editor";
+  $("cardLabel").textContent = `Place the ${placing.label} here`;
+  $("cardKind").textContent = "from the inventory"; $("cardKind").style.color = "var(--muted)";
+  $("action").value = ""; $("action").placeholder = `put the ${placing.label} here`;
+  $("directorLabel").textContent = "How it stands there (optional)";
+  $("director").value = ""; $("director").placeholder = "upright, facing the room";
+  $("apply").textContent = "Place";
   setStatus(""); showCard(x, y);
 }
+function openCard(id, x, y) {
+  selected = id; target = null;
+  const o = objectOf(id);
+  $("modeRow").hidden = false;
+  $("cardTitle").textContent = "Action Editor"; $("apply").textContent = "Apply";
+  $("directorLabel").textContent = "Director prompt (optional): how it looks";
+  $("director").value = ""; $("director").placeholder = "the cup lies at the bottom of the open bin";
+  putIn = []; renderPutIn();
+  $("cardLabel").textContent = o.label;
+  $("cardKind").textContent = o.modes.length > 1 ? `${o.mode} · ${o.modes.length} modes` : o.mode;
+  $("cardKind").style.color = o.modes.length > 1 ? "var(--modes)" : "var(--object)";
+  $("action").value = "";
+  modeTiles($("modes"), o, id, { take: true, onPick: choose_, pickNow: true });   // staying: to put items in
+  choose_(null);
+  setStatus(o.modes.length > 1 ? "" : "Give it modes in Objects to switch between them.");
+  showCard(x, y);
+}
+// A card dragged by its head, kept inside the window.
+function draggable(card, head) {
+  let from = null;
+  head.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const r = card.getBoundingClientRect();
+    from = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    head.setPointerCapture(e.pointerId); head.classList.add("dragging"); e.preventDefault();
+  });
+  head.addEventListener("pointermove", (e) => {
+    if (!from) return;
+    card.style.left = Math.max(0, Math.min(innerWidth - card.offsetWidth, e.clientX - from.dx)) + "px";
+    card.style.top = Math.max(0, Math.min(innerHeight - card.offsetHeight, e.clientY - from.dy)) + "px";
+  });
+  for (const ev of ["pointerup", "pointercancel"]) head.addEventListener(ev, () => { from = null; head.classList.remove("dragging"); });
+}
+draggable($("card"), $("cardHead"));
+draggable($("objCard"), $("objDrag"));
 function closeCard() { $("card").hidden = true; $("objCard").hidden = true; drawRect(null); selected = 0; target = null; objFor = null; }
+
+// The box card's tabs: Object makes an object of what is in the box; Image edits the box from a prompt and an
+// optional reference picture.
+function setObjTab(t) {
+  $("tabObject").setAttribute("aria-pressed", String(t === "object")); $("tabImage").setAttribute("aria-pressed", String(t === "image"));
+  $("objPanel").hidden = t !== "object"; $("imgPanel").hidden = t !== "image";
+  (t === "image" ? $("imgPrompt") : $("objLabel")).focus();
+  keepInWindow($("objCard"));
+}
+function keepInWindow(card) {                    // after it grows: back inside the window
+  const r = card.getBoundingClientRect();
+  card.style.left = Math.max(12, Math.min(innerWidth - r.width - 12, r.left)) + "px";
+  card.style.top = Math.max(12, Math.min(innerHeight - r.height - 12, r.top)) + "px";
+}
+// After an image edit: keep it, or discard it (the area as it was). Look around the result first.
+async function decide(keep) {
+  $("keepEdit").hidden = true;
+  try { await busy(keep ? "Keeping the edit…" : "Discarding the edit…", async () => { await post(keep ? "keep_edit" : "discard_edit"); await load(S.name, true); }); }
+  catch (err) { toast(`Failed: ${err.message}`); $("keepEdit").hidden = false; }
+}
+$("keepYes").onclick = () => decide(true);
+$("keepNo").onclick = () => decide(false);
+// The clicked object's modes (Object Editor), as the scene is made, not actions: a mode chosen, the object is found in
+// it, redrawn from the director prompt if one is given; New draws a new mode from one, the object staying as it is.
+let objMode = null;
+function chooseObjMode(key) {
+  objMode = key;
+  const o = objectOf(objFor.id), add = key === "new";
+  for (const b of $("objModeList").querySelectorAll("button[data-key]")) b.classList.toggle("chosen", b.dataset.key === key);
+  $("modeEdit").hidden = !key;
+  $("newModeLabel").hidden = $("newModeName").hidden = !add;
+  $("newModeDirector").placeholder = add ? "how it looks: what moves, what it shows or hides"
+    : `optional: how the ${o.label} looks ${key}, to redraw it`;
+  $("objStatus").textContent = "";
+}
+$("newModeBtn").onclick = async () => {
+  const id = objFor.id, o = objectOf(id), add = objMode === "new";
+  const mode = add ? $("newModeName").value.trim() : objMode, director = $("newModeDirector").value.trim();
+  if (add && (!mode || !director)) { $("objStatus").textContent = "Name the mode and say how it looks."; return; }
+  if (!add && !director && mode === o.mode) { $("objStatus").textContent = `The ${o.label} is ${mode} now.`; return; }
+  $("newModeBtn").disabled = true;
+  const r = $("objCard").getBoundingClientRect();
+  try {
+    if (director) {
+      const { job } = await post("mode", { id: id - 1, mode, director, redraw: !add });
+      await waitJob(job, `Drawing the ${o.label} ${mode}`);
+    } else await post("found", { id: id - 1, mode });
+    await busy("Loading…", () => load(S.name, true));
+    openObjCard({ id }, r.left, r.top + 20);
+  } catch (err) { $("objStatus").textContent = err.message; }
+  finally { $("newModeBtn").disabled = false; }
+};
+$("tabObject").onclick = () => setObjTab("object");
+$("tabImage").onclick = () => setObjTab("image");
+function showRef(f) {
+  $("refThumb").hidden = !f;
+  if (f) { $("refThumb").src = URL.createObjectURL(f); $("refText").textContent = `${f.name} · click to change`; }
+  else $("refText").textContent = "Choose an image";
+}
+$("imgRef").onchange = () => showRef($("imgRef").files[0]);
+// A reference picture, scaled to at most 1024 px a side (the editor works at about 1 megapixel), as base64 JPEG.
+async function readRef(input) {
+  const f = input.files[0];
+  if (!f) return null;
+  const bmp = await createImageBitmap(f), k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+  return cv.toDataURL("image/jpeg", 0.9).split(",")[1];   // quality 0.9: untuned
+}
+$("imgApply").onclick = async () => {
+  const prompt = $("imgPrompt").value.trim();
+  if (!prompt) { $("objStatus").textContent = "Say what changes in the box."; return; }
+  $("imgApply").disabled = true;
+  try {
+    const { job } = await post("edit", { area: objFor.pts, prompt, reference: await readRef($("imgRef")) });
+    await waitJob(job, "Editing the area");
+    await busy("Loading the result…", () => load(S.name, true));
+    closeCard();
+  } catch (err) { $("objStatus").textContent = err.message; }
+  finally { $("imgApply").disabled = false; }
+};
 
 // The object list by hand: a rectangle adds an object (named here, outlined by SAM) or removes the objects it covers;
 // a clicked object is renamed or removed.
@@ -632,12 +888,25 @@ function openObjCard(f, x, y) {
   $("card").hidden = true;
   objFor = f; selected = f.id || 0;
   const o = f.id ? objectOf(f.id) : null;
-  $("objTitle").textContent = o ? o.label : "Find objects here";
+  $("objTitle").textContent = o ? o.label : "Edit";
+  $("objTabs").hidden = !!o; $("objHead").hidden = !o;
+  setObjTab("object");
+  $("imgPrompt").value = ""; $("imgRef").value = ""; showRef(null);
   $("objLabel").value = o ? o.label : ""; $("objLabel").placeholder = o ? o.label : "its name, e.g. mug";
-  $("objNameLabel").textContent = o ? "Name" : "Or find one thing";
+  $("objNameLabel").textContent = "Name";
   $("objSave").textContent = o ? "Rename" : "Find it";
-  $("objDetectRow").hidden = !!o;
-  $("objRemove").hidden = !o;
+  $("objModeRow").hidden = !!o;
+  $("objModes").hidden = !o;
+  if (o) {
+    modeTiles($("objModeList"), o, f.id, { add: true, pickNow: true, onPick: chooseObjMode, onDelete: async (m) => {
+      if (!confirm(`Delete the ${o.label}'s ${m} mode?`)) return;
+      try { await post("unmode", { id: f.id - 1, mode: m }); await load(S.name, true); openObjCard({ id: f.id }, x, y); }
+      catch (err) { $("objStatus").textContent = err.message; }
+    } });
+    $("newModeName").value = ""; $("newModeDirector").value = ""; chooseObjMode(null);
+  }
+  $("objMode").value = "default";
+  $("objRemoveRow").hidden = !o;
   $("objStatus").textContent = "";
   const card = $("objCard"); card.hidden = false;
   card.style.left = Math.max(12, Math.min(innerWidth - card.offsetWidth - 12, x + 16)) + "px";
@@ -656,26 +925,14 @@ $("objSave").onclick = () => {
   const label = $("objLabel").value.trim();
   if (!label) { $("objStatus").textContent = "Name it first."; return; }
   if (objFor.id) objOp({ op: "rename", id: objFor.id - 1, label }, `Renaming to ${label}…`);
-  else objOp({ op: "add", area: objFor.pts, label }, `Finding the ${label}…`);
+  else objOp({ op: "add", area: objFor.pts, label, mode: $("objMode").value.trim() || "default" }, `Finding the ${label}…`);
 };
-async function detect(area, button) {
-  button.disabled = true;
-  try {
-    const { job } = await post("detect", { area });
-    const r = await waitJob(job, "Finding objects…");
-    await busy("Loading…", () => load(S.name, true));
-    closeCard();
-    $("objCount").textContent += r.added.length ? ` · found ${r.added.length} new` : " · nothing new found there";
-  } catch (err) { $("objStatus").textContent = err.message; }
-  finally { button.disabled = false; }
-}
-$("objDetect").onclick = () => detect(objFor.pts, $("objDetect"));
 $("objRemove").onclick = () => objOp({ op: "remove", ids: [objFor.id - 1] }, "Removing…");
 $("objCancel").onclick = closeCard;
 $("objLabel").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("objSave").click(); } });
 function setStatus(t, error) { $("status").textContent = t; $("status").className = error ? "error" : ""; }
 $("cancel").onclick = closeCard;
-for (const f of ["action", "director", "mode", "now"])
+for (const f of ["action", "director"])
   $(f).addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("apply").click(); } });
 
 // Waiting: an overlay with a progress bar; its fraction from a job on the server, or moving while unknown.
@@ -703,10 +960,10 @@ async function waitJob(id, title) {
     }
   } finally { $("busy").hidden = true; }
 }
-// Where the eye stands and looks, in the scene frame (z up, metres, origin on the floor below the capture point): the
-// viewer's x/z offset is the scene's -y/-x, and its yaw turns from +x towards +y.
+// Where the eye stands and looks, in the scene frame (z up, metres, origin on the floor below the capture point): at
+// the capture point, its yaw turning from +x towards +y.
 const agent = () => ({
-  x: +(-offset.y).toFixed(3), y: +(-offset.x).toFixed(3), z: +S.meta.camera_height.toFixed(3),
+  x: 0, y: 0, z: +S.meta.camera_height.toFixed(3),
   yaw_deg: +(((yaw * 180 / Math.PI) % 360 + 360) % 360).toFixed(1), pitch_deg: +(pitch * 180 / Math.PI).toFixed(1),
 });
 async function post(path, body) {
@@ -730,96 +987,136 @@ $("apply").onclick = async () => {
     return;
   }
   const action = $("action").value.trim() || $("action").placeholder, o = objectOf(selected);
-  if (!o) return;
+  if (!o || !choice) return;
   $("apply").disabled = true;
   try {
-    if (editKind === "mode" && !$("mode").value.trim()) throw new Error("name the mode, for example open");
-    const { job } = await post("act", { id: selected - 1, edit: editKind, mode: $("mode").value.trim(), now: $("now").value.trim(),
-      action, director: $("director").disabled ? "" : $("director").value.trim(), agent: agent() });
+    const take = choice === "take";
+    const { job } = await post("act", { id: selected - 1, edit: take ? "pick" : "mode", mode: take ? "" : choice,
+      action, agent: agent(), director: take ? "" : $("director").value.trim(), items: take ? [] : putIn });
     await waitJob(job, `${o.label}: ${action}`);
     await busy("Loading the result…", () => load(S.name, true));
     closeCard();
   } catch (err) { setStatus(`The edit failed: ${err.message}`, true); }
-  finally { $("apply").disabled = false; }
+  finally { $("apply").disabled = !choice && !target; }
 };
-function renderSession() {      // every object found is an asset of the session
-  const n = S.meta.assets;
-  $("sessionList").textContent = n ? `${n} asset${n === 1 ? "" : "s"}: every object found.` : "Find objects first: they are its assets.";
+// Download: the session (every object found, the room without them, the interactions; the project inside, to open
+// again).
+function toast(text, ms = 6000) {
+  $("toast").textContent = text; $("toast").hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { $("toast").hidden = true; }, ms);
 }
-$("export").onclick = async () => {
-  $("export").disabled = true;
+function download(href, name) {
+  const a = document.createElement("a");
+  a.href = href; a.download = name;
+  document.body.append(a); a.click(); a.remove();
+}
+$("saveBtn").onclick = async () => {
+  $("saveBtn").disabled = true;
   try {
     const { job } = await post("export");
-    await waitJob(job, `Session of ${S.name}`);
-    const a = document.createElement("a");
-    a.href = `api/${S.name}/session.zip`; a.download = `${S.name}_session.zip`;
-    document.body.append(a); a.click(); a.remove();
-    $("exportHint").textContent = `Downloaded ${S.name}_session.zip: its objects go to sim/asset_gen, its background to sim/colmap_splat.`;
-  } catch (err) { $("exportHint").textContent = `The export failed: ${err.message}`; }
-  finally { $("export").disabled = false; }
+    await waitJob(job, "Packing the session");
+    download(`api/${S.name}/session.zip`, `${S.name}_session.zip`);
+    toast(`Downloaded ${S.name}_session.zip: its objects go to sim/asset_gen, its background to sim/colmap_splat; drop it on the start card to open it again.`);
+  } catch (err) { toast(`Downloading failed: ${err.message}`); }
+  finally { $("saveBtn").disabled = false; }
+};
+// Clear: delete the scene on the server and start over, after asking.
+// Highlighting on or off, remembered in this browser.
+function setTint(on) {
+  material.uniforms.shown.value = on ? 1 : 0;
+  $("tintBtn").setAttribute("aria-pressed", on);
+  $("tintBtn").title = on ? "Hide the highlighting" : "Show the highlighting";
+  try { localStorage.setItem("tint", on ? "1" : "0"); } catch {}
+}
+$("tintBtn").onclick = () => setTint(material.uniforms.shown.value < 0.5);
+try { setTint(localStorage.getItem("tint") !== "0"); } catch {}
+$("clearBtn").onclick = () => { closeCard(); startPlacing(null); $("confirm").hidden = false; $("confirmNo").focus(); };
+$("confirmNo").onclick = () => { $("confirm").hidden = true; };
+$("confirmYes").onclick = async () => {
+  $("confirm").hidden = true;
+  try {
+    await busy("Clearing the scene…", async () => {
+      await post("clear");
+      S = null;
+      for (const m of [mesh, backdrop]) { m.geometry.dispose(); m.geometry = new THREE.BufferGeometry(); }
+      await scenes();
+    });
+  }
+  catch (err) { toast(`Clearing failed: ${err.message}`); }
 };
 $("undo").onclick = () => busy("Undoing the last edit…", async () => { await post("undo"); await load(S.name, true); });
 $("reset").onclick = () => busy("Going back to the original…", async () => { await post("reset"); await load(S.name, true); });
-$("show").onchange = () => { material.uniforms.show.value = $("show").checked ? 1 : 0; };
-$("scene").onchange = () => { location.hash = $("scene").value; closeCard(); startPlacing(null); busy("Loading the scene…", () => load($("scene").value)); };
 
 function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 
-let last = performance.now();
-function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;   // at most 50 ms a frame (untuned)
+function frame() {
   if (S) {
-    const f = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
-    const r = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
-    if (f || r) {
-      const sp = 0.5 * dt, sy = Math.sin(yaw), cy = Math.cos(yaw);   // walk at 0.5 m/s (untuned)
-      offset.x += (-sy * f + cy * r) * sp; offset.y += (-cy * f - sy * r) * sp;
-      const lim = S.meta.radius;
-      if (offset.length() > lim) offset.setLength(lim);       // stay where the panorama still looks right
-    }
-    camera.position.set(offset.x, S.meta.camera_height, offset.y);
+    camera.position.set(0, S.meta.camera_height, 0);
     camera.rotation.set(pitch, yaw, 0);
     material.uniforms.hover.value = hover; material.uniforms.selected.value = selected;
-    const d = offset.length();
-    $("meter").className = "meter" + (d > S.meta.radius - 0.005 ? " edge" : "");   // within 5 mm: at the limit
-    $("meter").innerHTML = `<b>${d.toFixed(2)} m</b> from the capture point · limit ${S.meta.radius.toFixed(2)} m`;
   }
   renderer.render(world, camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-// Adding a panorama: upload it, wait for steps 1 and 2, open it.
-$("file").onchange = () => {
-  const f = $("file").files[0];
-  if (f && !$("newName").value) $("newName").value = f.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
-  $("addBtn").disabled = !f;
-};
+// The start: choose or drop a panorama, name the scene, upload it; its depth is worked out on the server.
+let chosen = null;
+const isProject = (f) => !!f && /\.zip$/i.test(f.name);
+function choose(f) {
+  chosen = f || null;
+  $("fileName").textContent = chosen ? `${chosen.name} · ${(chosen.size / 1e6).toFixed(1)} MB` : "";
+  if (chosen && !isProject(chosen) && !$("newName").value)
+    $("newName").value = chosen.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  $("newName").hidden = isProject(chosen);                     // a session keeps its own name
+  $("addBtn").textContent = isProject(chosen) ? "Open" : "Start";
+  $("addBtn").style.flex = isProject(chosen) ? "1" : "";
+  $("addHint").textContent = isProject(chosen) ? "It opens where you left off." : "Working out its depth takes about 2 minutes.";
+  $("addBtn").disabled = !chosen;
+}
+$("file").onchange = () => choose($("file").files[0]);
+for (const ev of ["dragenter", "dragover"]) $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); });
+for (const ev of ["dragleave", "drop"]) $("drop").addEventListener(ev, () => $("drop").classList.remove("over"));
+$("drop").addEventListener("drop", (e) => { e.preventDefault(); choose(e.dataTransfer.files[0]); });
 $("addBtn").onclick = async () => {
-  const f = $("file").files[0], name = $("newName").value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
-  if (!f || !name) return;
+  if (isProject(chosen)) {                                     // a session: unpack its project on the server, open it
+    $("addBtn").disabled = true;
+    try {
+      const j = await busy("Opening the project…", async () => {
+        const r = await fetch("api/open", { method: "POST", body: chosen });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        return j;
+      });
+      choose(null); $("file").value = "";
+      await scenes(j.scene);
+    } catch (err) { $("addHint").textContent = `Opening failed: ${err.message}`; }
+    finally { $("addBtn").disabled = !chosen; }
+    return;
+  }
+  const name = $("newName").value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  if (!chosen || !name) { $("addHint").textContent = "Choose a panorama and name the scene."; return; }
   $("addBtn").disabled = true;
   try {
     showBusy(`Adding ${name}`, "Uploading the panorama");
-    const r = await fetch(`api/upload/${encodeURIComponent(name)}`, { method: "POST", body: f });
+    const r = await fetch(`api/upload/${encodeURIComponent(name)}`, { method: "POST", body: chosen });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.statusText);
     await waitJob(j.job, `Adding ${name}`);
+    choose(null); $("file").value = ""; $("newName").value = ""; $("addHint").textContent = "Working out its depth takes about 2 minutes.";
     await scenes(name);
-    $("file").value = ""; $("newName").value = "";
-    $("addHint").textContent = `Added ${name}.`;
   } catch (err) { $("busy").hidden = true; $("addHint").textContent = `Adding failed: ${err.message}`; }
-  finally { $("addBtn").disabled = !$("file").files[0]; }
+  finally { $("addBtn").disabled = !chosen; }
 };
 
+// One scene at a time: the one in the address (#name) or the first; with none, the start card.
 async function scenes(pick) {
   const names = await (await fetch("api/scenes")).json();
-  $("scene").innerHTML = "";
-  for (const n of names) $("scene").append(new Option(n, n));
-  if (!names.length) { $("meter").textContent = "No scenes yet: add a panorama below."; return; }
+  document.body.classList.toggle("empty", !names.length);
+  if (!names.length) { location.hash = ""; return; }
   const start = names.includes(pick) ? pick : names.includes(location.hash.slice(1)) ? location.hash.slice(1) : names[0];
-  $("scene").value = start; location.hash = start;
+  location.hash = start;
   await busy("Loading the scene…", () => load(start));
 }
 scenes();

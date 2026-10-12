@@ -13,6 +13,7 @@ simulation adds as an asset. The zip:
 
     scene.json                     the scene frame (depth/frame.json): z up, metres, origin on the floor below the
                                    capture point; the panorama's size; the assets
+    project/                       the working scene (serve.py adds it), to open it again in the viewer
     interactions.json              the interactions in order: what was picked up, placed or put in which mode, the
                                    asset it concerns, positions (scene frame), the action said, the director prompt
                                    and where the agent stood
@@ -150,10 +151,18 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
     memory = read_memory(edits, state["memory"])
     for e in memory:
         e["views"] = [(edits / "inventory" / v).read_bytes() for v in e["views"]]
+        e["mode"] = e["mode"] or scene.objects[min(e["ids"])].get("mode") or "default"    # never changed: as found
     known = {k for e in memory for k in e["ids"]}
     memory += [{"ids": {k}, "label": scene.objects[k]["label"], "size": scene.objects[k].get("size"), "status": None,
                 "mode": None, "shape": None, "modes": {}, "views": []}
                for k in sorted(scene.objects) if k not in known and k + 1 in present]   # found, not acted on
+    for e in memory[len(state["memory"]):]:
+        e["mode"] = scene.objects[min(e["ids"])].get("mode") or "default"
+    for e in memory:                     # its modes as made (objects/modes/), each as last seen where acting saw it
+        made = path / "objects" / "modes" / str(min(e["ids"]))
+        names = scene.objects[min(e["ids"])].get("modes", [])
+        e["modes"] = {**{m: dict(np.load(made / f"{safe(m)}.npz")) for m in names
+                         if (made / f"{safe(m)}.npz").exists()}, **e["modes"]}
     for e in memory:                     # never picked up: its points and cutout as it looks now, for asset_gen
         ids = [k for k in e["ids"] if k + 1 in present]
         if e["shape"] is None and ids:
@@ -196,7 +205,8 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
         for n, e in enumerate(memory):
             base = f"objects/{names[n]}/"
             info = {"label": e["label"], "size_m": e["size"], "ids": sorted(e["ids"]),
-                    "in_room": e["status"] != "picked up", "modes": sorted(e["modes"]), "mode": e["mode"]}
+                    "in_room": e["status"] != "picked up", "modes": sorted(set(e["modes"]) | {e["mode"]}),
+                    "mode": e["mode"]}
             for k, v in enumerate(e["views"]):
                 z.writestr(f"{base}views/{k}.png", v)
             if e["shape"] is not None:
@@ -213,9 +223,11 @@ def export(path: Path, triton: models.Triton, out: Path | None = None, log=print
 def where(scene: act.Scene, e: dict) -> dict:
     """Where an asset is now (layout.json): x, y of its centre in the scene frame, from the origin."""
     r = lambda v: [round(float(c), 3) for c in v[:2]]
-    entry = {"label": e["label"], "size_m": e["size"],
-             **({"mode": e["mode"]} if e["mode"] else {})}
+    entry = {"label": e["label"], "size_m": e["size"], "mode": e["mode"]}
     base = r(e["shape"]["base"]) if e["shape"] is not None else r(scene.objects[min(e["ids"])]["center"])
+    if e.get("inside") is not None and e["inside"] in scene.objects:   # put in another object: where that is
+        return {**entry, "position": r(scene.objects[e["inside"]]["center"]),
+                "inside": scene.objects[e["inside"]]["label"]}
     if e["status"] == "picked up":
         return {**entry, "position": None, "last_seen": base}
     return {**entry, "position": base}
@@ -235,7 +247,9 @@ def interactions(state: dict, names: dict) -> list[dict]:
             continue
         for c in h["changes"]:
             n = c.get("memory")
-            if c["after"].strip().lower().rstrip(".") == "remove":
+            if c.get("inside") is not None:                  # put in the object acted on
+                steps.append({"type": "place", "asset": names.get(n), "label": c["object"], "into": h["label"], **said})
+            elif c["after"].strip().lower().rstrip(".") == "remove":
                 steps.append({"type": "pick_up", "asset": names.get(n), "label": c["object"],
                               "position": c.get("position"), **said})
             elif c.get("state_after"):

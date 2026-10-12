@@ -9,20 +9,21 @@ panorama shows the end state. Runs anywhere that reaches Triton, a laptop includ
     uv run sim/pano_ideate/serve.py datasets/pano_ideate        # then open http://localhost:8765
 
 Serves viewer.html and, per scene in the folder (step 1 done), the current panorama, its depth and a map of its
-objects. Add a panorama from the viewer: it runs step 1 (depth.py; ~2 min, mostly on the server) and opens it with no
-objects. The viewer builds a mesh from the depth (leaving out triangles across depth jumps, a far sphere of the
-panorama behind them) and keeps the eye within --radius of the capture point, at the capture height, marked by a
-circle on the floor: a single panorama shows nothing behind objects, so further away holes and stretched surfaces
-appear. Objects are found by hand (the viewer's Objects tool): drag a rectangle to find the objects in it (VLM, then
-SAM) or one object you name (SAM outlines it from the box); click an object to rename or remove it. That writes the
-scene's objects/objects.json (a list made by objects.py first is kept as objects.detected.json); an object with edits
-can be renamed but not removed.
+objects. The viewer shows one scene: with none, a start card takes a panorama, runs step 1 (depth.py; ~2 min, mostly
+on the server) and opens it with no objects, or takes a session downloaded before and opens it where it was left; its
+x (top right) deletes the scene, its Download gives the session (with the project in it, to open again). The viewer
+builds a mesh from the depth and looks around from the capture point, at the capture height: it doesn't move, since
+one panorama shows nothing behind objects and moving away shows that (parallax). Objects are made by hand (the
+viewer's Objects tool): drag a box round one and name it (SAM outlines it from the box), with the mode it is in
+(default unless named), or edit the box from a prompt and an optional reference picture; click an object to rename or
+remove it. That writes the scene's objects/objects.json (a list made by objects.py first is kept as
+objects.detected.json); an object with edits can be renamed but not removed.
 
 Hovering highlights an object; clicking it asks what happens to it, recorded as said (the action), and how: "Take into
-the inventory" erases it (the image editor, ~30 s) into the inventory; otherwise it goes in a mode you name (open, closed, ...): a new one
-is drawn from the director prompt, what the image shows ("the bin lid opens, showing an empty inside"); a mode it has
-been in before puts back how it looked when last seen in it (~1 s; the viewer previews each). MoGe updates the depth
-of what changed. Long operations run as jobs whose progress the viewer shows.
+the inventory" erases it (the image editor, ~30 s) into the inventory; otherwise it goes in a mode you name (open,
+closed, ...): a new one is drawn from the director prompt, what the image shows ("the bin lid opens, showing an empty
+inside"); a mode it has been in before puts back how it looked when last seen in it (~1 s; the viewer previews each).
+MoGe updates the depth of what changed. Long operations run as jobs whose progress the viewer shows.
 
 Each edit's result is the new current panorama. Every object has a memory: its coloured 3D points, saved when it is
 picked up (it then waits in the inventory; placing it moves those points onto the surface clicked, draws their outline
@@ -31,12 +32,13 @@ object), and each mode's area as last seen: pixels, depth and objects, contents 
 close it, open it: the cup is there). An object with two modes is an articulated one. Edits stack; Undo and Reset go
 back. The state is saved to <scene>/edits/ after every edit and picked up again on restart (pano.png, distance.npy,
 labels.npy, state.json, memory/, inventory/, masks/, crops/, and steps/<n>/: the viewer's files after each edit, so
-its action history can show any step). Download session packs it for the assets (session.py): the objects acted on,
+its action history can show any step). The Full Session packs it for the assets (session.py): every object found,
 where each stands, the room without them, the interactions in order; sim/asset_gen makes the objects from it,
 sim/colmap_splat the background.
 """
 
 import argparse
+import base64
 import json
 import re
 import shutil
@@ -62,8 +64,6 @@ p = argparse.ArgumentParser()
 p.add_argument("root", type=Path, nargs="?", default=Path("datasets/pano_ideate"),
                help="folder of scenes, one folder each (source.jpg, then depth/ and objects/)")
 p.add_argument("--port", type=int, default=8765)
-p.add_argument("--radius", type=float, default=0.4, help="m: how far the eye may move from the capture point "
-                                                       "(further away the holes behind objects show)")
 p.add_argument("--grid", type=int, default=1024, help="mesh vertices around the panorama (untuned)")
 p.add_argument("--jump", type=float, default=0.1, help="leave out triangles whose corner distances differ by more "
                                                      "than this fraction (edges of objects; untuned)")
@@ -82,9 +82,8 @@ log = lambda s: print(s, flush=True)
 # A job is a list of phases; a phase reports done/total when it can count, otherwise its progress is its elapsed time
 # over how long it took before (EXPECTED, seconds, updated as jobs run). The starting values are rough: edit, place and
 # pano_depth as the README's timings, the rest untuned.
-# list, segment and save_objects: finding the objects in a dragged area (~20 s in all).
 EXPECTED = {"edit": 30, "restore": 2, "depth": 3, "save": 3, "place": 35, "erase": 40, "pack": 10,
-            "pano_depth": 120, "list": 12, "segment": 4, "save_objects": 4}
+            "pano_depth": 120}
 jobs: dict[str, "Job"] = {}
 
 
@@ -195,6 +194,11 @@ def state(name: str) -> dict:
     sc = act.Scene(args.root / name)
     st = {"scene": sc, "removed": set(), "inventory": [], "history": [], "memory": [], "undo": [],
           "version": 0, "area": {}}
+    for k, o in sc.objects.items():   # the object map as found: what a mode hides (behind a closed door) under it
+        f = mode_files(sc, k).get(o.get("mode") or DEFAULT)
+        if f:
+            look = np.load(f)
+            sc.labels.reshape(-1)[look["idx"][look["labels"] == k + 1]] = k + 1
     st["original"] = snapshot(st)
     out = sc.path / "edits"
     if (out / "state.json").exists():                      # carry on where the last session stopped
@@ -263,13 +267,17 @@ def remember_view(st, n, e, ids):
 
 
 def export_session(name, job):
-    """The session zip (session.py): the interactions, the objects acted on, the room without them."""
+    """The session zip (session.py): the interactions, every object found, the room without them; and the project
+    (project/), so that dropping the zip on the start card opens the scene again."""
+    import zipfile
     st = state(name)
     with lock(name):
         save(st)
         stages = {"Erasing the objects": "erase", "Packing the session": "pack"}
         f = session.export(st["scene"].path, triton, log=log,
                            progress=lambda stage, done, total: job.enter(stages[stage], stage, done, total))
+        with zipfile.ZipFile(f, "a", zipfile.ZIP_DEFLATED, compresslevel=1) as z:   # level 1: fast, ~as small
+            add_project(z, st["scene"].path, name)
     return {"file": f.name}
 
 
@@ -300,19 +308,19 @@ def files(st, what):
         # 2048 x 1024: the resolution of the viewer's hover, click and tint map (untuned).
         lab = cv2.resize(lab.astype(np.float32), (2048, 1024), interpolation=cv2.INTER_NEAREST).astype(np.int32)
         kinds = np.minimum(lab, 1)
-        for e in st["memory"]:
-            if len(e["modes"]) > 1:
-                kinds[np.isin(lab, np.array(sorted(e["ids"])) + 1)] = 2
+        for k in interactable(st):
+            if len(modes_of(st, k)) > 1:
+                kinds[lab == k + 1] = 2
         rgb = np.stack([lab >> 8, lab & 255, kinds], -1).astype(np.uint8)
         return encode(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), ".png"), "image/png"
     if what == "meta.json":
         return json.dumps({
-            "R": sc.frame["R_moge_to_level"], "camera_height": sc.frame["camera_height"], "radius": args.radius,
-            "jump": args.jump, "version": st["version"], "history": st["history"],
+            "R": sc.frame["R_moge_to_level"], "camera_height": sc.frame["camera_height"],
+            "jump": args.jump, "version": st["version"], "history": st["history"], "edit_pending": bool(area_edits(sc)),
             "inventory": [{"item": i, "label": st["memory"][i]["label"]} for i in st["inventory"]],
-            "assets": len(st["memory"]) + sum(entry(st, k)[1] is None for k in interactable(st)),
             "objects": {k: {"label": o["label"],
-                            **({"memory": n, "mode": e["mode"], "modes": sorted(e["modes"])} if e else {})}
+                            "mode": mode_now(st, k), "modes": modes_of(st, k), "found": o.get("mode") or DEFAULT,
+                            **({"memory": n} if e else {})}
                         for k, o in interactable(st).items() for n, e in [entry(st, k)]},
         }).encode(), "application/json"
     raise KeyError(what)
@@ -345,28 +353,63 @@ def mode_name(s):
     return " ".join((s or "").strip().lower().rstrip(".").split()) or None
 
 
-def act_on(name, k, kind, mode, now, action, director, agent, job):
-    """An edit of object k, as the viewer says. kind "pick": erase it into the inventory. kind "mode": put it in mode,
-    switching back to how it was last seen in that mode, or, for a new mode, drawing it from the director prompt; now
-    names the mode it is in when it has none yet. The action is recorded as said, with where the agent (the viewer's
-    eye) stood."""
+DEFAULT = "default"                                    # an object's first mode unless named when it was found
+
+
+# An object's modes are part of the scene, as the object is: made in the Objects stage (draw_mode), each kept as
+# objects/modes/<object>/<mode>.npz (its area on the panorama: idx, pano, distance, labels; every mode of an object
+# covers the same pixels) and named in its record ("modes"; "mode" the one it was found in). Acting switches between
+# them and remembers each mode as last seen (the memory's "modes", contents included), on top of these.
+
+def mode_now(st, k):
+    """The mode object k is in: its memory's, else the one it was found in."""
+    e = entry(st, k)[1]
+    return (e or {}).get("mode") or st["scene"].objects[k].get("mode") or DEFAULT
+
+
+def mode_files(sc, k) -> dict:
+    """Object k's modes as made, by name: their files."""
+    d = sc.path / "objects" / "modes" / str(k)
+    return {m: d / f"{session.safe(m)}.npz" for m in sc.objects[k].get("modes", [])
+            if (d / f"{session.safe(m)}.npz").exists()}
+
+
+def modes_of(st, k) -> list[str]:
+    """The modes object k can be in: as made, as remembered, and the one it is in."""
+    e = entry(st, k)[1]
+    return sorted(set(mode_files(st["scene"], k)) | set((e or {}).get("modes", {})) | {mode_now(st, k)})
+
+
+def mode_look(st, k, mode):
+    """Object k's area in mode as last seen (else as made), or None."""
+    e = entry(st, k)[1]
+    if e and mode in e["modes"]:
+        return e["modes"][mode]
+    f = mode_files(st["scene"], k).get(mode)
+    return dict(np.load(f)) if f else None
+
+
+def act_on(name, k, kind, mode, action, agent, job, director="", items=()):
+    """An action on object k, as the viewer says: kind "pick" erases it into the inventory; kind "mode" switches it to
+    one of its modes, as last seen in it (the mode it leaves keeps how it looks now: the cup put in the open bin is
+    there when it is opened again), and with a director prompt or inventory items (memory indices, at most 2: the
+    editor takes 3 pictures) redraws it so in that mode, the items put in it. Recorded as said, with where the agent
+    (the viewer's eye) stood."""
     st = state(name)
     sc = st["scene"]
     o = sc.objects[k]
     with lock(name):
-        n, e = memory_of(st, [k], o["label"], o["size"])
         mode = mode_name(mode)
-        before = e["mode"] or mode_name(now) or "as found"
-        if kind == "mode" and not mode:
-            raise ValueError("Name the mode, for example open.")
-        if kind == "mode" and mode != before and mode not in e["modes"] and not director:
-            raise ValueError(f"'{mode}' is a new mode: say how it looks in the director prompt.")
+        before = mode_now(st, k)
+        look = mode_look(st, k, mode) if kind == "mode" and mode != before else None
+        if kind == "mode" and mode != before and look is None:
+            raise ValueError(f"The {o['label']} has no {mode} mode: make it in Objects.")
+        n, e = memory_of(st, [k], o["label"], o["size"])
         keep_step(st, len(st["history"]))
         st["undo"].append(snapshot(st))
         step = len(st["history"]) + 1
         c = {"object": f"the {o['label']}", "ids": [k], "labels": [o["label"]], "memory": n}
-        crops = []
-        (sc.path / "edits" / "crops").mkdir(parents=True, exist_ok=True)
+        crops, things = [], []
         if kind == "pick":
             c["after"] = "remove"
             job.enter("edit", f"Erasing the {o['label']}")
@@ -377,84 +420,213 @@ def act_on(name, k, kind, mode, now, action, director, agent, job):
             changed, panels = act.render(triton, sc, c, steps=args.steps, log=log)
             st["removed"].add(k)
             sc.labels[sc.labels == k + 1] = 0
+            (sc.path / "edits" / "crops").mkdir(parents=True, exist_ok=True)
             crops.append(f"{step}_{k}.jpg")
             cv2.imwrite(str(sc.path / "edits" / "crops" / crops[-1]), cv2.cvtColor(panels, cv2.COLOR_RGB2BGR))
             job.enter("depth", "Updating the depth")
             act.update_depth(triton, sc, changed)
         else:
-            c.update(after=director or mode, state_before=before, state_after=mode)
-            log(f"{name}: the {o['label']} {before} -> {mode}")
-            if mode == before:                                       # already so: nothing to do
-                c["restored"] = True
-            elif mode in e["modes"]:
+            c.update(after=mode, state_before=before, state_after=mode, restored=True)
+            if look is not None:
                 job.enter("restore", f"Switching the {o['label']} to {mode}")
-                # Been in that mode before: put back how its area looked then; the mode it leaves keeps how it looks
-                # now (contents included: the cup put in the open bin is there when it is opened again).
-                e["modes"][before] = area(sc, e["modes"][mode]["idx"])
-                put(sc, e["modes"][mode])
-                c["restored"] = True
-            else:
-                job.enter("edit", f"Drawing the {o['label']} {mode}")
-                old = (sc.pano.copy(), sc.distance.copy(), sc.labels.copy())   # the area is known only after
-                # Described in words, not outlined: given the outlined copy, the editor drew a red outline round the
-                # closed office door (painted over, its edges went soft) or left the picture as it was.
-                changed, panels = act.render(triton, sc, c, steps=args.steps, described=True, log=log)
-                crops.append(f"{step}_{k}.jpg")
-                cv2.imwrite(str(sc.path / "edits" / "crops" / crops[-1]), cv2.cvtColor(panels, cv2.COLOR_RGB2BGR))
-                job.enter("depth", "Updating the depth")
-                act.update_depth(triton, sc, changed)
-                # What the edit changed within the object's hull is the object now: what it closes off is hidden (the
-                # mode keeps the object map, so switching back brings it back). The hull, not the outline: an open
-                # door's outline is its leaves and frame, open at the floor, so the doorway between is not in it.
-                # The hull of its parts over 5% of the largest (specks left out; untuned).
-                parts = cv2.findContours(sc.mask(k).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-                big = max(cv2.contourArea(p) for p in parts)
-                pts = np.vstack([p for p in parts if cv2.contourArea(p) >= 0.05 * big])
-                hull = np.zeros((sc.H, sc.W), np.uint8)
-                if np.ptp(pts[:, 0, 0]) < sc.W / 2:                 # not across the seam (there: the outline only)
-                    cv2.fillPoly(hull, [cv2.convexHull(pts)], 1)
-                sc.labels[changed & ((hull > 0) | sc.mask(k))] = k + 1
-                # The mode's area: every pixel the edit changed at all (colour, depth; the feathered edge of the paste
-                # too) and 7 px around (untuned), with the areas of its other modes, so that every mode of an object
-                # covers the same pixels and switching puts each back exactly.
-                touched = (sc.pano != old[0]).any(-1) | (sc.distance != old[1]) | (sc.labels != old[2])
-                idx = np.flatnonzero(cv2.dilate(touched.astype(np.uint8), np.ones((15, 15), np.uint8)))
-                for a in e["modes"].values():
-                    idx = np.union1d(idx, a["idx"])
-                for m, a in list(e["modes"].items()):
-                    e["modes"][m] = widen(a, idx, old)
-                e["modes"][before] = {"idx": idx, "pano": old[0].reshape(-1, 3)[idx],
-                                      "distance": old[1].reshape(-1)[idx], "labels": old[2].reshape(-1)[idx]}
-                e["modes"][mode] = area(sc, idx)
+                e["modes"][before] = area(sc, look["idx"])
+                put(sc, look)
             e["mode"] = mode
+            log(f"{name}: the {o['label']} {before} -> {mode}")
+            things = [i for i in items if i in st["inventory"]][:2]
+            if director or things:
+                crops.append(change_look(st, k, mode, director, things, step, job))
+                c["after"], c["restored"] = director or c["after"], False         # drawn, not only switched
+                for i in things:                                     # put in it: out of the inventory
+                    st["inventory"].remove(i)
+                    st["memory"][i]["status"], st["memory"][i]["inside"] = "placed", k
         job.enter("save", "Saving")
         st["history"].append({"what": "act", "edit": kind, "id": k, "label": o["label"], "action": action,
-                              "director": director, "agent": agent,
+                              "agent": agent,
                               "changes": [{f: c[f] for f in ("object", "ids", "after", "memory", "position",
                                                              "state_before", "state_after") if f in c}
-                                          | {"restored": c.get("restored", False)}],
-                              "crops": crops})
+                                          | {"restored": c.get("restored", False)}]
+                                         + [{"object": f"the {st['memory'][i]['label']}", "memory": i, "inside": k,
+                                             "after": f"in the {o['label']}"} for i in things],
+                              "director": director, "crops": crops})
         keep_step(st, len(st["history"]))
         st["version"] += 1
         save(st)
     return st["history"][-1]
 
 
-def delete_mode(name, n, mode):
-    """Forget object n's mode (not the one it is in). Not an edit: no undo; the history keeps the steps that used it."""
+def change_look(st, k, mode, director, things, step, job):
+    """Redraw object k as it is now, in mode, from the director prompt and the inventory items put in it (their
+    cutouts shown to the editor): its mode's look as last seen, kept to the mode's area. The crop's file name."""
+    sc = st["scene"]
+    o = sc.objects[k]
+    names = " and ".join(f"the {st['memory'][i]['label']}" for i in things)
+    text = director or f"the {o['label']} is {mode}, with {names} in it"
+    pics = []
+    for i in things:                                                 # each cutout on light grey, as act.place()'s
+        rgba = cv2.imread(str(sc.path / "edits" / "inventory" / f"{i}.png"), cv2.IMREAD_UNCHANGED)
+        a = rgba[..., 3:] / 255
+        pics.append((st["memory"][i]["label"],
+                     cv2.cvtColor((rgba[..., :3] * a + 235 * (1 - a)).astype(np.uint8), cv2.COLOR_BGR2RGB)))
+    old = (sc.pano.copy(), sc.distance.copy(), sc.labels.copy())
+    job.enter("edit", f"Drawing the {o['label']}")
+    c = {"object": f"the {o['label']}", "ids": [k], "labels": [o["label"]], "after": text}
+    changed, panels = act.render(triton, sc, c, steps=args.steps, described=True, items=pics, log=log)
+    job.enter("depth", "Updating the depth")
+    act.update_depth(triton, sc, changed)
+    look = mode_look(st, k, mode)
+    if look is not None:                                            # its modes' area only: switching stays exact
+        outside = np.ones(sc.H * sc.W, bool)
+        outside[look["idx"]] = False
+        outside = outside.reshape(sc.H, sc.W)
+        sc.pano[outside], sc.distance[outside], sc.labels[outside] = (old[0][outside], old[1][outside],
+                                                                        old[2][outside])
+    (sc.path / "edits" / "crops").mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(sc.path / "edits" / "crops" / f"{step}_{k}.jpg"), cv2.cvtColor(panels, cv2.COLOR_RGB2BGR))
+    log(f"  the {o['label']} {mode}: {text}")
+    return f"{step}_{k}.jpg"
+
+
+def set_modes(st, k, names, found=None):
+    """Object k's mode names (and the one it was found in) in its record: the scene now, as found, objects.json."""
+    sc = st["scene"]
+    fields = {"modes": names, **({"mode": found} if found else {})}
+    sc.objects = {**sc.objects, k: {**sc.objects[k], **fields}}
+    base = dict(st["original"]["objects"])
+    if k in base:
+        base[k] = {**base[k], **fields}
+    objects_changed(st, base)
+
+
+def draw_mode(name, k, mode, director, job, new=True):
+    """A mode of object k drawn by the image editor from the director prompt (the object described in words,
+    act.render), with its new depth; part of making the scene, not an action. new: a new mode, kept (mode_files) and
+    shown as a preview, the object staying as it is; else the object goes to that mode as found and it is redrawn
+    there, from how it looks in it."""
     st = state(name)
+    sc = st["scene"]
+    o = sc.objects[k]
+    mode = mode_name(mode)
+    if not mode or not director:
+        raise ValueError("Name the mode and say how it looks." if new else "Say how it looks.")
+    if not new:
+        found_mode(name, k, mode)
     with lock(name):
-        e = st["memory"][n]
-        if mode not in e["modes"]:
-            raise ValueError(f"The {e['label']} has no {mode} mode.")
-        if mode == e["mode"]:
-            raise ValueError(f"The {e['label']} is {mode} now: switch to another mode first.")
-        del e["modes"][mode]
-        if len(e["modes"]) == 1:                           # only the one it is in: no modes left to switch to
-            e["modes"], e["mode"] = {}, None
-        save(st)
+        if new and mode in modes_of(st, k):
+            raise ValueError(f"The {o['label']} already has a mode called {mode}.")
+        before = mode_now(st, k)
+        old = (sc.pano.copy(), sc.distance.copy(), sc.labels.copy())     # the area is known only after
+        job.enter("edit", f"Drawing the {o['label']} {mode}")
+        # Described in words, not outlined: given the outlined copy, the editor drew a red outline round the closed
+        # office door (painted over, its edges went soft) or left the picture as it was.
+        c = {"object": f"the {o['label']}", "ids": [k], "labels": [o["label"]], "after": director}
+        changed, _ = act.render(triton, sc, c, steps=args.steps, described=True, log=log)
+        job.enter("depth", "Updating the depth")
+        act.update_depth(triton, sc, changed)
+        # What the edit changed within the object's hull is the object in that mode: what it closes off is hidden.
+        # The hull, not the outline: an open door's outline is its leaves and frame, open at the floor, so the
+        # doorway between is not in it. The hull of its parts over 5% of the largest (specks left out; untuned).
+        parts = cv2.findContours(sc.mask(k).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+        big = max(cv2.contourArea(p) for p in parts)
+        pts = np.vstack([p for p in parts if cv2.contourArea(p) >= 0.05 * big])
+        hull = np.zeros((sc.H, sc.W), np.uint8)
+        if np.ptp(pts[:, 0, 0]) < sc.W / 2:                         # not across the seam (there: the outline only)
+            cv2.fillPoly(hull, [cv2.convexHull(pts)], 1)
+        sc.labels[changed & ((hull > 0) | sc.mask(k))] = k + 1
+        job.enter("save", "Saving")
+        # The mode's area: every pixel the edit changed at all (colour, depth; the feathered edge of the paste too)
+        # and 7 px around (untuned), with the areas of its other modes: every mode covers the same pixels, so
+        # switching puts each back exactly.
+        touched = (sc.pano != old[0]).any(-1) | (sc.distance != old[1]) | (sc.labels != old[2])
+        idx = np.flatnonzero(cv2.dilate(touched.astype(np.uint8), np.ones((15, 15), np.uint8)))
+        files, e = mode_files(sc, k), entry(st, k)[1]
+        for f in files.values():
+            idx = np.union1d(idx, np.load(f)["idx"])
+        for a in (e or {}).get("modes", {}).values():
+            idx = np.union1d(idx, a["idx"])
+        as_was = {"idx": idx, "pano": old[0].reshape(-1, 3)[idx], "distance": old[1].reshape(-1)[idx],
+                  "labels": old[2].reshape(-1)[idx]}
+        d = sc.path / "objects" / "modes" / str(k)
+        d.mkdir(parents=True, exist_ok=True)
+        for f in files.values():                                    # widened to the new area
+            np.savez(f, **widen(dict(np.load(f)), idx, old))
+        if before not in files:                                     # the mode it is in, as it is
+            np.savez(d / f"{session.safe(before)}.npz", **as_was)
+        np.savez(d / f"{session.safe(mode)}.npz", **area(sc, idx))
+        if e:
+            e["modes"] = {m: widen(a, idx, old) for m, a in e["modes"].items()}
+        if new:
+            put(sc, as_was)                                         # back as it was: a variant, not an action
+            set_modes(st, k, sorted(set(files) | {before, mode}), found=o.get("mode") or DEFAULT)
+        else:
+            as_found(st, k, area(sc, idx))                          # redrawn as found
         st["version"] += 1
-    log(f"{name}: deleted the {e['label']}'s {mode} mode")
+        save(st)
+    log(f"{name}: the {o['label']} {'now has the mode' if new else 'redrawn'} {mode}")
+    return {}
+
+
+def found_mode(name, k, mode):
+    """Object k as found in another of its modes: part of making the scene, not an action. Its pixels, depth and object
+    map in that mode, in the current state, the original Reset goes back to and every state Undo goes to, on disk too
+    (depth/pano.png, distance.npy, its mask). Only before it is acted on: after, the memory has it as last seen."""
+    st = state(name)
+    sc = st["scene"]
+    o = sc.objects[k]
+    with lock(name):
+        if entry(st, k)[1] is not None:
+            raise ValueError(f"The {o['label']} has been acted on: switch it in Act.")
+        f = mode_files(sc, k).get(mode)
+        if f is None:
+            raise ValueError(f"The {o['label']} has no {mode} mode.")
+        if mode == mode_now(st, k):
+            return
+        as_found(st, k, dict(np.load(f)))
+        set_modes(st, k, o.get("modes", []), found=mode)
+        st["version"] += 1
+        save(st)
+    log(f"{name}: the {o['label']} found {mode}")
+
+
+def as_found(st, k, look):
+    """Object k's area as it looks in look (a mode's), as found: in the current state, the original and every state
+    Undo goes to; depth/pano.png, distance.npy and its mask."""
+    sc = st["scene"]
+    for snap in [sc, st["original"], *st["undo"]]:
+        get = (lambda f: getattr(snap, f)) if snap is sc else (lambda f: snap[f])
+        get("pano").reshape(-1, 3)[look["idx"]] = look["pano"]
+        get("distance").reshape(-1)[look["idx"]] = look["distance"]
+        get("labels").reshape(-1)[look["idx"]] = look["labels"]
+    depth = sc.path / "depth"                                           # lossless: edits come and go
+    cv2.imwrite(str(depth / "pano.png"), cv2.cvtColor(st["original"]["pano"], cv2.COLOR_RGB2BGR))
+    np.save(depth / "distance.npy", st["original"]["distance"])
+    mask = sc.mask(k)                                                   # its outline as found: in this mode
+    mask.reshape(-1)[look["idx"]] = look["labels"] == k + 1
+    cv2.imwrite(str(sc.path / "objects" / sc.objects[k]["mask"]), mask.astype(np.uint8) * 255)
+    st["area"][k] = int(mask.sum())
+
+
+def delete_mode(name, k, mode):
+    """Forget a mode of object k: not the one it is in or was found in."""
+    st = state(name)
+    sc = st["scene"]
+    o = sc.objects[k]
+    with lock(name):
+        if mode in (mode_now(st, k), o.get("mode") or DEFAULT):
+            raise ValueError(f"The {o['label']} is {mode} now or was found so: that mode stays.")
+        f = mode_files(sc, k).get(mode)
+        if f:
+            f.unlink()
+        e = entry(st, k)[1]
+        if e:
+            e["modes"].pop(mode, None)
+        names = sorted(set(mode_files(sc, k)) - {mode})
+        set_modes(st, k, names if len(names) > 1 else [])
+        if len(names) <= 1:                                         # nothing to switch to: nothing to keep
+            shutil.rmtree(sc.path / "objects" / "modes" / str(k), ignore_errors=True)
+        st["version"] += 1
+        save(st)
+    log(f"{name}: the {o['label']}'s {mode} mode deleted")
 
 
 def widen(a, idx, old):
@@ -468,11 +640,21 @@ def widen(a, idx, old):
     return full
 
 
-def mode_view(st, n, mode, height=96):
-    """How object n looked when last seen in mode: its area painted into the room as it is now, cropped to it with
-    20% around (untuned), `height` px tall: the viewer's mode previews."""
-    sc, e = st["scene"], st["memory"][n]
-    a = e["modes"][mode] if mode != e["mode"] else area(sc, e["modes"][mode]["idx"])   # the current one: as now
+def mode_view(st, k, mode, height=96):
+    """How object k looks in mode, as last seen (the one it is in: as now), its area painted into the room as it is
+    now, cropped to it with 20% around (untuned), `height` px tall: the viewer's mode previews. None if it has no such
+    mode."""
+    sc = st["scene"]
+    if mode == mode_now(st, k):
+        look = mode_look(st, k, mode)
+        idx = look["idx"] if look is not None else np.flatnonzero(sc.labels == k + 1)
+        if not len(idx):
+            idx = np.flatnonzero(sc.mask(k))
+        a = area(sc, idx)
+    else:
+        a = mode_look(st, k, mode)
+        if a is None:
+            return None
     img = sc.pano.copy()
     img.reshape(-1, 3)[a["idx"]] = a["pano"]
     ys, xs = np.divmod(a["idx"], sc.W)
@@ -502,10 +684,9 @@ def place_item(name, n, u, v, action, director, agent, job):
             raise ValueError(f"the editor didn't draw the {e['label']} there; try again or pick another spot")
         k = max(sc.objects) + 1
         (sc.path / "edits" / "masks").mkdir(parents=True, exist_ok=True)
-        path = (sc.path / "edits" / "masks" / f"{k}.png").resolve()
-        cv2.imwrite(str(path), mask.astype(np.uint8) * 255)
+        cv2.imwrite(str(sc.path / "edits" / "masks" / f"{k}.png"), mask.astype(np.uint8) * 255)
         sc.objects = {**sc.objects, k: {"id": f"{k}_{e['label']}", "label": e["label"], "center": None,
-                                        "size": e["size"], "mask": str(path)}}
+                                        "size": e["size"], "mask": f"../edits/masks/{k}.png"}}   # from objects/
         sc.labels[mask] = k + 1
         job.enter("save", "Saving")
         e["ids"].add(k)                                  # the same object, back in the room
@@ -548,6 +729,100 @@ def area_box(sc, uv):
     return (mx, my, yaw, pitch, fov), img, box
 
 
+def box_region(sc, uv) -> np.ndarray:
+    """The panorama pixels inside a dragged box: the hull of its points uv (area_box's) in a view centred on them."""
+    view, _, _ = area_box(sc, uv)
+    mx, my, yaw, pitch, fov = view
+    uv = np.asarray(uv, np.float64).reshape(-1, 2)
+    px = np.minimum((uv[:, 0] * sc.W).astype(int), sc.W - 1)
+    py = np.minimum((uv[:, 1] * sc.H).astype(int), sc.H - 1)
+    S = mx.shape[0]
+    vx, vy, front = common.project(sc.frame, sc.dirs[py, px], yaw, pitch, S, fov)
+    m = np.zeros((S, S), np.uint8)
+    cv2.fillPoly(m, [cv2.convexHull(np.stack([vx[front], vy[front]], 1).astype(np.float32)).astype(np.int32)], 1)
+    return act.view_to_pano(sc, m.astype(np.float32), view)
+
+
+def picture(data):
+    """A reference picture from the viewer (base64 JPEG) as RGB, or None."""
+    if not data:
+        return None
+    img = cv2.imdecode(np.frombuffer(base64.b64decode(data.split(",", 1)[-1]), np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("The reference is not an image.")
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def edit_area(name, area, prompt, reference, job):
+    """Fill a dragged area of the panorama from a prompt and an optional reference picture (act.edit_area), and its
+    depth after. Part of making the scene, as finding objects is, not an action: it changes the scene as found (the
+    current state, the original Reset goes back to, and depth/pano.png and depth/distance.npy on disk). What it changes
+    is kept first in depth/area_undo/<n>.npz until the viewer keeps the edit (keep_area) or discards it (undo_area)."""
+    st = state(name)
+    sc = st["scene"]
+    with lock(name):
+        region = box_region(sc, area)
+        if region.sum() <= 50:                                       # as objects.py's smallest object
+            raise ValueError("Draw the box over something in the room.")
+        old = (sc.pano.copy(), sc.distance.copy())
+        job.enter("edit", "Editing the area")
+        changed, _ = act.edit_area(triton, sc, region, prompt, picture(reference), steps=args.steps, log=log)
+        job.enter("depth", "Updating the depth")
+        act.update_depth(triton, sc, changed)
+        job.enter("save", "Saving")
+        touched = (sc.pano != old[0]).any(-1) | (sc.distance != old[1])
+        idx = np.flatnonzero(touched)
+        undo = sc.path / "depth" / "area_undo"
+        undo.mkdir(exist_ok=True)
+        np.savez(undo / f"{len(list(undo.glob('*.npz'))) + 1}.npz", idx=idx,
+                 pano=old[0].reshape(-1, 3)[idx], distance=old[1].reshape(-1)[idx])
+        set_scene_pixels(st, idx, sc.pano.reshape(-1, 3)[idx], sc.distance.reshape(-1)[idx])
+    log(f"{name}: area filled: {prompt}")
+    return {}
+
+
+def set_scene_pixels(st, idx, pano, distance):
+    """Panorama pixels idx and their depth, as the scene was found: in the current state, the original Reset goes back
+    to, every state Undo goes to, and depth/pano.png (act.Scene prefers it to pano.jpg) and depth/distance.npy."""
+    sc = st["scene"]
+    for snap in [sc, st["original"], *st["undo"]]:
+        get = (lambda f: getattr(snap, f)) if snap is sc else (lambda f: snap[f])
+        get("pano").reshape(-1, 3)[idx] = pano
+        get("distance").reshape(-1)[idx] = distance
+    depth = sc.path / "depth"                                           # lossless: edits come and go
+    cv2.imwrite(str(depth / "pano.png"), cv2.cvtColor(st["original"]["pano"], cv2.COLOR_RGB2BGR))
+    np.save(depth / "distance.npy", st["original"]["distance"])
+    st["version"] += 1
+    save(st)
+
+
+def area_edits(sc) -> list[Path]:
+    """The image edits that can be undone, oldest first."""
+    return sorted((sc.path / "depth" / "area_undo").glob("*.npz"), key=lambda f: int(f.stem))
+
+
+def keep_area(name):
+    """Keep the image edits made: forget what they changed."""
+    st = state(name)
+    with lock(name):
+        for f in area_edits(st["scene"]):
+            f.unlink()
+        st["version"] += 1
+
+
+def undo_area(name):
+    """Discard the last image edit: put back what it changed."""
+    st = state(name)
+    with lock(name):
+        edits = area_edits(st["scene"])
+        if not edits:
+            raise ValueError("No image edit to undo.")
+        a = dict(np.load(edits[-1]))
+        set_scene_pixels(st, a["idx"], a["pano"], a["distance"])
+        edits[-1].unlink()
+    log(f"{name}: image edit undone")
+
+
 def base_objects(sc, objects: dict):
     """Write the corrected object list to objects/objects.json, keeping the detected one the first time."""
     f = sc.path / "objects" / "objects.json"
@@ -569,26 +844,19 @@ def relabel_under(st, region):
     sc.labels[region] = fresh
 
 
-def add_object(st, mask, label, base, dedupe=False):
-    """Add an object (its panorama mask) to the list: the current state, the original and base, the list to write.
-    dedupe: skip it when an object already covers it (IoU over 0.5 with one under it; untuned). Its id, or None."""
+def add_object(st, mask, label, base, mode=DEFAULT):
+    """Add an object (its panorama mask) to the list: the current state, the original and base, the list to write; it
+    is in mode as found. Its id, or None when the mask is too small."""
     sc = st["scene"]
     if mask.sum() <= 50:                                             # as objects.py's smallest object
         return None
-    if dedupe:
-        under = np.bincount(st["original"]["labels"][mask].astype(np.int64))
-        for j in np.argsort(-under)[:3]:                             # the 3 most overlapped objects (untuned)
-            if j > 0 and j - 1 in sc.objects and under[j]:
-                other = sc.mask(j - 1)
-                if (other & mask).sum() / (other | mask).sum() > 0.5:
-                    return None
     mask, lo, hi, near = objects_step.extent(mask, sc.distance, common.points(sc.distance, sc.frame))
     k = max([*sc.objects, *base], default=-1) + 1
     oid = f"{k:02d}_{'_'.join(re.findall(r'[a-z0-9]+', label))}"
     (sc.path / "objects" / "masks").mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(sc.path / "objects" / "masks" / f"{oid}.png"), mask.astype(np.uint8) * 255)
     o = {"id": oid, "label": label, "center": ((lo + hi) / 2).round(3).tolist(), "size": (hi - lo).round(3).tolist(),
-         "distance": round(near, 2), "views": [], "mask": f"masks/{oid}.png"}
+         "distance": round(near, 2), "views": [], "mask": f"masks/{oid}.png", "mode": mode}
     base[k], sc.objects = o, {**sc.objects, k: o}
     st["area"][k] = int(mask.sum())
     for labels in (sc.labels, st["original"]["labels"]):              # above larger objects, under smaller ones
@@ -629,7 +897,8 @@ def edit_objects(name, body):
                 raise ValueError("Name the object.")
             view, img, box = area_box(sc, body["area"])
             seg = triton.segment(img, [box])[0]
-            k = add_object(st, act.view_to_pano(sc, seg.astype(np.float32), view), label, base)
+            k = add_object(st, act.view_to_pano(sc, seg.astype(np.float32), view), label, base,
+                           mode=mode_name(body.get("mode")) or DEFAULT)
             if k is None:
                 raise ValueError("Nothing found there: draw the box tighter around it.")
             log(f"{name}: added {base[k]['id']}")
@@ -646,6 +915,7 @@ def edit_objects(name, body):
             for k in ids:
                 base.pop(k)
                 st["area"].pop(k, None)
+                shutil.rmtree(sc.path / "objects" / "modes" / str(k), ignore_errors=True)
             sc.objects = {j: o for j, o in sc.objects.items() if j not in ids}
             st["original"]["objects"] = base
             relabel_under(st, region)
@@ -668,27 +938,67 @@ def edit_objects(name, body):
     return result
 
 
-def detect(name, area, job):
-    """Find the objects in a dragged area and add the ones not in the list yet: the VLM lists what is in a view around
-    it, the boxes centred inside the area are kept, SAM outlines them."""
-    st = state(name)
-    sc = st["scene"]
+# --- The project: the working scene, inside the session zip, to open again (the server keeps nothing between sessions)
+# What a project holds, by path in the scene folder: the panorama and depth Scene reads, the object list and masks,
+# and the edits (state, memory, inventory, crops, the steps the action history shows). Not the source photo (only
+# depth.py reads it), the depth previews, the detection views or a session zip: all made again when needed.
+PROJECT = ("depth/pano.jpg", "depth/pano.png", "depth/distance.npy", "depth/frame.json", "depth/area_undo/",
+           "objects/objects.json", "objects/objects.detected.json", "objects/masks/", "objects/modes/", "edits/")
+
+
+def add_project(z, root, name):
+    """Write the scene folder root's PROJECT files into the open zip z under project/, with project/project.json."""
+    z.writestr("project/project.json", json.dumps({"format": "pano_ideate project", "version": 1, "scene": name,
+                                                   "saved": time.strftime("%Y-%m-%dT%H:%M:%S")}))
+    for f in sorted(root.rglob("*")):
+        rel = f.relative_to(root).as_posix()
+        if f.is_file() and any(rel == p or (p.endswith("/") and rel.startswith(p)) for p in PROJECT):
+            z.write(f, "project/" + rel)
+
+
+def open_project(data: bytes) -> str:
+    """Unpack the project in a session zip (project/) as the scene it holds; its name. Only the PROJECT paths are taken
+    from it."""
+    import io
+    import zipfile
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        meta = json.loads(z.read("project/project.json"))
+    except (zipfile.BadZipFile, KeyError, ValueError):
+        raise ValueError("That is not a session downloaded from this viewer.")
+    if meta.get("format") != "pano_ideate project":
+        raise ValueError("That is not a session downloaded from this viewer.")
+    if scene_names():
+        raise ValueError("A scene is open: clear it first.")
+    name = re.sub(r"[^a-z0-9_-]+", "_", str(meta.get("scene", "")).lower()).strip("_")[:40] or "scene"
+    folder = args.root / name
+    if folder.exists():                                 # the same name: the old scene goes
+        clear_scene(name)
+    members = [m[len("project/"):] for m in z.namelist() if m.startswith("project/") and not m.endswith("/")]
+    for m in members:                                   # only known paths, nothing outside the scene folder
+        if m != "project.json" and (".." in m.split("/") or m.startswith("/") or
+                                    not any(m == p or (p.endswith("/") and m.startswith(p)) for p in PROJECT)):
+            raise ValueError(f"Unexpected file in the project: {m}")
+    if not {"depth/frame.json", "objects/objects.json"} <= set(members):
+        raise ValueError("The session's project is incomplete.")
+    try:
+        for m in members:
+            if m != "project.json":
+                (folder / m).parent.mkdir(parents=True, exist_ok=True)
+                (folder / m).write_bytes(z.read("project/" + m))
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    log(f"{name}: opened from a session ({meta.get('saved')})")
+    return name
+
+
+def clear_scene(name):
+    """Delete the scene: its folder (the panorama, its objects, the edits, the session zip) and its state here."""
     with lock(name):
-        base = dict(st["original"]["objects"])
-        job.enter("list", "Listing the objects in the area")
-        view, img, box = area_box(sc, area)
-        inside = lambda b: box[0] <= (b[0] + b[2]) / 2 <= box[2] and box[1] <= (b[1] + b[3]) / 2 <= box[3]
-        dets = [d for d in objects_step.parse(triton.vlm(objects_step.PROMPT, img, 3000), img.shape[0])
-                if inside(d["box"])]
-        job.enter("segment", "Outlining them")
-        masks = triton.segment(img, [d["box"] for d in dets]) if dets else []
-        found = [(act.view_to_pano(sc, m.astype(np.float32), view), d["label"]) for m, d in zip(masks, dets)]
-        job.enter("save_objects", "Adding them")
-        added = [k for m, label in sorted(found, key=lambda f: -f[0].sum())   # largest first, as act.Scene's
-                 if (k := add_object(st, m, label, base, dedupe=True)) is not None]
-        objects_changed(st, base)
-        log(f"{name}: found {len(found)} in the area, added {len(added)}")
-    return {"found": len(found), "added": [base[k]["label"] for k in added]}
+        shutil.rmtree(args.root / name, ignore_errors=True)
+        states.pop(name, None)
+    log(f"{name}: cleared")
 
 
 def back(name, reset):
@@ -741,11 +1051,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     return self.wfile.write(data)
-                if len(path) == 5 and path[2] == "mode" and path[4].endswith(".jpg"):   # mode/<memory>/<mode>.jpg
-                    n, mode = int(path[3]), urllib.parse.unquote(path[4][:-4])
-                    if n >= len(st["memory"]) or mode not in st["memory"][n]["modes"]:
-                        return self.fail("not found", 404)
-                    return self.reply(mode_view(st, n, mode), "image/jpeg")
+                if len(path) == 5 and path[2] == "mode" and path[4].endswith(".jpg"):   # mode/<object>/<mode>.jpg
+                    k, mode = int(path[3]), urllib.parse.unquote(path[4][:-4])
+                    # ?h=: the height; the hover preview's 400 px (as tall as the crop allows; untuned)
+                    h = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("h", ["96"])[0]
+                    h = min(max(int(h) if h.isdigit() else 96, 32), 600)
+                    jpg = mode_view(st, k, mode, h) if k in st["scene"].objects else None
+                    return self.reply(jpg, "image/jpeg") if jpg else self.fail("not found", 404)
                 if len(path) == 4 and path[2] == "crop" and "/" not in path[3] and path[3].endswith(".jpg"):
                     return self.reply((edits / "crops" / path[3]).read_bytes(), "image/jpeg")
                 if len(path) == 5 and path[2] == "step" and path[4] in ("pano.jpg", "depth.png", "ids.png"):
@@ -764,10 +1076,14 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0].strip("/").split("/")
         try:
             raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            if path == ["api", "open"]:                               # a session zip: the body; its project opens
+                return self.reply(json.dumps({"scene": open_project(raw)}).encode(), "application/json")
             if len(path) == 3 and path[:2] == ["api", "upload"]:      # a new panorama: the body is the image file
                 name = re.sub(r"[^a-z0-9_-]+", "_", path[2].lower()).strip("_")[:40]
-                if not name or (args.root / name).exists():
-                    return self.fail(f"Pick another name: {name or 'empty'} is taken or empty.", 400)
+                if not name:
+                    return self.fail("Name the scene.", 400)
+                if (args.root / name).exists():                       # the same name: the old scene goes
+                    clear_scene(name)
                 return self.reply(json.dumps({"job": add_scene(name, raw).id}).encode(), "application/json")
             body = json.loads(raw or b"{}")
             if len(path) != 3 or path[0] != "api" or path[1] not in scene_names():
@@ -775,12 +1091,23 @@ class Handler(BaseHTTPRequestHandler):
             name, what = path[1], path[2]
             if what == "act":
                 k, kind = int(body["id"]), body.get("edit")
-                action, director = str(body.get("action", "")).strip(), str(body.get("director", "")).strip()
+                action = str(body.get("action", "")).strip()
                 if kind not in ("pick", "mode") or k not in interactable(state(name)):
-                    return self.fail("Click an object, then pick it up or give it a mode.", 400)
+                    return self.fail("Click an object, then take it or switch its mode.", 400)
+                items = [int(i) for i in body.get("items", [])]
                 job = start(f"{state(name)['scene'].objects[k]['label']}: {action or kind}", ["edit", "depth", "save"],
-                            lambda job: act_on(name, k, kind, body.get("mode"), body.get("now"), action, director,
-                                               body.get("agent"), job))
+                            lambda job: act_on(name, k, kind, body.get("mode"), action, body.get("agent"), job,
+                                               str(body.get("director", "")).strip(), items))
+                return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
+            if what == "mode":                         # a new mode or one redrawn (redraw), in the Objects stage
+                k = int(body["id"])
+                if k not in interactable(state(name)):
+                    return self.fail("That object is no longer in the room.", 400)
+                new = not body.get("redraw")
+                job = start(f"{state(name)['scene'].objects[k]['label']}: {'a new' if new else 'its'} mode",
+                            ["edit", "depth", "save"],
+                            lambda job: draw_mode(name, k, body.get("mode"), str(body.get("director", "")).strip(),
+                                                  job, new))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
             if what == "export":
                 job = start(f"Session of {name}", ["erase", "pack"], lambda job: export_session(name, job))
@@ -794,24 +1121,39 @@ class Handler(BaseHTTPRequestHandler):
                                                    str(body.get("director", body.get("note", ""))).strip(),
                                                    body.get("agent"), job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
-            if what == "unmode":
-                n = int(body["memory"])
-                if not 0 <= n < len(state(name)["memory"]):
+            if what == "found":
+                k = int(body["id"])
+                if k not in state(name)["scene"].objects:
                     return self.fail("not found", 404)
-                delete_mode(name, n, mode_name(body.get("mode")))
+                found_mode(name, k, mode_name(body.get("mode")))
+                return self.reply(b"{}", "application/json")
+            if what == "unmode":
+                k = int(body["id"])
+                if k not in state(name)["scene"].objects:
+                    return self.fail("not found", 404)
+                delete_mode(name, k, mode_name(body.get("mode")))
                 return self.reply(b"{}", "application/json")
             if what == "objects":
                 return self.reply(json.dumps(edit_objects(name, body)).encode(), "application/json")
-            if what == "detect":
-                if not body.get("area"):
-                    return self.fail("Draw a box to look in.", 400)
-                job = start("Finding objects", ["list", "segment", "save_objects"],
-                            lambda job: detect(name, body["area"], job))
+            if what == "edit":
+                prompt = str(body.get("prompt", "")).strip()
+                if not prompt or not body.get("area"):
+                    return self.fail("Draw a box and say what changes there.", 400)
+                job = start("Editing an area", ["edit", "depth", "save"],
+                            lambda job: edit_area(name, body["area"], prompt, body.get("reference"), job))
                 return self.reply(json.dumps({"job": job.id}).encode(), "application/json")
+            if what in ("keep_edit", "discard_edit"):
+                (keep_area if what == "keep_edit" else undo_area)(name)
+                return self.reply(b"{}", "application/json")
+            if what == "clear":
+                clear_scene(name)
+                return self.reply(b"{}", "application/json")
             if what in ("undo", "reset"):
                 back(name, what == "reset")
                 return self.reply(b"{}", "application/json")
             self.fail("not found", 404)
+        except ValueError as e:                                       # a request the user can fix
+            self.fail(e, 400)
         except Exception as e:
             traceback.print_exc()
             self.fail(e)
