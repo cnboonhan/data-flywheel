@@ -32,10 +32,13 @@ style += "\n.bg { fill: var(--bg); }"
 
 view = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg)
 w, h = view.groups()
-svg = svg.replace("<svg ", f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" ', 1)
-svg = re.sub(r"(<svg\b[^>]*>)", rf'\1\n<style>\n{style}\n</style>\n<rect class="bg" width="{w}" height="{h}"/>', svg, count=1)
+LEGEND_H = 44  # room below the diagram for a variant's legend (the HTML draws it at y 598-614, hidden in the plain diagram)
 for role in (None, *ROLES):
+    rh = int(h) + (LEGEND_H if role else 0)
+    cls = f'class="{role}" ' if role else ""
+    body = svg.replace(view.group(0), f'viewBox="0 0 {w} {rh}"', 1)
+    body = body.replace("<svg ", f'<svg {cls}xmlns="http://www.w3.org/2000/svg" width="{w}" height="{rh}" ', 1)
+    body = re.sub(r"(<svg\b[^>]*>)", rf'\1\n<style>\n{style}\n</style>\n<rect class="bg" width="{w}" height="{rh}"/>', body, count=1)
     dst = out / (f"architecture-{role}.svg" if role else "architecture.svg")
-    body = svg.replace("<svg ", f'<svg class="{role}" ', 1) if role else svg
     dst.write_text("<!-- Generated from architecture.html by tools/architecture_svg.py; edit the HTML. -->\n" + body + "\n")
-    print(f"{dst.name} ({w}x{h})")
+    print(f"{dst.name} ({w}x{rh})")

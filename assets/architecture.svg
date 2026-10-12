@@ -30,6 +30,11 @@
 .scientist path[data-roles~="scientist"][marker-end], .engineering path[data-roles~="engineering"][marker-end] { marker-end: url(#arrow-role); }
 .scientist path[data-roles~="scientist"][marker-start], .engineering path[data-roles~="engineering"][marker-start] { marker-start: url(#arrow-role); }
 .scientist text[data-roles~="scientist"], .engineering text[data-roles~="engineering"] { fill: var(--role); }
+.legend { display: none; }
+.scientist .legend[data-for="scientist"], .engineering .legend[data-for="engineering"] { display: inline; }
+.swatch { fill: var(--role-bg); stroke: var(--role); stroke-width: 2; }
+.swatch.shared { fill: var(--shared-bg); stroke: var(--shared); }
+.legendtext { font-size: 12px; fill: currentColor; }
 .scientist [data-roles="scientist engineering"], .engineering [data-roles="scientist engineering"] { --role: var(--shared); --role-bg: var(--shared-bg); }
 .scientist path[data-roles="scientist engineering"][marker-end], .engineering path[data-roles="scientist engineering"][marker-end] { marker-end: url(#arrow-shared); }
 .scientist path[data-roles="scientist engineering"][marker-start], .engineering path[data-roles="scientist engineering"][marker-start] { marker-start: url(#arrow-shared); }
@@ -84,7 +89,8 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
 
       <!-- 1 Tooling -->
       <rect class="box" data-roles="engineering" x="15" y="60" width="180" height="44" rx="8"/>
-      <text class="t" x="105" y="86" text-anchor="middle">Egocentric UMI</text>
+      <text class="t" x="105" y="79" text-anchor="middle">Off-Robot</text>
+      <text class="t" x="105" y="94" text-anchor="middle">Data Collection</text>
       <rect class="box" data-roles="engineering" x="15" y="124" width="180" height="44" rx="8"/>
       <text class="t" x="105" y="150" text-anchor="middle">Robot Teleoperation</text>
       <rect class="box" data-roles="engineering" x="15" y="188" width="180" height="44" rx="8"/>
@@ -162,4 +168,18 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
       <path class="loop" data-roles="engineering" d="M1465 476 V550 H105 V478" marker-end="url(#arrow)"/>
       <path class="loop" data-roles="engineering" d="M785 550 V478" marker-end="url(#arrow)"/>
       <text class="looplabel" data-roles="engineering" x="785" y="570" text-anchor="middle">Feedback Loop</text>
+
+      <!-- Legend of each role variant: below the viewBox here; tools/architecture_svg.py makes room for it -->
+      <g class="legend" data-for="scientist">
+        <rect class="swatch" x="15" y="598" width="28" height="16" rx="4"/>
+        <text class="legendtext" x="51" y="610">Scientist</text>
+        <rect class="swatch shared" x="141" y="598" width="28" height="16" rx="4"/>
+        <text class="legendtext" x="177" y="610">Shared with Engineering</text>
+      </g>
+      <g class="legend" data-for="engineering">
+        <rect class="swatch" x="15" y="598" width="28" height="16" rx="4"/>
+        <text class="legendtext" x="51" y="610">Engineering</text>
+        <rect class="swatch shared" x="141" y="598" width="28" height="16" rx="4"/>
+        <text class="legendtext" x="177" y="610">Shared with Scientist</text>
+      </g>
     </svg>
