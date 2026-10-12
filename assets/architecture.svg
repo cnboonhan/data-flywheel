@@ -108,7 +108,7 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
       <!-- 2 Infra -->
       <rect class="box" data-roles="engineering" x="355" y="60" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="86" text-anchor="middle">Connectivity</text>
-      <rect class="box" data-roles="scientist engineering" x="355" y="124" width="180" height="44" rx="8"/>
+      <rect class="box" data-roles="engineering" x="355" y="124" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="150" text-anchor="middle">Data Storage</text>
       <rect class="box" data-roles="engineering" x="355" y="188" width="180" height="44" rx="8"/>
       <text class="t" x="445" y="214" text-anchor="middle">Logging</text>
