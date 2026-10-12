@@ -326,6 +326,7 @@ services:
       - --cookie-secure=true
       - --cookie-name=_flywheel
       - --email-domain=*
+      - --insecure-oidc-allow-unverified-email=true   # Keycloak sends no mail here, so an account made in the console stays unverified and its login 500s
       - --scope=openid profile email
       - --allowed-group=admins
       - --allowed-group=users
