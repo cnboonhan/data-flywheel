@@ -2,7 +2,7 @@
 
 Turn one 360° photo of a room into a simulation scene: find its objects and act on them in the browser, then generate them as textured rigid bodies and the room around them as a Gaussian splat.
 
-![pano_ideate end to end: walk to the cup and pick it up, walk to the bin, open its lid, put the cup in, close the lid, download the session](../../assets/pano_ideate/e2e.gif)
+![pano_ideate end to end, waits cut: upload the office; box the bin, the bag of rubbish and the doors; draw the bin open and the doors closed; take the bag, open the bin, put the bag in, close and reopen it, close the doors; download the session](../../assets/pano_ideate/e2e.gif)
 
 ```mermaid
 flowchart LR
@@ -29,14 +29,20 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
    - Click an object for its **Object Editor**: rename or remove it, and set its modes, as in the Action Editor but not recorded. Pick **New**, a name and a **director prompt** (what moves, what it shows or hides) to draw a mode (~30 s; the object stays as it is). Pick a mode to have the object found in it, with a director prompt to redraw it there (~30 s). × deletes a mode. An object you have acted on switches in **Act** only.
 4. In **Act**, click an object for its **Action Editor**: pick where the action takes it (one of its modes, as last seen, or **Take** into the inventory, which erases it), type the **action** (recorded in the session as said) and **Apply** (~1 s to switch, ~30 s to take). Going to a mode (or staying in it), you can also pick up to 2 items from its **Inventory** and give a **director prompt**: the image editor redraws it so (~30 s), which is how that mode is seen from then on. Then **Download** (top right) downloads the session zip for the next steps; drop it on the start card to open the scene again where you left off. **×** clears the scene and starts over.
 
-   | Where | Click | Then | Action / director prompt |
+   The office above (the sample below):
+
+   | Where | Box or click | Then | Action / director prompt |
    |---|---|---|---|
+   | Objects | box the bin | **Mode** `closed`, **Name** `bin` | |
+   | Objects | box the bag | **Name** `plastic bag of rubbish` | |
+   | Objects | box the doors | **Mode** `open`, **Name** `wooden doors` | |
    | Objects | the bin | **New** `open` | the bin lid is open, showing an empty inside |
-   | Objects | the door | **New** `closed` | close the double doors: the two door leaves now fill the doorway, and the wall beside the doorway is bare |
-   | Act | the cup | **Take** | pick up the cup |
+   | Objects | the doors | **New** `closed` | close the double doors: the two door leaves now fill the doorway, and the wall beside the doorway is bare |
+   | Act | the bag | **Take** | pick up the plastic bag of rubbish |
    | Act | the bin | `open` | open the bin lid |
-   | Act | the bin | `open`, **Inventory**: the cup | put the cup in the bin; the cup lies at the bottom of the open bin |
-   | Act | the bin | `default` | close the bin lid |
+   | Act | the bin | `open`, **Inventory**: the bag | put the bag in the bin; the plastic bag of rubbish lies inside the open bin |
+   | Act | the bin | `closed`, then `open` | close the bin lid; open it: the bag is still there |
+   | Act | the doors | `closed` | close the doors |
 5. Generate the objects, ticking them in the checklist (~4 min each; [asset_gen](../asset_gen/README.md)).
    ```bash
    uv run sim/asset_gen/objects.py <scene>_session.zip
@@ -58,7 +64,7 @@ Every model runs on [Triton](../../services/triton/README.md): the viewer and `a
 All in the scene frame: z up, metres, origin on the floor below the capture point.
 
 Check before use:
-- **Background:** open the zip's `background/pano.jpg`; an object left there (the export logs `WARNING: the <object> may still be in the background`) appears twice.
+- **Background:** open the zip's `background/pano.jpg`; an object left there (the export logs `WARNING: the <object> may still be in the background`) appears twice. Each object is erased as it is at export: download with a door open to keep the room behind it; closed, its doorway becomes wall.
 - **Objects:** open each one's `views/`; `--seed <n>` draws another.
 - **Heights:** `layout.json` has no height, and an object seen in part (a chair behind a table) is sized to that part. Stand each asset on the surface below it.
 

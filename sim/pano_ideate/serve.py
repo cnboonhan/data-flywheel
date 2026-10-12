@@ -474,6 +474,12 @@ def change_look(st, k, mode, director, things, step, job):
     changed, panels = act.render(triton, sc, c, steps=args.steps, described=True, items=pics, log=log)
     job.enter("depth", "Updating the depth")
     act.update_depth(triton, sc, changed)
+    # Its contents change, not where it stands: a new depth that moves the object's median over 20% (untuned) is
+    # MoGe misjudging the redrawn view (the bin with a bag put in came out at half its distance), so the old is kept.
+    at = old[2] == k + 1
+    if at.any() and abs(np.median(sc.distance[at]) / np.median(old[1][at]) - 1) > 0.2:
+        log(f"  the {o['label']}: new depth off by {np.median(sc.distance[at]) / np.median(old[1][at]):.2f}x, kept the old")
+        sc.distance[changed] = old[1][changed]
     look = mode_look(st, k, mode)
     if look is not None:                                            # its modes' area only: switching stays exact
         outside = np.ones(sc.H * sc.W, bool)

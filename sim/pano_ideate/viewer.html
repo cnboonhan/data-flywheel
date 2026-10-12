@@ -732,6 +732,7 @@ function choose_(key) {
   $("action").placeholder = key === "take" ? `pick up the ${o.label}`
     : names.length ? `put the ${names.join(" and the ")} in the ${o.label}` : mode ? `make the ${o.label} ${key}` : "";
   $("apply").disabled = !key;
+  if (!$("card").hidden) keepInWindow($("card"));
 }
 function renderPutIn() {
   $("putItems").innerHTML = "";
@@ -832,6 +833,7 @@ function chooseObjMode(key) {
   $("newModeDirector").placeholder = add ? "how it looks: what moves, what it shows or hides"
     : `optional: how the ${o.label} looks ${key}, to redraw it`;
   $("objStatus").textContent = "";
+  if (!$("objCard").hidden) keepInWindow($("objCard"));
 }
 $("newModeBtn").onclick = async () => {
   const id = objFor.id, o = objectOf(id), add = objMode === "new";
