@@ -17,6 +17,6 @@ Turns raw data into better models: processes it into training sets, experiments 
 | Architecture Experiments | Form hypotheses on what data processing, data mix strategies and architecture changes will improve model performance. |
 | Model Training and Pre-Evals | Implement training jobs to execute the experiment hypotheses and evaluate output models on suitable metrics and benchmarks (Pre-Evals). These metrics and benchmarks are likely a proxy for real world success for quicker iterations, for example, Validation Action Error. Ensure jobs are resource efficient and terminate cleanly, and handle GPU sharing with other team members |
 | Inference / Model Optimizations | Estimate the performance of the models under load, and implement optimizations on target hardware to meet performance requirements for deployment at the unit level (assume perfect networking). |
-| Distillation | |
+| Distillation | Implement techniques to reduce effective model size while maintaining model performance, in order to support on-board compute requirements. |
 | Deploy (Train → Model Registry) | Deploy trained models onto Registry. Tag them with important information for model ranking and deployment (Eval results, training metrics, deployment flags, data mix). |
-| Sim Evals | |
+| Sim Evals | Support the development, specifications and scaling strategy of simulation Evals with Engineering where applicable. (e.g Advise on Required Assets, Background, Interactions, limitations of model) Evals are closer to real world test cases for demo and deployment than Pre-Evals. Take results from these evaluations as signal to improve experiments. |
