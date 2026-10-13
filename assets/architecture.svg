@@ -96,10 +96,10 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
       <rect class="box" data-roles="engineering" x="15" y="188" width="180" height="44" rx="8"/>
       <text class="t" x="105" y="214" text-anchor="middle">Public Datasets</text>
       <rect class="box" data-roles="engineering" x="15" y="268" width="180" height="44" rx="8"/>
-      <text class="t" x="105" y="294" text-anchor="middle">Sim Scenes</text>
+      <text class="t" x="105" y="294" text-anchor="middle">Virtual Scenes</text>
       <rect class="box" data-roles="engineering" x="15" y="348" width="180" height="44" rx="8"/>
       <text class="t" x="105" y="374" text-anchor="middle">Physical Scenes</text>
-      <!-- Sim Scenes ↔ Physical Scenes -->
+      <!-- Virtual Scenes ↔ Physical Scenes -->
       <path class="e" data-roles="engineering" d="M197 290 H216 V370 H197" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
       <text class="el" data-roles="engineering" x="221" y="334">Sync Specs</text>
       <rect class="box" data-roles="engineering" x="15" y="412" width="180" height="44" rx="8"/>
@@ -144,7 +144,7 @@ svg { color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", san
 
       <!-- 5 Evaluate -->
       <rect class="box" data-roles="scientist engineering" x="1375" y="60" width="180" height="44" rx="8"/>
-      <text class="t" x="1465" y="86" text-anchor="middle">Sim Evals</text>
+      <text class="t" x="1465" y="86" text-anchor="middle">Virtual Evals</text>
       <rect class="box" data-roles="engineering" x="1375" y="140" width="180" height="44" rx="8"/>
       <text class="t" x="1465" y="166" text-anchor="middle">Physical Evals</text>
       <path class="e" data-roles="engineering" d="M1440 184 C1436 222, 1494 222, 1490 186" marker-end="url(#arrow)"/>

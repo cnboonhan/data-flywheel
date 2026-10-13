@@ -54,7 +54,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 | Off-Robot Data Collection | YUBI glove and gripper rigs: [sensors/](sensors/README.md) (`yubi-hw`, `yubi-sw`) |
 | Robot Teleoperation | Galaxea R1 data (public so far) |
 | Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
-| Sim Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/colmap_splat/](sim/colmap_splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md), scenes and assets from one panorama ([sim/pano_ideate/](sim/pano_ideate/README.md), [sim/asset_gen/](sim/asset_gen/README.md)) |
+| Virtual Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/colmap_splat/](sim/colmap_splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md), scenes and assets from one panorama ([sim/pano_ideate/](sim/pano_ideate/README.md), [sim/asset_gen/](sim/asset_gen/README.md)) |
 | Physical Scenes | not built yet |
 | Inference Compute | Triton on the service node's GPUs: [triton/](services/triton/README.md) |
 
@@ -93,7 +93,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 
 | Box | Here |
 |---|---|
-| Sim Evals | `evaluate.sbatch` runs RoboDojo through XPolicyLab ([slurm/](services/slurm/README.md)); RoboTwin and IsaacLab-Arena in [eval/](eval/README.md) |
+| Virtual Evals | `evaluate.sbatch` runs RoboDojo through XPolicyLab ([slurm/](services/slurm/README.md)); RoboTwin and IsaacLab-Arena in [eval/](eval/README.md) |
 | Physical Evals | not built yet |
 
 **Eval Logs:** scores go onto the training run and its model version in MLflow, so the registry answers "how good is version N".
