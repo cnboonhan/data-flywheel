@@ -8,7 +8,7 @@ Turns raw data into better models: processes it into training sets, experiments 
 
 ![The flywheel with the scientist's areas: data processing, architecture experiments, model training and pre-evals, optimizations, distillation and the deploy into the model registry in blue; the upload of public datasets and sim evals, shared with Engineering, in green](../assets/architecture-scientist.svg)
 
-| Item | Example |
+| Item | Description |
 |---|---|
 | Upload and Sync | Identify promising Public Datasets and upload them into Data Storage |
 | Data Cleaning | Understand what are unhelpful features in data or misconfigurations in relation to the hardware configuration. Filter out bad data (e.g pauses, still frames) and validate data ingress assumptions against input hardware specs (e.g camera fisheye vs pinhole, resolution, joint angle ranges). |
