@@ -16,14 +16,14 @@ Builds and runs what the flywheel stands on: the tooling that collects data and 
 | Virtual Scenes | Develop Simulations where applicable to unit test real world deployment of models. These should help to provide targeted signal on the model performance in real environment, and complement the Pre-Evals signals during Architecture experiments by accounting for real world constraints. For example, Pre-Eval should be a Validation Action Error (numerical), whereas a Virtual Scene would be to require the model to move into place within X seconds, to a distance of at most X m. |
 | Physical Scenes | Develop and maintain the real world test environments. Actively improve the physical environments to improve the possible configuration options and signals required for deployment. (For example, mockup button lighting, output numbers). Track the physical limitations during rollout and highlight to team to implement countermeasures. (e.g time limit on lift staying open / Human traffic / Variable door heights ). Determine constraints for successful real world execution and enhance testing for this. |
 | Sync Specs | Aim for Virtual Scenes to (cumulatively) provide evaluation signals on par to the real world |
-| Inference Compute | |
+| Inference Compute | Handle the administration, readiness and stability of the compute to run models and robot control stack, connectivity etc. Teleoperators should be able to collect data and upload, Evaluators should be able to launch and run tests with minimal backend / plumbing / debugging. |
 | Upload and Sync | |
 | Connectivity | |
 | Data Storage | |
 | Backup and Restore | |
 | Logging | |
 | Model Registry | |
-| Deploy (Model Registry → Inference Compute) | |
+| Deploy (Model Registry → Inference Compute) | Handle the deployment of checkpoints and teleoperation / inference libraries to inference compute. Implement seamless deployment to multiple downstream inference compute |
 | Virtual Evals | |
 | Physical Evals | |
 | Reset Automation | |
