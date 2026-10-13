@@ -24,8 +24,8 @@ Builds and runs what the flywheel stands on: the tooling that collects data and 
 | Logging | Manage the logging infrastructure and advise on monitoring for alerts and issues raised |
 | Model Registry | Manage the deployment of the model registry and experiment tracking |
 | Deploy (Model Registry → Inference Compute) | Handle the deployment of checkpoints and teleoperation / inference libraries to inference compute. Implement seamless deployment to multiple downstream inference compute |
-| Virtual Evals | |
-| Physical Evals | |
-| Reset Automation | |
-| Eval Logs | |
-| Feedback Loop | |
+| Virtual Evals | Run virtual evals on the virtual scenes and analyze the results |
+| Physical Evals | Run physical evals on Physical Scenes and analyze results. |
+| Reset Automation | Design ways to reduce cost / effort of running and configuring Physical Evals. For example, using a Navstack to reset the robot position and randomize position automatically; Prototype motors or a push robot to automatically close a swing door etc. |
+| Eval Logs | Design infrastructure and tooling to continuously collect useful data during physical and virtual evals. Identify useful data points to feedback to scientists. Set up hardware infrastructure (multiple configurable camera views, localization) to improve the signal from evals |
+| Feedback Loop | Continuously push evaluation data back to storage for processing and use in model improvements |
