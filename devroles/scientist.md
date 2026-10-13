@@ -2,7 +2,7 @@
 
 ## Scope
 
-Turns raw data into better models: processes it into training sets, experiments with architectures, trains, optimises and distils models, and evaluates them in simulation.
+Turns raw data into better models: processes it into training sets, experiments with architectures, trains, optimises and distils models, and evaluates them in simulation. For each, the aim is to Ideate → Establish processes → Automate.
 
 ## Responsibilities
 
@@ -10,7 +10,7 @@ Turns raw data into better models: processes it into training sets, experiments 
 
 | Item | Description |
 |---|---|
-| Off-Robot Data Collection | Generate synthetic data in simulation to supplement real collection (e.g. scripted or generated demonstrations in Virtual Scenes). Decide which tasks, scenes and variations (objects, lighting, poses) it should cover, and validate that it matches the real hardware's cameras, observation and action spaces so it can be mixed with real data. |
+| Off-Robot Data Collection | Make use of data that needs no robot in the loop: handheld rigs (YUBI / UMI), egocentric video and synthetic data generated in simulation. Decide which of these sources and tasks to collect or generate, and validate that each maps onto the robot's cameras, observation and action spaces (retargeting, calibration) so it can be mixed with on-robot data. |
 | Public Datasets | Survey public datasets for tasks, embodiments and sensors close to ours, and shortlist the ones worth pulling, noting their licences and how much cleaning they would need. Request them from Engineering. |
 | Upload and Sync | Identify promising Public Datasets and upload them into Data Storage |
 | Data Cleaning | Understand what are unhelpful features in data or misconfigurations in relation to the hardware configuration. Filter out bad data (e.g pauses, still frames) and validate data ingress assumptions against input hardware specs (e.g camera fisheye vs pinhole, resolution, joint angle ranges). |

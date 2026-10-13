@@ -2,7 +2,7 @@
 
 ## Scope
 
-Builds and runs what the flywheel stands on: the tooling that collects data and scenes, the infra that stores and serves it, and the evaluation loop that feeds results back.
+Builds and runs what the flywheel stands on: the tooling that collects data and scenes, the infra that stores and serves it, and the evaluation loop that feeds results back. For each, the aim is to Ideate → Establish processes → Automate.
 
 ## Responsibilities
 
