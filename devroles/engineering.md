@@ -17,12 +17,12 @@ Builds and runs what the flywheel stands on: the tooling that collects data and 
 | Physical Scenes | Develop and maintain the real world test environments. Actively improve the physical environments to improve the possible configuration options and signals required for deployment. (For example, mockup button lighting, output numbers). Track the physical limitations during rollout and highlight to team to implement countermeasures. (e.g time limit on lift staying open / Human traffic / Variable door heights ). Determine constraints for successful real world execution and enhance testing for this. |
 | Sync Specs | Aim for Virtual Scenes to (cumulatively) provide evaluation signals on par to the real world |
 | Inference Compute | Handle the administration, readiness and stability of the compute to run models and robot control stack, connectivity etc. Teleoperators should be able to collect data and upload, Evaluators should be able to launch and run tests with minimal backend / plumbing / debugging. |
-| Upload and Sync | |
-| Connectivity | |
-| Data Storage | |
-| Backup and Restore | |
-| Logging | |
-| Model Registry | |
+| Upload and Sync | Handle the upload of raw data from On and Off Robot Sources and Public Datasets |
+| Connectivity | Profile the networking limitations of the real hardware when deployed for teleoperation or physical evaluations. Optimize the connectivity deployment, and advise countermeasures in the control stack to handle network failures. Preemptively test and implement network recovery where applicable. Arrange the necessary QoS and compute reservations to minimize non-deterministic latency. |
+| Data Storage | Manage the infrastructure uptime of the Data Storage Layer of Flywheel |
+| Backup and Restore | Manage the backup and restore of datasets, checkpoints in case of data loss. |
+| Logging | Manage the logging infrastructure and advise on monitoring for alerts and issues raised |
+| Model Registry | Manage the deployment of the model registry and experiment tracking |
 | Deploy (Model Registry → Inference Compute) | Handle the deployment of checkpoints and teleoperation / inference libraries to inference compute. Implement seamless deployment to multiple downstream inference compute |
 | Virtual Evals | |
 | Physical Evals | |
