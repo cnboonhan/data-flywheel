@@ -10,9 +10,9 @@ Builds and runs what the flywheel stands on: the tooling that collects data and 
 
 | Item | Description |
 |---|---|
-| Off-Robot Data Collection | |
-| Robot Teleoperation | |
-| Public Datasets | |
+| Off-Robot Data Collection | Build and arrange collection of data using Off-Robot methods. For example, YUBI / UMI / Egocentric. Be familiar with hardware specs, limitations, maintenance and repair. Highlight hardware degradation that can affect data quality. Validate quality of data output (e.g. timestamping sync, calibration, joint limit readings accuracy ) |
+| Robot Teleoperation | Build and arrange collection of data using On-Robot Teleoperation. Familiarity with teleoperation stack implementation for both IK and WBC. Able to tune control stack and highlight safety issues during robot deployment. Be familiar with hardware specs, limitations, maintenance and repair. Highlight hardware degradation that affects data quality. Validate quality of data output (e.g timestamping sync, calibration, joint limits reading accuracy). |
+| Public Datasets | Help to pull and sync raw public datasets into data flywheel according to scientist requests |
 | Sim Scenes | |
 | Physical Scenes | |
 | Sync Specs | |
