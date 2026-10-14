@@ -122,20 +122,23 @@ services:
       - ${STATE_DIR}/prometheus:/prometheus
 
   # Which GPU each running Slurm job holds (slurm_job_gpu), for Prometheus to join with dcgm-exporter's GPU metrics.
-  # It asks Slurm as SERVICE_UID with the host's client and munge, so it sees that account's jobs only (PrivateData).
+  # It asks Slurm as SERVICE_UID with the host's client and munge, so it sees that account's jobs only (PrivateData),
+  # unless an account that sees all jobs keeps $STATE_DIR/slurm-exporter/slurm_job_gpu.prom fresh (slurm-exporter/README.md).
   slurm-exporter:
     <<: *common
     build: ./slurm-exporter
     image: flywheel-slurm-exporter:latest
     environment:
-      SLURM_CONF: /cm/shared/apps/slurm/etc/slurm/slurm.conf   # this cluster's (Bright) layout
+      SLURM_CONF: ${SLURM_CONF}
+      SLURM_BIN: ${SLURM_BIN}
     volumes:
-      - /cm/local/apps/slurm:/cm/local/apps/slurm:ro     # scontrol and its plugins
-      - /cm/shared/apps/slurm:/cm/shared/apps/slurm:ro   # slurm.conf
+      - ${SLURM_DIR}:${SLURM_DIR}:ro                       # the host's Slurm client: scontrol, its library and plugins
+      - ${SLURM_CONF_DIR}:${SLURM_CONF_DIR}:ro             # slurm.conf
       - /run/munge:/run/munge                            # munge's socket: authenticates the uid to slurmctld
       - /etc/passwd:/etc/passwd:ro                       # Slurm resolves its own user (SlurmUser) at start
       - /etc/group:/etc/group:ro
       - /etc/hosts:/etc/hosts:ro                         # the controllers' names
+      - ${STATE_DIR}/slurm-exporter:/data:ro             # slurm_job_gpu.prom from an account that sees all jobs (--write)
 
   grafana:
     <<: *common

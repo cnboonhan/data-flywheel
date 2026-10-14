@@ -2,18 +2,29 @@
 
     slurm_job_gpu{instance="<node>", gpu="<index>", job_id, user, job_name, partition} 1
 
-One series per allocated GPU of every running job this account can see (the cluster hides other users' jobs, so the
-service account's own). `instance` and `gpu` match dcgm-exporter's labels, hence honor_labels in prometheus.yml.
+One series per allocated GPU of every running job the asking account can see. `instance` and `gpu` match
+dcgm-exporter's labels, hence honor_labels in prometheus.yml.
+
+    python3 exporter.py                      serve on :9105 (the stack's container)
+    python3 exporter.py --write FILE [SEC]   rewrite FILE every SEC seconds (30), as an account that may see all jobs
+
+The cluster hides other users' jobs (PrivateData=jobs), so the stack's own account sees only its jobs. An account
+allowed to see every job runs --write into $STATE_DIR/slurm-exporter/; the server then serves that file while
+it is fresh (FRESH_S) and asks Slurm itself otherwise.
 """
 import os
+import shutil
+import sys
 import re
 import subprocess
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-BIN = os.environ.get("SLURM_BIN", "/cm/local/apps/slurm/current/bin")
+BIN = os.environ.get("SLURM_BIN") or os.path.dirname(shutil.which("scontrol") or "/usr/bin/scontrol")   # Slurm's bin/
 PORT = 9105   # a free port in the exporter range; compose network only
 CACHE_S = 10  # at most one scontrol call per this many seconds, however often it is scraped (Prometheus: 15 s)
+FILE = os.environ.get("SLURM_JOB_GPU_FILE", "/data/slurm_job_gpu.prom")   # written by --write; mounted from STATE_DIR
+FRESH_S = 120  # serve the file while it is younger than this: four missed 30 s rewrites; older means the writer stopped
 _cache = (0.0, "")
 
 
@@ -60,14 +71,41 @@ def metrics():
     return "\n".join(lines) + "\n"
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        global _cache
-        if self.path != "/metrics":
-            self.send_response(404); self.end_headers(); return
+def served():
+    """The writer's file while it is fresh, else this account's own view; and which one it is."""
+    global _cache
+    try:
+        age = time.time() - os.path.getmtime(FILE)
+    except OSError:
+        age = None
+    if age is not None and age < FRESH_S:
+        body, source = open(FILE).read(), "file"
+    else:
         if time.time() - _cache[0] > CACHE_S:
             _cache = (time.time(), metrics())
-        body = _cache[1].encode()
+        body, source = _cache[1], "scontrol"
+    body += "# HELP slurm_job_gpu_file_age_seconds Age of the --write file (-1: none); over FRESH_S means scontrol is used.\n"
+    body += f"# TYPE slurm_job_gpu_file_age_seconds gauge\nslurm_job_gpu_file_age_seconds {-1 if age is None else round(age)}\n"
+    body += f'# HELP slurm_job_gpu_source 1 for where the jobs come from.\n# TYPE slurm_job_gpu_source gauge\nslurm_job_gpu_source{{source="{source}"}} 1\n'
+    return body
+
+
+def write(path, every):
+    """Rewrite path atomically every `every` seconds, so the server never reads half a file."""
+    while True:
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            f.write(metrics())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+        time.sleep(every)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/metrics":
+            self.send_response(404); self.end_headers(); return
+        body = served().encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; version=0.0.4")
         self.send_header("Content-Length", str(len(body)))
@@ -78,4 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+if sys.argv[1:2] == ["--write"]:
+    write(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 30)
+else:
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
