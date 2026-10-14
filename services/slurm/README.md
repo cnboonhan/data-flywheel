@@ -14,8 +14,8 @@ slurm/
 
 1. Load the credentials and pick a partition (the jobs name none and the cluster has no default).
    ```bash
-   set -a; . /tier1/htx_boonhan/services/flywheel.env; set +a; export SBATCH_PARTITION=<partition>
-   cd /tier1/htx_boonhan/services/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
+   set -a; . /tier1/mistral/flywheel/flywheel.env; set +a; export SBATCH_PARTITION=<partition>
+   cd /tier1/mistral/flywheel/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
    ```
 2. Train.
    ```bash

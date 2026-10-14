@@ -19,7 +19,7 @@ jobs:
       # Literal paths: the runner doesn't evaluate ${{ }} in volumes. Must match STATE_DIR in .env, the checkout,
       # ~/.local, and container.valid_volumes in act_runner/config.yaml.
       volumes:
-        - /tier1/htx_boonhan/services:/tier1/htx_boonhan/services
+        - /tier1/mistral/flywheel:/tier1/mistral/flywheel
         - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel
         - /home/htx_boonhan/.local:/home/htx_boonhan/.local
     strategy:

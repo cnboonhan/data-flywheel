@@ -3,7 +3,7 @@ conda() {
   case "${1:-}" in
     activate)
       local env=${2:?env}
-      [[ $env == */* ]] || env="${ENVS_DIR:-/tier1/htx_boonhan/services/envs}/$env"
+      [[ $env == */* ]] || env="${ENVS_DIR:-/tier1/mistral/flywheel/envs}/$env"
       [[ -f $env/bin/activate ]] || { echo "conda shim: no venv at $env" >&2; return 1; }
       source "$env/bin/activate" ;;
     deactivate)

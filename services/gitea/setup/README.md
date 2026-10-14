@@ -18,4 +18,4 @@ Builds the environments the Slurm jobs run in. Not a pipeline stage: `ctl.sh up`
    ```
 
 **Notes**
-- `ctl.sh up` rebuilds an env when its `<env>/.flywheel-setup` doesn't name the current checkout, so move or reclone the checkout and the next `up` rebuilds.
+- `ctl.sh up` rebuilds an env when its `<env>/.flywheel-setup` doesn't name the current checkout and the env's own path, so after moving or recloning the checkout, or moving `STATE_DIR`, the next `up` rebuilds.

@@ -3,10 +3,10 @@
 SLURM_DIR=${FLYWHEEL_ROOT:-$HOME/workspaces/data-flywheel}/services/slurm
 LIB=$SLURM_DIR/lib
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
-ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
-ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
-BUCKETS_DIR=${BUCKETS_DIR:-/tier1/htx_boonhan/services/versitygw/buckets}
-DATA_ROOT=${DATA_ROOT:-/tier1/htx_boonhan/services/xpolicylab}
+ENVS_DIR=${ENVS_DIR:-/tier1/mistral/flywheel/envs}
+ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/mistral/flywheel/robodojo}
+BUCKETS_DIR=${BUCKETS_DIR:-/tier1/mistral/flywheel/versitygw/buckets}
+DATA_ROOT=${DATA_ROOT:-/tier1/mistral/flywheel/xpolicylab}
 XPL=$PROJECT_ROOT/XPolicyLab
 export BUCKETS_DIR FLYWHEEL_ROOT
 export PYTHONPATH="$LIB${PYTHONPATH:+:$PYTHONPATH}"   # embodiment.py, flywheel_mlflow.py

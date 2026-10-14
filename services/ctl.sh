@@ -209,13 +209,13 @@ mlflow_token() {
 
 # Environments (RoboDojo eval env, policy envs) are built by the Gitea workflow setup-envs, which runs
 # gitea/setup/*.sh in a job container on this node. `up` dispatches it when an env is missing
-# or was built for another checkout (each installer writes the checkout path to <env>/.flywheel-setup);
+# or was built for another checkout or STATE_DIR (each installer writes both paths to <env>/.flywheel-setup);
 # `ctl.sh setup` dispatches it unconditionally. Follow the run in Gitea > Actions.
 setup_envs() {
   local force=${1:-} project api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD" e stale=()
   project=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
   for e in robodojo act dp; do
-    [[ $(cat "$STATE_DIR/envs/$e/.flywheel-setup" 2>/dev/null) == "$project" ]] || stale+=("$e")
+    [[ $(cat "$STATE_DIR/envs/$e/.flywheel-setup" 2>/dev/null) == "$project $STATE_DIR/envs/$e" ]] || stale+=("$e")
   done
   if [[ -z $force && ${#stale[@]} == 0 ]]; then echo "setup: environments are current for $project"; return 0; fi
   "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d '{"ref":"main"}' \

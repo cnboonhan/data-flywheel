@@ -17,7 +17,7 @@ from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
 src = root / "assets" / "bufo" / "all-the-bufo"
-state = os.environ.get("STATE_DIR", "/tier1/htx_boonhan/services")
+state = os.environ.get("STATE_DIR", "/tier1/mistral/flywheel")
 out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(state) / "keycloak" / "login-background" / "background.png"
 cell = int(sys.argv[2]) if len(sys.argv) > 2 else 48   # px per bufo: sets the mosaic's size and file size; untuned
 

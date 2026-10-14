@@ -11,9 +11,9 @@
 #   set -a; . $STATE_DIR/flywheel.env; set +a; bash install-robodojo.sh
 set -euo pipefail
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
-ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
+ENVS_DIR=${ENVS_DIR:-/tier1/mistral/flywheel/envs}
 SETUP_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)   # this script's folder, which holds conda-shim/
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/mistral/flywheel/uv-cache}
 export PATH="$HOME/.local/bin:$PATH"
 export OMNI_KIT_ACCEPT_EULA=YES TERM=xterm-256color
 
@@ -32,7 +32,7 @@ echo "[0/8] system libraries the node lacks, in user space"
 # Isaac Sim's RTX/MDL stack dlopens libGLU, libOpenGL (glvnd) and a few X11 helpers that aren't
 # installed on the compute nodes. Without root, take them from the Ubuntu arm64 packages and put
 # them on LD_LIBRARY_PATH (services/slurm/lib/xpolicylab.sh does that).
-ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/htx_boonhan/services/robodojo}
+ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/mistral/flywheel/robodojo}
 mkdir -p "$ROBODOJO_DIR/lib" "$ROBODOJO_DIR/deb" && cd "$ROBODOJO_DIR/deb"
 for p in libglu1-mesa libopengl0 libglvnd0 libglx0 libgl1 libegl1 libxt6 libxmu6 libxi6; do
   ls "$p"_*.deb >/dev/null 2>&1 || apt-get download "$p" >/dev/null 2>&1 || echo "could not download $p"
@@ -107,7 +107,7 @@ hf download RoboDojo-Benchmark/RoboDojo --repo-type dataset --include "Assets/**
 # The robot configs ship as *_tmp.yml templates; RoboDojo's helper writes the real ones with absolute
 # asset paths through $PROJECT_ROOT/Assets, so this follows the checkout.
 (cd "$PROJECT_ROOT" && "$ENVS_DIR/robodojo/bin/python" utils/update_embodiment_config_path.py </dev/null | tail -1)
-echo "$PROJECT_ROOT" > "$ENVS_DIR/robodojo/.flywheel-setup"   # env + assets match this checkout; ctl.sh up compares it
+echo "$PROJECT_ROOT $ENVS_DIR/robodojo" > "$ENVS_DIR/robodojo/.flywheel-setup"   # env + assets match this checkout and place; ctl.sh up compares it
 
 echo "[8/8] RoboDojo data -> s3://raw/open_datasets/robodojo{,_real}/"
 # data/RoboDojo/<task>/...      (1.85 TB, 35 tasks, xspark HDF5) -> raw/open_datasets/robodojo/<task>/...

@@ -3,8 +3,14 @@
 # Decoded-frame caches, checkpoints and DP's zarr data go under DATA_ROOT/<policy>/, evaluation results under
 # ROBODOJO_DIR/eval_result; the checkout gets symlinks, kept out of the submodule's status.
 
+relink() {   # relink <link> <target>: create the link, or repoint one left by an earlier STATE_DIR (it would dangle)
+  [[ -L $1 && $(readlink "$1") == "$2" ]] && return 0
+  [[ -L $1 ]] && rm "$1"
+  ln -s "$2" "$1"
+}
+
 link_out() {   # link_out <path in checkout> <path on /tier1>
-  [[ -L $1 ]] && return 0
+  [[ -L $1 ]] && { relink "$1" "$2"; return 0; }
   mkdir -p "$2"
   if [[ -d $1 ]]; then cp -a "$1/." "$2/" && rm -rf "${1:?}"; fi
   ln -s "$2" "$1"
@@ -21,8 +27,8 @@ xpolicylab_links() {
     link_out "$XPL/policy/$p/checkpoints" "$DATA_ROOT/$p/checkpoints"
   done
   link_out "$XPL/policy/DP/data" "$DATA_ROOT/DP/data"
-  if [[ ! -e $PROJECT_ROOT/data ]]; then
-    ln -s "$BUCKETS_DIR/processed/xpolicylab" "$PROJECT_ROOT/data"
+  if [[ -L $PROJECT_ROOT/data || ! -e $PROJECT_ROOT/data ]]; then
+    relink "$PROJECT_ROOT/data" "$BUCKETS_DIR/processed/xpolicylab"
     ex=$(git -C "$PROJECT_ROOT" rev-parse --git-path info/exclude 2>/dev/null) && { grep -qx /data "$ex" 2>/dev/null || echo /data >> "$ex"; }
   fi
 }
@@ -57,7 +63,7 @@ xpolicylab_eval() {
   # Isaac Sim's caches on shared storage, so the first start isn't repeated per node.
   export XDG_CACHE_HOME=$ROBODOJO_DIR/cache XDG_DATA_HOME=$ROBODOJO_DIR/share HOME_NV=$ROBODOJO_DIR/nv
   mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
-  [[ -e $PROJECT_ROOT/Assets ]] || ln -s "$ROBODOJO_DIR/Assets" "$PROJECT_ROOT/Assets"
+  [[ -L $PROJECT_ROOT/Assets || ! -e $PROJECT_ROOT/Assets ]] && relink "$PROJECT_ROOT/Assets" "$ROBODOJO_DIR/Assets"
   # Robot configs are rendered from *_tmp.yml with absolute paths through $PROJECT_ROOT/Assets; redo after moving the repo.
   [[ -f $PROJECT_ROOT/Assets/Robots/x5/curobo.yml ]] || (cd "$PROJECT_ROOT" && python3 utils/update_embodiment_config_path.py </dev/null | tail -1)
 
@@ -85,7 +91,7 @@ xpolicylab_eval() {
   if [[ -d $ROBODOJO_DIR/ckpt/RoboDojo/$policy ]]; then
     mkdir -p "$XPL/policy/$policy/checkpoints"
     for d in "$ROBODOJO_DIR/ckpt/RoboDojo/$policy"/*/; do
-      [[ -e $XPL/policy/$policy/checkpoints/$(basename "$d") ]] || ln -s "${d%/}" "$XPL/policy/$policy/checkpoints/$(basename "$d")"
+      relink "$XPL/policy/$policy/checkpoints/$(basename "$d")" "${d%/}"
     done
   fi
 

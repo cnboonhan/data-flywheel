@@ -35,7 +35,7 @@ import time
 
 import mlflow
 
-BUCKETS_DIR = os.environ.get("BUCKETS_DIR", "/tier1/htx_boonhan/services/versitygw/buckets")
+BUCKETS_DIR = os.environ.get("BUCKETS_DIR", "/tier1/mistral/flywheel/versitygw/buckets")
 XSPARK_ROOT = os.path.join(BUCKETS_DIR, "processed", "xpolicylab")
 
 

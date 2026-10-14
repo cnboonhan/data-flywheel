@@ -10,8 +10,8 @@
 set -euo pipefail
 policy=${1:?ACT|DP}
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
-ENVS_DIR=${ENVS_DIR:-/tier1/htx_boonhan/services/envs}
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/htx_boonhan/services/uv-cache}
+ENVS_DIR=${ENVS_DIR:-/tier1/mistral/flywheel/envs}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/mistral/flywheel/uv-cache}
 export PATH="$HOME/.local/bin:$PATH"
 XPL=$PROJECT_ROOT/XPolicyLab
 env=$ENVS_DIR/${policy,,}
@@ -36,5 +36,5 @@ esac
 uv pip install -q -e "$XPL" mlflow-skinny --reinstall-package xpolicylab
 python -c "import XPolicyLab, sys; print('XPolicyLab from', XPolicyLab.__file__); sys.exit(0 if XPolicyLab.__file__.startswith('$XPL/') else 1)"
 python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
-echo "$PROJECT_ROOT" > "$env/.flywheel-setup"   # ctl.sh up compares this with the checkout
+echo "$PROJECT_ROOT $env" > "$env/.flywheel-setup"   # ctl.sh up compares this with the checkout and the env's own path
 echo "$policy env ready"
