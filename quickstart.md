@@ -1,12 +1,10 @@
 # Quickstart
 
-For people who use the stack: browse data, upload captures, train, and read results. Running the stack itself is in [services/](services/README.md).
-
-Ask an admin for an account first. `services/ctl.sh user add <name> <email>` gives you a Keycloak password, an MLflow access token and an S3 key pair, each shown once; keep them.
+Connect to the stack from your laptop or a cluster node. You need the account details you were given: your name, a Keycloak password, an MLflow token, an S3 key pair and, to call served models, a Triton token.
 
 ## 1. Export the environment
 
-Run this in your shell (add it to `~/.bashrc` or `~/.zshrc` to keep it). The host settings come from [`services/.env.example`](services/.env.example) in your clone of this repo; replace the `<...>` values with what the admin gave you.
+Run this in your clone of this repo (add it to `~/.bashrc` or `~/.zshrc` to keep it), replacing the `<...>` values with your account details. The host settings come from `services/.env.example`.
 
 ```bash
 eval "$(grep -E '^(SERVICE_NODE|SERVICE_HOST|CADDY_PORT)=' services/.env.example | sed 's/^/export /')"
@@ -21,11 +19,9 @@ export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
 export MLFLOW_TRACKING_USERNAME=<your name> MLFLOW_TRACKING_PASSWORD=<your MLflow token>
 export MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 
-# Triton (only if you call served models; the token comes from the admin)
+# Triton (only if you call served models)
 export TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT TRITON_TOKEN=<Triton token>
 ```
-
-On the cluster's own nodes you can instead load all of this from the admin's `flywheel.env` ([services/](services/README.md#state)).
 
 ## 2. Set up SSH (from a laptop)
 
@@ -49,99 +45,18 @@ The stack listens on one HTTPS port on `SERVICE_NODE`, reachable through a login
 
 ## 3. Trust the stack's certificate
 
-```bash
-mkdir -p ~/.flywheel && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o $FLYWHEEL_CA
-```
+1. Download it for the command-line tools (step 1 points them at it):
+   ```bash
+   mkdir -p ~/.flywheel && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o $FLYWHEEL_CA
+   ```
+2. Add it to the system trust store once, so the browser trusts the stack too:
+   ```bash
+   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $FLYWHEEL_CA   # macOS
+   sudo cp $FLYWHEEL_CA /usr/local/share/ca-certificates/flywheel-ca.crt && sudo update-ca-certificates   # Ubuntu
+   ```
 
-For your browser, add it to the system trust store: [Access](services/README.md#access).
+## 4. Check the connection
 
-## 4. Use the services
-
-Open `https://$SERVICE_HOST:$CADDY_PORT/` for links to everything.
+Open `https://$SERVICE_HOST:$CADDY_PORT/` and sign in with your name and Keycloak password; one sign-in covers every web app, and the page links to all of them.
 
 ![Landing page](assets/quickstart/landing.png)
-
-### Sign in (Keycloak)
-
-The first web page you open asks you to sign in. Use your name and the Keycloak password; one sign-in covers every web app. Details: [keycloak/](services/keycloak/README.md).
-
-![Keycloak sign-in](assets/quickstart/keycloak-login.png)
-
-### Browse data (FiftyOne)
-
-Open `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` in Chrome (Safari can't play bags), and pick a dataset from the selector at the top left. Every folder under `raw/` appears as a dataset once `sync-fiftyone-raw` is dispatched after the upload. Details: [fiftyone/](services/fiftyone/README.md).
-
-![FiftyOne](assets/quickstart/fiftyone.png)
-
-### Inspect recordings and bags (Rerun)
-
-Click a sample's `rerun_url` in FiftyOne, or open `https://rerun.$SERVICE_HOST:$CADDY_PORT/` and add a recording. Details: [rerun/](services/rerun/README.md).
-
-![Rerun](assets/quickstart/rerun.png)
-
-### Run pipelines (Gitea Actions)
-
-Open `https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/pipelines/actions`, pick a workflow on the left and click **Run workflow** (for example `download-datasets-hf` to fetch a Hugging Face dataset). Details: [gitea/](services/gitea/README.md#run-a-workflow).
-
-![Gitea Actions](assets/quickstart/gitea-actions.png)
-
-### Track experiments and models (MLflow)
-
-Open `https://$SERVICE_HOST:$CADDY_PORT/mlflow/` and click **Sign in with Keycloak**. Experiments are named `train/<embodiment>/<mix>`; trained checkpoints are under **Models**. From Python, the variables from step 1 are enough:
-
-```python
-import mlflow
-print([e.name for e in mlflow.search_experiments()])
-```
-
-Details: [mlflow/](services/mlflow/README.md), naming: [slurm/](services/slurm/README.md#naming-in-mlflow).
-
-![MLflow](assets/quickstart/mlflow.png)
-
-### Store and fetch data (S3)
-
-The buckets: `raw` (collected data as it arrived), `processed` (converted datasets, splats) and admin-only ones ([versitygw/](services/versitygw/README.md)). **Depending on your user, you may not see every bucket, or see none in a list**: your key may only read some buckets, or only upload into one folder. Open the ones you were given by name.
-
-In the browser:
-
-1. Open `https://s3.$SERVICE_HOST:$CADDY_PORT/ui/` and sign in with your S3 access key and secret.
-2. Go to **Explorer**. If your bucket isn't listed, type its name (e.g. `raw`) into **Enter bucket name** and click **Open**.
-
-![S3 Explorer](assets/quickstart/s3-ui.png)
-
-From the shell, with the variables from step 1:
-
-1. Install the AWS CLI (or run it without installing: `uvx --from awscli aws ...`).
-   ```bash
-   uv tool install awscli
-   ```
-2. List a bucket you have access to.
-   ```bash
-   aws s3 ls s3://raw/
-   ```
-3. Upload a collection into `raw`.
-   ```bash
-   aws s3 sync ./my_capture s3://raw/internal_datasets/<dataset>/
-   ```
-
-For a named profile instead of environment variables, see [Client setup](services/versitygw/README.md#client-setup).
-
-### Search logs (Grafana and Loki)
-
-Open `https://$SERVICE_HOST:$CADDY_PORT/grafana/`, sign in with Keycloak, go to **Explore**, pick **Loki** and query by label, e.g. `{job="<job>"}`. To send logs from a robot or laptop, see [loki/](services/loki/README.md).
-
-![Grafana Explore with Loki](assets/quickstart/grafana-loki.png)
-
-### Call a served model (Triton)
-
-Check that Triton answers and list what it serves:
-
-```bash
-curl --cacert $FLYWHEEL_CA -H "Authorization: Bearer $TRITON_TOKEN" -X POST https://$TRITON_URL/v2/repository/index
-```
-
-To serve a model and call it from Python, see [triton/](services/triton/README.md).
-
-### Train and evaluate (Slurm)
-
-Training and evaluation are Slurm jobs submitted from a login node: [slurm/](services/slurm/README.md).
