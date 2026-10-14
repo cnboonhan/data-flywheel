@@ -11,7 +11,6 @@
 #   iSEE-Laboratory/llmdet_large            model    *                           llmdet_large           (Triton Python backend)
 #   facebook/sam2.1-hiera-large             model    *                           sam2.1-hiera-large     (Triton Python backend)
 #   VAST-AI/TripoSG                         model    *                           TripoSG                (Triton Python backend)
-#   RedHatAI/GLM-5.3-Flash-NVFP4            model    *                           GLM-5.3-Flash-NVFP4    (198 GB, MIT; needs vLLM >= 0.30, newer than Triton 26.09 ships: not served yet)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:
