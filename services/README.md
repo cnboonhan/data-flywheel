@@ -8,7 +8,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Keycloak + oauth2-proxy: single sign-on | [keycloak/](keycloak/README.md) | `/auth`, `/oauth2` |
 | Gitea + Actions runner: pipelines | [gitea/](gitea/README.md), [act_runner/](act_runner/README.md) | `/gitea` |
 | MLflow: tracking, model registry | [mlflow/](mlflow/README.md) | `/mlflow` |
-| Grafana, Loki | [grafana/](grafana/README.md), [loki/](loki/README.md) | `/grafana`, `/loki` |
+| Grafana, Loki, Prometheus: logs, GPU and node metrics | [grafana/](grafana/README.md), [loki/](loki/README.md), [prometheus/](prometheus/README.md) | `/grafana`, `/loki` |
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |

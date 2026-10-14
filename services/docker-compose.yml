@@ -1,4 +1,4 @@
-# Infra stack: Caddy, Versity S3 Gateway, MLflow, Loki, Grafana.
+# Infra stack: Caddy, Versity S3 Gateway, MLflow, Loki, Prometheus (+ Slurm job exporter), Grafana.
 # Every image is a multi-arch manifest (linux/arm64 + linux/amd64), so the same
 # file runs on the GB300 node and on an Intel box. See README.md.
 # Container ports (7070, 5000, 3000, 4180, 8080, ...) are each app's default or the one it is told here; only Caddy's
@@ -109,6 +109,34 @@ services:
       - ${STATE_DIR}/loki:/loki
       - ${STATE_DIR}/versitygw/buckets/logging:/logging   # the logging bucket: chunks and index
 
+  # GPU and host metrics of every cluster node (their dcgm-exporter and node_exporter) and Triton's; Grafana queries it.
+  prometheus:
+    <<: *common
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d   # about 14 GB at 36 nodes every 15 s; untuned
+    volumes:
+      - ./prometheus:/etc/prometheus:ro   # a folder, so nodes.json and the config follow git's file replacements
+      - ${STATE_DIR}/prometheus:/prometheus
+
+  # Which GPU each running Slurm job holds (slurm_job_gpu), for Prometheus to join with dcgm-exporter's GPU metrics.
+  # It asks Slurm as SERVICE_UID with the host's client and munge, so it sees that account's jobs only (PrivateData).
+  slurm-exporter:
+    <<: *common
+    build: ./slurm-exporter
+    image: flywheel-slurm-exporter:latest
+    environment:
+      SLURM_CONF: /cm/shared/apps/slurm/etc/slurm/slurm.conf   # this cluster's (Bright) layout
+    volumes:
+      - /cm/local/apps/slurm:/cm/local/apps/slurm:ro     # scontrol and its plugins
+      - /cm/shared/apps/slurm:/cm/shared/apps/slurm:ro   # slurm.conf
+      - /run/munge:/run/munge                            # munge's socket: authenticates the uid to slurmctld
+      - /etc/passwd:/etc/passwd:ro                       # Slurm resolves its own user (SlurmUser) at start
+      - /etc/group:/etc/group:ro
+      - /etc/hosts:/etc/hosts:ro                         # the controllers' names
+
   grafana:
     <<: *common
     image: grafana/grafana:13.2.3
@@ -138,7 +166,7 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ${STATE_DIR}/grafana:/var/lib/grafana
-    depends_on: [loki]
+    depends_on: [loki, prometheus]
 
   gitea:
     <<: *common

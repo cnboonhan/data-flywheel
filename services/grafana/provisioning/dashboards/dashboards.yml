@@ -1,0 +1,10 @@
+apiVersion: 1
+
+# The JSON dashboards in this folder, in Grafana's "Flywheel" folder; edits in the UI are not kept (edit the JSON).
+providers:
+  - name: flywheel
+    folder: Flywheel
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards

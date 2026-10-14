@@ -1,6 +1,6 @@
 # grafana
 
-Dashboards at `https://$SERVICE_HOST:$CADDY_PORT/grafana`, with the [Loki](../loki/README.md) data source from `provisioning/`. Log in with Keycloak (group `admins` → Admin) or the built-in admin `ADMIN_USER`.
+Dashboards at `https://$SERVICE_HOST:$CADDY_PORT/grafana`, with the [Loki](../loki/README.md) and [Prometheus](../prometheus/README.md) data sources and the dashboards in folder **Flywheel** (GPU nodes) from `provisioning/`. Log in with Keycloak (group `admins` → Admin) or the built-in admin `ADMIN_USER`.
 
 After changing `ADMIN_PASSWORD` in `.env`, reset the built-in admin's password:
 

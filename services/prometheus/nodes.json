@@ -1,0 +1,326 @@
+[
+ {
+  "targets": [
+   "10.80.81.10"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C01",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.11"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C02",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.12"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C03",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.13"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C04",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.14"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C05",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.15"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C06",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.16"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C07",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.17"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C08",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.18"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C09",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.19"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C10",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.20"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C11",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.21"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C12",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.22"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C13",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.23"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C14",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.24"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C15",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.25"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C16",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.26"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C17",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.27"
+  ],
+  "labels": {
+   "node": "C2-GB300-01-C18",
+   "partition": "raus"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.28"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C01",
+   "partition": "raus_manual"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.29"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C02",
+   "partition": "raus_manual"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.30"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C03",
+   "partition": "raus_manual"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.31"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C04",
+   "partition": "raus_manual"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.32"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C05",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.33"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C06",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.34"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C07",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.35"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C08",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.36"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C09",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.37"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C10",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.38"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C11",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.39"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C12",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.40"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C13",
+   "partition": "xcyber"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.41"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C14",
+   "partition": "xaip"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.42"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C15",
+   "partition": "xaip"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.43"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C16",
+   "partition": "xaip"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.44"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C17",
+   "partition": "xaip"
+  }
+ },
+ {
+  "targets": [
+   "10.80.81.45"
+  ],
+  "labels": {
+   "node": "C2-GB300-02-C18",
+   "partition": "xaip"
+  }
+ }
+]

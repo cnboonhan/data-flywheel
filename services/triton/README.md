@@ -108,4 +108,4 @@ A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` 
 - Expect about 1.7 s for 17 concurrent requests with one 1024×1024 image and ~90 output tokens each on the 122B (~900 tokens/s together); the first request after a load takes ~20 s.
 - `sync.py` is the reconciler. It runs in the same image with the checkout mounted, so a change to it takes effect on the next sync without a rebuild. After changing `backends/` or a packager, dispatch `sync-triton` with `force` set to the affected models to repackage them.
 - The server reads the bucket directory read-only and reloads every model on restart. Leave `models/.keep` in place: the gateway deletes an empty folder, and Triton loses its repository with it.
-- Metrics are on port 8002 inside the compose network; nothing scrapes them.
+- Metrics are on port 8002 inside the compose network; [Prometheus](../prometheus/README.md) collects them (job `triton`).

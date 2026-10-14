@@ -1,0 +1,30 @@
+# GPU and host metrics of every cluster node, plus Triton's own. Grafana reads it at http://prometheus:9090.
+global:
+  scrape_interval: 15s   # Prometheus's usual step: short GPU bursts still show; ~14 GB for 30 days of 36 nodes (untuned)
+  scrape_timeout: 10s
+
+scrape_configs:
+  # NVIDIA dcgm-exporter, already running on every node (port 9400): utilisation, memory, power, temperature,
+  # NVLink and XID errors per GPU.
+  - job_name: dcgm
+    file_sd_configs: [{ files: [/etc/prometheus/nodes.json] }]
+    relabel_configs:
+      - { source_labels: [__address__], target_label: __address__, replacement: "${1}:9400" }
+      - { source_labels: [node], target_label: instance }   # name the series by node, not by IP
+
+  # node_exporter, also on every node (port 9100): CPU, memory, disk and network.
+  - job_name: node
+    file_sd_configs: [{ files: [/etc/prometheus/nodes.json] }]
+    relabel_configs:
+      - { source_labels: [__address__], target_label: __address__, replacement: "${1}:9100" }
+      - { source_labels: [node], target_label: instance }
+
+  # Triton's metrics (inference counts and latency per model, GPU memory per model); compose network only.
+  - job_name: triton
+    static_configs: [{ targets: ["triton:8002"] }]
+
+  # Which GPU each running Slurm job holds (services/slurm-exporter); its own instance and gpu labels name the GPU,
+  # so they are kept (honor_labels) and join dcgm's series: DCGM_FI_DEV_GPU_UTIL * on (instance, gpu) slurm_job_gpu.
+  - job_name: slurm
+    honor_labels: true
+    static_configs: [{ targets: ["slurm-exporter:9105"] }]
