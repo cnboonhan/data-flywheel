@@ -1,4 +1,4 @@
-# Infra stack: Caddy, Versity S3 Gateway, MLflow, Loki, Prometheus (+ Slurm job exporter), Grafana.
+# Infra stack: Caddy, Versity S3 Gateway, MLflow, Loki, Prometheus (+ Pushgateway), Grafana.
 # Every image is a multi-arch manifest (linux/arm64 + linux/amd64), so the same
 # file runs on the GB300 node and on an Intel box. See README.md.
 # Container ports (7070, 5000, 3000, 4180, 8080, ...) are each app's default or the one it is told here; only Caddy's
@@ -21,6 +21,7 @@ services:
       SERVICE_HOST: ${SERVICE_HOST}
       CADDY_PORT: ${CADDY_PORT:-8443}
       LOKI_PUSH_TOKEN: ${LOKI_PUSH_TOKEN:-}   # bearer token for POST /loki/api/v1/push from outside
+      PUSHGATEWAY_TOKEN: ${PUSHGATEWAY_TOKEN:-}   # bearer token for pushes to /pushgateway/metrics/job/... from outside
       RERUN_RAW_TOKEN: ${RERUN_RAW_TOKEN:-}   # path token for raw bags in Rerun links
       TRITON_TOKEN: ${TRITON_TOKEN:-}         # bearer token for triton.<host>
     volumes:
@@ -121,24 +122,12 @@ services:
       - ./prometheus:/etc/prometheus:ro   # a folder, so nodes.json and the config follow git's file replacements
       - ${STATE_DIR}/prometheus:/prometheus
 
-  # Which GPU each running Slurm job holds (slurm_job_gpu), for Prometheus to join with dcgm-exporter's GPU metrics.
-  # It asks Slurm as SERVICE_UID with the host's client and munge, so it sees that account's jobs only (PrivateData),
-  # unless an account that sees all jobs keeps $STATE_DIR/slurm-exporter/slurm_job_gpu.prom fresh (slurm-exporter/README.md).
-  slurm-exporter:
+  # Metrics pushed from outside the stack (Caddy's /pushgateway route, bearer token), e.g. which GPU each Slurm job
+  # holds (slurm-exporter/exporter.py --push); Prometheus scrapes it. Pushes are kept in memory: lost on restart until
+  # the next push.
+  pushgateway:
     <<: *common
-    build: ./slurm-exporter
-    image: flywheel-slurm-exporter:latest
-    environment:
-      SLURM_CONF: ${SLURM_CONF}
-      SLURM_BIN: ${SLURM_BIN}
-    volumes:
-      - ${SLURM_DIR}:${SLURM_DIR}:ro                       # the host's Slurm client: scontrol, its library and plugins
-      - ${SLURM_CONF_DIR}:${SLURM_CONF_DIR}:ro             # slurm.conf
-      - /run/munge:/run/munge                            # munge's socket: authenticates the uid to slurmctld
-      - /etc/passwd:/etc/passwd:ro                       # Slurm resolves its own user (SlurmUser) at start
-      - /etc/group:/etc/group:ro
-      - /etc/hosts:/etc/hosts:ro                         # the controllers' names
-      - ${STATE_DIR}/slurm-exporter:/data:ro             # slurm_job_gpu.prom from an account that sees all jobs (--write)
+    image: prom/pushgateway:v1.11.3
 
   grafana:
     <<: *common

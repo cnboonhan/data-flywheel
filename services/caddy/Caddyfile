@@ -90,6 +90,19 @@ https://{$SERVICE_HOST}:8443 {
 		reverse_proxy loki:3100
 	}
 
+	# Metric pushes from outside (e.g. slurm-exporter/exporter.py --push): a bearer token, Pushgateway's push API only;
+	# an empty PUSHGATEWAY_TOKEN never matches. Prometheus reads the Pushgateway inside the compose network.
+	@pushgateway {
+		method PUT POST DELETE
+		path /pushgateway/metrics/job/*
+		expression `{env.PUSHGATEWAY_TOKEN} != "" && {http.request.header.Authorization} == "Bearer " + {env.PUSHGATEWAY_TOKEN}`
+	}
+	handle @pushgateway {
+		request_header -Authorization
+		uri strip_prefix /pushgateway
+		reverse_proxy pushgateway:9091
+	}
+
 	# No login of their own: SSO at the proxy.
 	handle /loki/* {
 		import sso

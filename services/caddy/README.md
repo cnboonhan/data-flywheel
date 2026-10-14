@@ -7,6 +7,7 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 | `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/`; hovering the title shows `site/flywheel.gif`, the line below it `assets/architecture.svg` (repo `assets/` at `/assets/`), next to links to the [devroles](../../devroles/) pages on GitHub |
 | `/gitea`, `/mlflow`, `/grafana`, `/loki` | the service |
 | `/auth`, `/oauth2` | Keycloak, oauth2-proxy |
+| `/pushgateway/metrics/job/...` (PUT, POST, DELETE) | Pushgateway, bearer token `PUSHGATEWAY_TOKEN` ([slurm-exporter/](../slurm-exporter/README.md)) |
 | `/ca.crt` | root certificate of the local CA |
 | `https://fiftyone.$SERVICE_HOST` | FiftyOne |
 | `https://rerun.$SERVICE_HOST` | Rerun ([rerun/](../rerun/README.md)) |

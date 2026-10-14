@@ -23,8 +23,8 @@ scrape_configs:
   - job_name: triton
     static_configs: [{ targets: ["triton:8002"] }]
 
-  # Which GPU each running Slurm job holds (services/slurm-exporter); its own instance and gpu labels name the GPU,
-  # so they are kept (honor_labels) and join dcgm's series: DCGM_FI_DEV_GPU_UTIL * on (instance, gpu) slurm_job_gpu.
-  - job_name: slurm
+  # Metrics pushed from outside, e.g. which GPU each Slurm job holds (services/slurm-exporter); the pushed job,
+  # instance and gpu labels are kept (honor_labels), so slurm_job_gpu joins dcgm's series on (instance, gpu).
+  - job_name: pushgateway
     honor_labels: true
-    static_configs: [{ targets: ["slurm-exporter:9105"] }]
+    static_configs: [{ targets: ["pushgateway:9091"] }]

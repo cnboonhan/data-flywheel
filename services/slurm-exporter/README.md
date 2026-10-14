@@ -1,24 +1,25 @@
 # slurm-exporter
 
-Publishes which GPU each running Slurm job holds, `slurm_job_gpu{instance, gpu, job_id, user, job_name, partition}`, for [Prometheus](../prometheus/README.md) to join with the GPU metrics. It runs `scontrol` from the host's Slurm client (`SLURM_DIR`, `SLURM_BIN`, `SLURM_CONF` in `.env`) as `SERVICE_UID`. If the cluster hides other users' jobs (`PrivateData=jobs`), that account sees only its own; an account allowed to see every job can keep a file up to date instead, and the exporter serves that.
+`exporter.py` pushes which GPU each running Slurm job holds, `slurm_job_gpu{instance, gpu, job_id, user, job_name, partition}`, to the stack's Pushgateway, so [Prometheus](../prometheus/README.md) can join it with the GPU metrics. It sees the jobs of whichever account runs it: if the cluster hides other users' jobs (`PrivateData=jobs`), run it as an account allowed to see every job to publish them all.
 
-## Publish every job
+## Push the jobs
 
-Run the writer as the account that sees all jobs, on any host with the Slurm client (it needs only Python 3 and `scontrol` on `PATH`, or `SLURM_BIN`). `$STATE_DIR` is the stack's, from `.env`.
+It needs only Python 3 and `scontrol` on `PATH` (or `SLURM_BIN`), so run it on any host with the Slurm client. `ctl.sh up` copies it to `$STATE_DIR/slurm-exporter/exporter.py`, readable by `$STATE_DIR`'s group; any copy works.
 
-1. Check that the account is in the group that owns `$STATE_DIR` (the folder below is writable by that group) and sees other users' jobs.
+1. Get `PUSHGATEWAY_TOKEN` from the admin (`services/.env`) and the stack's CA certificate ([quickstart](../../quickstart.md) step 3).
+2. Check it pushes (stop it with Ctrl-C; that also deletes what it pushed).
    ```bash
-   id -nG; stat -c %G $STATE_DIR/slurm-exporter; squeue -h | wc -l
+   export PUSHGATEWAY_TOKEN=<token> PUSHGATEWAY_CA=<path to the CA certificate>
+   python3 exporter.py --push https://$SERVICE_HOST:$CADDY_PORT/pushgateway
    ```
-2. Keep the writer running with Slurm's cron, so it survives logouts (`scrontab -e`, then add this line with `$STATE_DIR` written out; it restarts every 30 minutes and rewrites the file every 30 s):
+3. Keep it running with Slurm's cron, so it survives logouts (`scrontab -e`; it restarts every 30 minutes and pushes every 30 s). Put the token in a file only you can read rather than in the crontab:
    ```
-   */30 * * * * timeout 1790 python3 $STATE_DIR/slurm-exporter/exporter.py --write $STATE_DIR/slurm-exporter/slurm_job_gpu.prom
+   */30 * * * * . ~/.pushgateway.env && timeout 1790 python3 <path>/exporter.py --push https://<SERVICE_HOST>:<CADDY_PORT>/pushgateway
    ```
-   For a test, run the same command by hand.
-3. Check that Prometheus gets it: `slurm_job_gpu_source{source="file"}` is 1 and `slurm_job_gpu_file_age_seconds` stays under 120.
+4. Check that Prometheus gets it: `time() - push_time_seconds{job="slurm_jobs"}` stays under 60 and `slurm_job_gpu` lists the running jobs.
 
 ## Notes
 
-- The exporter serves the file while it is under 120 s old (`FRESH_S`, four missed rewrites); after that it falls back to asking Slurm as `SERVICE_UID` (`slurm_job_gpu_source{source="scontrol"}`), so a stopped writer shows as fewer jobs, not stale ones.
-- `ctl.sh up` copies `exporter.py` to `$STATE_DIR/slurm-exporter/` for the writer, which may not be able to read the checkout.
-- The file holds every running job's ID, user and name, readable by `$STATE_DIR`'s group; on a cluster that keeps jobs private, that is the information it hides, so publish it only with the cluster admins' agreement.
+- Each push replaces the whole group `job="slurm_jobs"`, and a clean stop (SIGTERM from `timeout`, Ctrl-C) deletes it. A pusher that is killed leaves its last push in place; filter on `push_time_seconds` to ignore an old one.
+- Without the token, or with another method or path, the push route doesn't match and the request gets a 404.
+- What it pushes holds every visible job's ID, user and name, readable by everyone with Grafana access; on a cluster that keeps jobs private, push others' jobs only with the cluster admins' agreement.

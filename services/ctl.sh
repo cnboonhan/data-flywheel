@@ -355,9 +355,8 @@ if [[ $1 == up ]]; then
   for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone prometheus slurm-exporter keycloak/db keycloak/import keycloak/login-background versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
     mkdir -p "$STATE_DIR/$d"
   done
-  # The job-to-GPU file comes from another account (one that sees every Slurm job): a group-writable folder, and the
-  # script for it to run, since it may not be able to read this checkout.
-  chmod 2775 "$STATE_DIR/slurm-exporter" && cp -f "$here/slurm-exporter/exporter.py" "$STATE_DIR/slurm-exporter/exporter.py"
+  # The Slurm job pusher, where an account that sees every job can read it (it may not be able to read this checkout).
+  cp -f "$here/slurm-exporter/exporter.py" "$STATE_DIR/slurm-exporter/exporter.py"
   # Keycloak imports the realm (clients, groups, the admin user) on first start.
   (umask 077; python3 -c '
 import os, re, sys
