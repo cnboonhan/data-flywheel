@@ -1124,6 +1124,159 @@
     "showHeader": true
    },
    "id": 25
+  },
+  {
+   "type": "table",
+   "title": "Each GPU now",
+   "description": "Every GPU of the selected partitions with its utilisation and memory, and the job holding it (blank: no job the pusher can see).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 14,
+    "w": 24,
+    "x": 0,
+    "y": 68
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "label_join(max by (instance, gpu, job_id, user, job_name) ((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\"} * on (instance, gpu) group_left (job_id, user, job_name) slurm_job_gpu{job=\"slurm_jobs\"}) or on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\"}), \"slot\", \"/\", \"instance\", \"gpu\")"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "label_join(max by (instance, gpu, job_id, user, job_name) ((DCGM_FI_DEV_FB_USED{partition=~\"$partition\"} * on (instance, gpu) group_left (job_id, user, job_name) slurm_job_gpu{job=\"slurm_jobs\"}) or on (instance, gpu) DCGM_FI_DEV_FB_USED{partition=~\"$partition\"}) / 1024, \"slot\", \"/\", \"instance\", \"gpu\")"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "slot"
+       }
+      ]
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "slot": true
+      },
+      "renameByName": {
+       "instance": "Node",
+       "gpu": "GPU",
+       "job_id": "Job",
+       "user": "User",
+       "job_name": "Name",
+       "Value #A": "GPU util %",
+       "Value #B": "GPU memory GiB"
+      },
+      "indexByName": {
+       "instance": 0,
+       "gpu": 1,
+       "Value #A": 2,
+       "Value #B": 3,
+       "job_id": 4,
+       "user": 5,
+       "job_name": 6
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 1
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "GPU util %"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background",
+         "mode": "basic"
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "thresholds"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 5
+          },
+          {
+           "color": "green",
+           "value": 30
+          }
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "GPU"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 70
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "footer": {
+     "show": true,
+     "reducer": [
+      "mean"
+     ],
+     "fields": [
+      "GPU util %"
+     ]
+    }
+   },
+   "id": 26
   }
  ],
  "refresh": "30s",
