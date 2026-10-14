@@ -678,6 +678,452 @@
     "align": false,
     "alignLevel": null
    }
+  },
+  {
+   "type": "row",
+   "title": "Jobs",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 40
+   },
+   "panels": [],
+   "id": 19
+  },
+  {
+   "type": "table",
+   "title": "GPU jobs now",
+   "description": "Running Slurm jobs and the GPUs they hold, from the Slurm job pusher (services/slurm-exporter); only the jobs its account can see.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 18,
+    "x": 0,
+    "y": 41
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "count by (job_id, user, job_name, partition) (slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"})"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "avg by (job_id, user, job_name, partition) (DCGM_FI_DEV_GPU_UTIL * on (instance, gpu) group_left (job_id, user, job_name, partition) slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"})"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "sum by (job_id, user, job_name, partition) (DCGM_FI_DEV_FB_USED * on (instance, gpu) group_left (job_id, user, job_name, partition) slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"}) / 1024"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "avg by (job_id, user, job_name, partition) (DCGM_FI_DEV_POWER_USAGE * on (instance, gpu) group_left (job_id, user, job_name, partition) slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"})"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "job_id": "Job",
+       "user": "User",
+       "job_name": "Name",
+       "partition": "Partition",
+       "Value #A": "GPUs",
+       "Value #B": "GPU util %",
+       "Value #C": "GPU memory GiB",
+       "Value #D": "Power per GPU W"
+      },
+      "indexByName": {
+       "job_id": 0,
+       "user": 1,
+       "job_name": 2,
+       "partition": 3,
+       "Value #A": 4,
+       "Value #B": 5,
+       "Value #C": 6,
+       "Value #D": 7
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "GPUs",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 1
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "GPU util %"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background",
+         "mode": "basic"
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "thresholds"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 5
+          },
+          {
+           "color": "green",
+           "value": 30
+          }
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "GPUs"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 0
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "footer": {
+     "show": true,
+     "reducer": [
+      "sum"
+     ],
+     "fields": [
+      "GPUs",
+      "GPU memory GiB"
+     ]
+    }
+   },
+   "id": 20
+  },
+  {
+   "type": "stat",
+   "title": "Pusher last push",
+   "description": "Seconds since the Slurm job pusher last pushed; over a minute means it stopped and the jobs above are what it last saw.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 41
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "time() - push_time_seconds{job=\"slurm_jobs\"}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "decimals": 0,
+     "noValue": "not pushing",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 90
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   },
+   "id": 21
+  },
+  {
+   "type": "stat",
+   "title": "GPUs held by jobs",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 46
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "count(slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"})"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 0,
+     "noValue": "0",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area"
+   },
+   "id": 22
+  },
+  {
+   "type": "timeseries",
+   "title": "GPU utilisation by job",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 51
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "avg by (job_id, user, job_name, partition) (DCGM_FI_DEV_GPU_UTIL * on (instance, gpu) group_left (job_id, user, job_name, partition) slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"})",
+     "legendFormat": "{{job_id}} {{user}} {{job_name}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "max": 100
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "lastNotNull"
+     ],
+     "sortBy": "Mean",
+     "sortDesc": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "id": 23
+  },
+  {
+   "type": "timeseries",
+   "title": "GPU memory by job",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 51
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum by (job_id, user, job_name, partition) (DCGM_FI_DEV_FB_USED * on (instance, gpu) group_left (job_id, user, job_name, partition) slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"}) * 1024 * 1024",
+     "legendFormat": "{{job_id}} {{user}} {{job_name}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "lastNotNull"
+     ],
+     "sortBy": "Last *",
+     "sortDesc": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "id": 24
+  },
+  {
+   "type": "table",
+   "title": "Holding GPUs but nearly idle (under 5% for 15 min)",
+   "description": "Jobs whose GPUs averaged under 5% utilisation over the last 15 minutes: candidates to check or release.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 60
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true,
+     "format": "table",
+     "expr": "avg by (job_id, user, job_name, partition) (avg_over_time(DCGM_FI_DEV_GPU_UTIL[15m]) * on (instance, gpu) group_left (job_id, user, job_name, partition) slurm_job_gpu{job=\"slurm_jobs\", partition=~\"$partition\"}) < 5"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "job_id": "Job",
+       "user": "User",
+       "job_name": "Name",
+       "partition": "Partition",
+       "Value": "GPU util % (15 min)"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "id": 25
   }
  ],
  "refresh": "30s",
