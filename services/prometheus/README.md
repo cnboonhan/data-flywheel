@@ -7,13 +7,13 @@ Metrics store (config `prometheus.yml`) for every GPU node of the cluster and fo
 | `dcgm` | NVIDIA dcgm-exporter on every node, port 9400 | per GPU: utilisation (`DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_PROF_GR_ENGINE_ACTIVE`, `DCGM_FI_PROF_PIPE_TENSOR_ACTIVE`), memory (`DCGM_FI_DEV_FB_USED`), power, temperature, clocks, NVLink bandwidth, XID errors, remapped rows |
 | `node` | node_exporter on every node, port 9100 | CPU, memory, disk, network |
 | `triton` | `triton:8002` | inference counts and latency per model |
-| `pushgateway` | `pushgateway:9091`, fed through Caddy's `/pushgateway` route (bearer `PUSHGATEWAY_TOKEN`) | what is pushed from outside, e.g. `slurm_job_gpu{instance, gpu, job_id, user, job_name, partition}`, the GPUs each running job holds ([slurm-exporter/](../slurm-exporter/README.md)) |
+| `pushgateway` | `pushgateway:9091`, fed through Caddy's `/pushgateway` route (bearer `PUSHGATEWAY_TOKEN`) | what is pushed from outside, e.g. `slurm_job_gpu` and `slurm_job_cpu` (the GPUs and CPU cores each running job holds), `slurm_job_cpus`, `slurm_job_memory_bytes`, `slurm_job_rss_bytes` ([slurm-exporter/](../slurm-exporter/README.md)) |
 
 Every node series carries `instance` (the node's name), `partition` (its Slurm partition) and, for GPUs, `gpu` (its index).
 
 ## Use
 
-1. Open Grafana, then **Dashboards → Flywheel → GPU nodes**, and pick a partition or node at the top.
+1. Open Grafana, then **Dashboards → Flywheel → GPU nodes**, and pick a partition or node at the top. Its **Jobs** row has each job's GPUs, VRAM, CPU and RAM against what it was allocated; its **Nodes** row each node's CPU, RAM, GPU and VRAM use.
 2. Or query in **Explore** (data source Prometheus), e.g. the GPUs idle for the last hour:
    ```
    avg_over_time(DCGM_FI_DEV_GPU_UTIL[1h]) == 0
@@ -22,7 +22,11 @@ Every node series carries `instance` (the node's name), `partition` (its Slurm p
    ```
    avg by (job_id, user, job_name) (DCGM_FI_DEV_GPU_UTIL * on (instance, gpu) group_left (job_id, user, job_name) slurm_job_gpu)
    ```
-   It holds the jobs the pusher's account can see; check the push is current with:
+   or CPU cores busy per job:
+   ```
+   sum by (job_id, user) (rate(node_cpu_seconds_total{mode!="idle"}[2m]) * on (instance, cpu) group_left (job_id, user) slurm_job_cpu)
+   ```
+   They hold the jobs the pusher's account can see; check the push is current with:
    ```
    time() - push_time_seconds{job="slurm_jobs"}
    ```
