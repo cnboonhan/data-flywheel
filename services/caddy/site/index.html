@@ -119,8 +119,8 @@
     document.getElementById("llmRows").innerHTML = models.map(x => {
       const l = d[x.id] || {}, inputs = ["text", x.images && `images (${x.max_images ?? "any"} per request)`, x.tools && "tools",
                                          x.reasoning && "reasoning"].filter(Boolean).join(" · ");
-      return `<tr><td><span class="dot${x.ready ? " up" : ""}" title="${x.ready ? "up" : "starting or down"}"></span><b>${esc(x.id)}</b>` +
-             `<small>${esc(x.about)} &middot; ${esc(x.licence)}</small></td><td>${ctx(x.context_window)}</td><td>${inputs}</td>` +
+      return `<tr><td><span class="dot${x.ready ? " up" : ""}" title="${x.ready ? "up" : "starting or down"}"></span><b>${esc(x.id)}</b></td>` +
+             `<td>${ctx(x.context_window)}</td><td>${inputs}</td>` +
              `<td>${isFinite(+l.speed) && l.speed !== undefined ? fmt(l.speed, 0) + " tok/s" : "–"}</td><td>${fmt(l.rps, 2)}</td><td>${fmt(l.busy, 0)}</td></tr>`;
     }).join("") || '<tr><td colspan="6">unavailable</td></tr>';
     const t = m.triton || {};
