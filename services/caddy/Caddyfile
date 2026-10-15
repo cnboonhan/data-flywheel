@@ -195,6 +195,14 @@ https://triton.{$SERVICE_HOST}:8443 {
 	}
 }
 
+# The LLMs on Dynamo (services/dynamo): the gateway on DYNAMO_HEAD checks its own tokens (LLM_TOKEN, LLM_CRITICAL_TOKEN),
+# so no SSO here; answers stream through as they come.
+https://llm.{$SERVICE_HOST}:8443 {
+	reverse_proxy {$LLM_GATEWAY_ADDR:127.0.0.1}:8199 {
+		flush_interval -1
+	}
+}
+
 # S3 API and the gateway's web UI (under /ui). SigV4 signs the request path,
 # so no prefix and no SSO here: clients hold access keys, which ctl.sh issues
 # per user; the UI logs in with those keys.

@@ -26,6 +26,7 @@ services:
       TRITON_TOKEN: ${TRITON_TOKEN:-}         # bearer token for triton.<host>
       TRITON_ADDR: ${TRITON_ADDR:-}           # TRITON_NODE's address (ctl.sh); Triton runs there (triton/compose.yml)
       TRITON_KEY: ${TRITON_KEY:-}             # the header Triton requires, added on the way through
+      LLM_GATEWAY_ADDR: ${LLM_GATEWAY_ADDR:-}   # DYNAMO_HEAD's address (ctl.sh): the LLM gateway behind llm.<host>
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro

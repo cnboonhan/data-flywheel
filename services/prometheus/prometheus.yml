@@ -27,6 +27,10 @@ scrape_configs:
   - job_name: caddy
     static_configs: [{ targets: ["caddy:9180"] }]
 
+  # The LLM gateway (services/llm-gateway): the awake model, switches, requests and in flight by model and class.
+  - job_name: llm-gateway
+    file_sd_configs: [{ files: [/etc/prometheus-sd/llm-gateway.json] }]   # DYNAMO_HEAD:8199, written by ctl.sh up
+
   # Metrics pushed from outside, e.g. which GPU each Slurm job holds (services/slurm-exporter); the pushed job,
   # instance and gpu labels are kept (honor_labels), so slurm_job_gpu joins dcgm's series on (instance, gpu).
   - job_name: pushgateway

@@ -13,6 +13,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
 | Triton: model serving from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (bearer token) |
+| Dynamo + LLM gateway: the large LLMs, critical-traffic priority, model switching (prepared) | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (gateway token) |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run
@@ -51,10 +52,10 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 
 ## Access
 
-1. Reach the stack. From a machine that can reach the node, open `https://$SERVICE_HOST:$CADDY_PORT/`. Otherwise tunnel through a login node and map the names on your laptop (no wildcard there, so list all five):
+1. Reach the stack. From a machine that can reach the node, open `https://$SERVICE_HOST:$CADDY_PORT/`. Otherwise tunnel through a login node and map the names on your laptop (no wildcard there, so list all six):
    ```bash
    ssh -L $CADDY_PORT:$SERVICE_NODE:$CADDY_PORT <login-node>
-   echo "127.0.0.1 $SERVICE_HOST fiftyone.$SERVICE_HOST rerun.$SERVICE_HOST s3.$SERVICE_HOST triton.$SERVICE_HOST" | sudo tee -a /etc/hosts
+   echo "127.0.0.1 $SERVICE_HOST fiftyone.$SERVICE_HOST rerun.$SERVICE_HOST s3.$SERVICE_HOST triton.$SERVICE_HOST llm.$SERVICE_HOST" | sudo tee -a /etc/hosts
    ```
 2. Trust the CA once per device (also removes the browser warning).
    ```bash

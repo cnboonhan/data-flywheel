@@ -36,7 +36,7 @@ The stack listens on one HTTPS port on `SERVICE_NODE`, reachable through a login
    ```
 2. Point the stack's names at the tunnel (once):
    ```bash
-   echo "127.0.0.1 $SERVICE_HOST fiftyone.$SERVICE_HOST rerun.$SERVICE_HOST s3.$SERVICE_HOST triton.$SERVICE_HOST" | sudo tee -a /etc/hosts
+   echo "127.0.0.1 $SERVICE_HOST fiftyone.$SERVICE_HOST rerun.$SERVICE_HOST s3.$SERVICE_HOST triton.$SERVICE_HOST llm.$SERVICE_HOST" | sudo tee -a /etc/hosts
    ```
 3. Open the tunnel whenever you use the stack:
    ```bash

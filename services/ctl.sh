@@ -7,6 +7,7 @@
 #   services/ctl.sh s3-policies  re-apply the S3 bucket policies (after editing versitygw/upload-only.txt)
 #   services/ctl.sh ps|logs|pull|config|<any compose args>
 #   services/ctl.sh triton <compose args>   Triton's own project on TRITON_NODE (ps, logs, build, ...)
+#   services/ctl.sh dynamo render|up|down|<compose args>   the LLMs on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md)
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
 # over ssh; the repo and the state dir are on /tier1, so paths are the same.
@@ -24,9 +25,10 @@ fi
 set -a; source .env; set +a
 # Triton runs on TRITON_NODE (triton/compose.yml); containers here reach it by address, as they can't resolve node names.
 TRITON_ADDR=$(getent hosts "$TRITON_NODE" | awk '{print $1; exit}'); export TRITON_ADDR
+LLM_GATEWAY_ADDR=$(getent hosts "${DYNAMO_HEAD:-}" | awk '{print $1; exit}' || true); export LLM_GATEWAY_ADDR   # dynamo/
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-9: the usage block at the top of this file
+  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-10: the usage block at the top of this file
   exit 1
 fi
 
@@ -49,6 +51,43 @@ keep_off_gpu_memory() {
   done
   (( ${#mems[@]} < ${#all[@]} )) || return 0   # every NUMA node has CPUs: nothing to keep off
   docker update --cpuset-mems "$(IFS=,; echo "${mems[*]}")" $("${compose[@]}" ps -q) >/dev/null
+}
+
+# Dynamo on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md): render the compose files from dynamo/models.yaml and the
+# MLflow `dynamo` aliases, then start the shared services and each model's engine on both trays, one model at a time,
+# putting all but the default to sleep (all awake at once would not fit the GPUs).
+dynamo() {
+  local out="$STATE_DIR/dynamo" head_addr worker_addr
+  head_addr=$(getent hosts "$DYNAMO_HEAD" | awk '{print $1; exit}'); worker_addr=$(getent hosts "$DYNAMO_WORKER" | awk '{print $1; exit}')
+  on() { local node=$1 file=$2; shift 2
+    ssh "$node" "bash -lc $(printf '%q' "cd $(printf '%q' "$out") && docker compose --env-file $(printf '%q' "$here/.env") -f $file $(printf '%q ' "$@")")"; }
+  case ${1:-} in
+    render)
+      mkdir -p "$out/etcd" "$out/cache"
+      (set -a; . "$STATE_DIR/flywheel.env"; DYNAMO_HEAD_ADDR=$head_addr uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out")
+      for m in $(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["order"]))' "$out/gateway.json"); do mkdir -p "$out/cache/$m"; done ;;
+    up)
+      dynamo render
+      on "$DYNAMO_HEAD" head.json up -d --build etcd gateway $(python3 -c 'import json,sys; print(" ".join("frontend-"+m for m in json.load(open(sys.argv[1]))["order"]))' "$out/gateway.json")
+      local m default port order
+      default=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["default"])' "$out/gateway.json")
+      order=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join([m for m in d["order"] if m != d["default"]] + [d["default"]]))' "$out/gateway.json")
+      for m in $order; do   # the default last, so it is the one left awake
+        port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["models"][sys.argv[2]]["system"].rsplit(":",1)[1])' "$out/gateway.json" "$m")
+        on "$DYNAMO_WORKER" worker.json up -d "engine-$m"
+        on "$DYNAMO_HEAD" head.json up -d "engine-$m"
+        echo "dynamo: $m loading (minutes: weights from /tier1, then compilation)"
+        until ssh "$DYNAMO_HEAD" "curl -fs http://127.0.0.1:$port/health" >/dev/null 2>&1; do sleep 10; done
+        [[ $m == "$default" ]] || { ssh "$DYNAMO_HEAD" "curl -fs -X POST -H 'Content-Type: application/json' -d '{\"level\": 1}' http://127.0.0.1:$port/engine/control/sleep" >/dev/null && echo "dynamo: $m asleep"; }
+      done
+      echo "dynamo: $default awake; gateway on $head_addr:8199" ;;
+    down)
+      on "$DYNAMO_WORKER" worker.json down; on "$DYNAMO_HEAD" head.json down ;;
+    worker)
+      on "$DYNAMO_WORKER" worker.json "${@:2}" ;;
+    *)
+      on "$DYNAMO_HEAD" head.json "$@" ;;
+  esac
 }
 
 # docker compose for Triton's own project on TRITON_NODE (over ssh; the checkout and STATE_DIR are on shared storage).
@@ -419,8 +458,14 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   # Triton on its node, and where Prometheus finds its metrics.
   mkdir -p "$STATE_DIR/prometheus-sd"
   printf '[{"targets": ["%s:8102"], "labels": {"node": "%s"}}]\n' "$TRITON_ADDR" "$TRITON_NODE" > "$STATE_DIR/prometheus-sd/triton.json"
+  printf '[{"targets": ["%s:8199"], "labels": {"node": "%s"}}]\n' "$LLM_GATEWAY_ADDR" "${DYNAMO_HEAD:-}" > "$STATE_DIR/prometheus-sd/llm-gateway.json"
   triton_compose up -d
   setup_envs
+  exit 0
+fi
+
+if [[ $1 == dynamo ]]; then
+  dynamo "${@:2}"
   exit 0
 fi
 
