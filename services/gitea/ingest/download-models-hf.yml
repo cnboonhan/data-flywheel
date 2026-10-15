@@ -11,6 +11,9 @@
 #   iSEE-Laboratory/llmdet_large            model    *                           llmdet_large           (Triton Python backend)
 #   facebook/sam2.1-hiera-large             model    *                           sam2.1-hiera-large     (Triton Python backend)
 #   VAST-AI/TripoSG                         model    *                           TripoSG                (Triton Python backend)
+#   moonshotai/Kimi-K3                      model    *                           Kimi-K3                (1.56 TB, Kimi K3 License; Dynamo)
+#   zai-org/GLM-5.3                         model    *                           GLM-5.3                (756 GB, GLM-5.3 License; Dynamo)
+#   thinkingmachines/Inkling-NVFP4          model    *                           Inkling-NVFP4          (592 GB, Apache-2.0; Dynamo)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:
