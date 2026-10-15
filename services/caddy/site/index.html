@@ -69,7 +69,7 @@
   </ul>
   <section id="load">
     <h2>Language models <small style="display:inline">&middot; live, refreshed every 15 s &middot; <a href="/grafana/d/model-usage">usage in Grafana</a></small></h2>
-    <pre class="cmd">curl https://llm.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v1/chat/completions -H 'Content-Type: application/json' \
+    <pre class="cmd">curl -ik https://llm.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'</pre>
     <table><thead><tr><th>Model</th><th>Context</th><th>Inputs</th><th>Speed</th><th>Requests/s</th><th>In progress</th></tr></thead>
       <tbody id="llmRows"><tr><td colspan="6">loading&hellip;</td></tr></tbody></table>
