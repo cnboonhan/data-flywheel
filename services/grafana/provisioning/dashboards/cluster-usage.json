@@ -14,7 +14,7 @@
  "panels": [
   {
    "type": "row",
-   "title": "Now",
+   "title": "Now: GB300-01",
    "id": 1,
    "collapsed": false,
    "gridPos": {
@@ -27,7 +27,7 @@
   {
    "type": "stat",
    "title": "GPUs",
-   "description": "GPUs in the selection.",
+   "description": "GPUs in the selection on this rack.",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -46,7 +46,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})",
+     "expr": "count(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"}) or vector(0)",
      "instant": true
     }
    ],
@@ -94,7 +94,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count((count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))) or vector(0)",
+     "expr": "count((count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})))) or vector(0)",
      "instant": true
     }
    ],
@@ -142,7 +142,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} and on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))) or vector(0)",
+     "expr": "count((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"} and on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})))) or vector(0)",
      "instant": true
     }
    ],
@@ -190,7 +190,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))) or vector(0)",
+     "expr": "count((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})))) or vector(0)",
      "instant": true
     }
    ],
@@ -238,7 +238,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count((avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}[15m]) < 5) and on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))) or vector(0)",
+     "expr": "count((avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"}[15m]) < 5) and on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})))) or vector(0)",
      "instant": true
     }
    ],
@@ -267,7 +267,7 @@
   {
    "type": "stat",
    "title": "GPU utilisation",
-   "description": "Average over the selected GPUs of the time a kernel was running (nvidia-smi's utilisation).",
+   "description": "Average over the rack's selected GPUs of the time a kernel was running (nvidia-smi's utilisation).",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -286,7 +286,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "avg(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})",
+     "expr": "avg(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})",
      "instant": true
     }
    ],
@@ -315,7 +315,7 @@
   {
    "type": "stat",
    "title": "CPU utilisation",
-   "description": "Average over the selected nodes' cores of the time not idle, last 5 min.",
+   "description": "Average over the rack's selected nodes' cores of the time not idle, last 5 min.",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -334,7 +334,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "100 * (1 - avg (rate(node_cpu_seconds_total{mode=\"idle\", partition=~\"$partition\", instance=~\"$node\"}[5m])))",
+     "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"}[5m])))",
      "instant": true
     }
    ],
@@ -363,7 +363,7 @@
   {
    "type": "stat",
    "title": "CPU memory used",
-   "description": "The CPU memory only (the NUMA nodes with CPUs): on GB300 nodes the GPUs' memory is system memory too, and counting it would hide CPU memory pressure. Available = free + file cache + reclaimable slab.",
+   "description": "The CPU memory only (the NUMA nodes with CPUs): on GB300 nodes the GPUs' memory is system memory too, and counting it would hide CPU memory pressure. Available = free + file cache + reclaimable slab. Nodes the collector can't reach are left out.",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -382,7 +382,403 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "100 * (1 - sum(label_replace(node_cpu_memory_available_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) count by (instance) (DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})) / sum(label_replace(node_cpu_memory_total_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) count by (instance) (DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))",
+     "expr": "100 * (1 - sum(label_replace(node_cpu_memory_available_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) count by (instance) (DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})) / sum(label_replace(node_cpu_memory_total_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) count by (instance) (DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"})))",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "decimals": 1,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "row",
+   "title": "Now: GB300-02",
+   "id": 10,
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 5
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs",
+   "description": "GPUs in the selection on this rack.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 11,
+   "gridPos": {
+    "h": 4,
+    "w": 2,
+    "x": 0,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"}) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs in use",
+   "description": "GPUs a process holds memory on (gpu_processes.py, every minute), or, on nodes it can't reach, a Slurm job holds.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 12,
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 2,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count((count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})))) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs free",
+   "description": "GPUs on nodes the collector sees that no process and no Slurm job holds: unused.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 13,
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 5,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"} and on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})))) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs not visible",
+   "description": "GPUs on nodes the collector can't reach (ssh not allowed: the xcyber partition) that no Slurm job the pusher sees holds: unknown, maybe free.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 14,
+   "gridPos": {
+    "h": 4,
+    "w": 2,
+    "x": 8,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count((DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})))) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "#8a8a8a"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs held but idle",
+   "description": "GPUs in use (above) while under 5% busy on average over the last 15 min.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 15,
+   "gridPos": {
+    "h": 4,
+    "w": 2,
+    "x": 10,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count((avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"}[15m]) < 5) and on (instance, gpu) (count by (instance, gpu) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})) or on (instance, gpu) count by (instance, gpu) ((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})))) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "orange"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPU utilisation",
+   "description": "Average over the rack's selected GPUs of the time a kernel was running (nvidia-smi's utilisation).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 16,
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "avg(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "decimals": 1,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "CPU utilisation",
+   "description": "Average over the rack's selected nodes' cores of the time not idle, last 5 min.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 17,
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"}[5m])))",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "decimals": 1,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "CPU memory used",
+   "description": "The CPU memory only (the NUMA nodes with CPUs): on GB300 nodes the GPUs' memory is system memory too, and counting it would hide CPU memory pressure. Available = free + file cache + reclaimable slab. Nodes the collector can't reach are left out.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 18,
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 20,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * (1 - sum(label_replace(node_cpu_memory_available_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) count by (instance) (DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})) / sum(label_replace(node_cpu_memory_total_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) count by (instance) (DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"})))",
      "instant": true
     }
    ],
@@ -411,13 +807,13 @@
   {
    "type": "row",
    "title": "GPU map (each node's GPUs)",
-   "id": 10,
+   "id": 19,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 5
+    "y": 10
    }
   },
   {
@@ -427,12 +823,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 11,
+   "id": 20,
    "gridPos": {
-    "h": 14,
+    "h": 46,
     "w": 10,
     "x": 0,
-    "y": 6
+    "y": 11
    },
    "description": "Each GPU's utilisation averaged over 15 min. Grey: under 5%, effectively unused.",
    "targets": [
@@ -462,6 +858,13 @@
      "options": {
       "renameByName": {
        "instance\\gpu": "node \\ GPU"
+      },
+      "indexByName": {
+       "node \\ GPU": 0,
+       "0": 1,
+       "1": 2,
+       "2": 3,
+       "3": 4
       }
      }
     },
@@ -545,14 +948,14 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 12,
+   "id": 21,
    "gridPos": {
-    "h": 14,
+    "h": 46,
     "w": 14,
     "x": 10,
-    "y": 6
+    "y": 11
    },
-   "description": "The user and workload (container, Slurm job's script, or command) holding the most memory on each GPU; on nodes the collector can't reach, the Slurm job holding it (user and job name), else 'not visible'. Empty: free.",
+   "description": "The user and workload (container, Slurm job's script, or command) holding the most memory on each GPU; on nodes the collector can't reach, the Slurm job holding it (user and job name), else 'not visible'; free: no process and no Slurm job.",
    "targets": [
     {
      "refId": "A",
@@ -560,7 +963,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "topk by (instance, gpu) (1, label_join((label_replace(gpu_process_memory_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"workload\")) or on (instance, gpu) label_join((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"job_name\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\")",
+     "expr": "topk by (instance, gpu) (1, label_join((label_replace(gpu_process_memory_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"workload\")) or on (instance, gpu) label_join((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"job_name\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}, \"who\", \"free\", \"\", \"\")",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -581,6 +984,13 @@
      "options": {
       "renameByName": {
        "instance\\gpu": "node \\ GPU"
+      },
+      "indexByName": {
+       "node \\ GPU": 0,
+       "0": 1,
+       "1": 2,
+       "2": 3,
+       "3": 4
       }
      }
     },
@@ -612,13 +1022,13 @@
   {
    "type": "row",
    "title": "Over time",
-   "id": 13,
+   "id": 22,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 20
+    "y": 57
    }
   },
   {
@@ -629,12 +1039,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 14,
+   "id": 23,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 21
+    "y": 58
    },
    "targets": [
     {
@@ -684,12 +1094,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 15,
+   "id": 24,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 21
+    "y": 58
    },
    "targets": [
     {
@@ -739,12 +1149,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 16,
+   "id": 25,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 21
+    "y": 58
    },
    "targets": [
     {
@@ -794,12 +1204,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 17,
+   "id": 26,
    "gridPos": {
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 30
+    "y": 67
    },
    "targets": [
     {
@@ -845,13 +1255,13 @@
   {
    "type": "row",
    "title": "Who is using them",
-   "id": 18,
+   "id": 27,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 39
+    "y": 76
    }
   },
   {
@@ -861,12 +1271,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 19,
+   "id": 28,
    "gridPos": {
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 40
+    "y": 77
    },
    "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command.",
    "targets": [
@@ -1051,12 +1461,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 20,
+   "id": 29,
    "gridPos": {
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 51
+    "y": 88
    },
    "description": "Running Slurm jobs the job pusher's account sees (slurm-exporter): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -1269,12 +1679,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 21,
+   "id": 30,
    "gridPos": {
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 61
+    "y": 98
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -1350,12 +1760,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 22,
+   "id": 31,
    "gridPos": {
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 61
+    "y": 98
    },
    "targets": [
     {
@@ -1398,12 +1808,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 23,
+   "id": 32,
    "gridPos": {
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 61
+    "y": 98
    },
    "targets": [
     {
