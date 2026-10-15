@@ -14,6 +14,8 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 | `https://s3.$SERVICE_HOST` (`/ui/` behind SSO) | Versity S3 gateway |
 | `https://triton.$SERVICE_HOST` | Triton, bearer token ([triton/](../triton/README.md)) |
 
+Caddy's request metrics (per site: rate, latency, requests in flight; plus its CPU) are on `:9180` inside the compose network for [Prometheus](../prometheus/README.md); the GPU nodes dashboard's **Caddy** row shows them. It is unlikely to be the bottleneck, but if requests in flight keep climbing while the backends' own latency stays flat, or its CPU stays near one core, it is.
+
 1. After editing `Caddyfile` or `site/`, restart Caddy.
    ```bash
    services/ctl.sh restart caddy

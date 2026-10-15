@@ -6,6 +6,7 @@ Metrics store (config `prometheus.yml`) for every GPU node of the cluster and fo
 |---|---|---|
 | `dcgm` | NVIDIA dcgm-exporter on every node, port 9400 | per GPU: utilisation (`DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_PROF_GR_ENGINE_ACTIVE`, `DCGM_FI_PROF_PIPE_TENSOR_ACTIVE`), memory (`DCGM_FI_DEV_FB_USED`), power, temperature, clocks, NVLink bandwidth, XID errors, remapped rows |
 | `node` | node_exporter on every node, port 9100 | CPU, memory, disk, network |
+| `caddy` | `caddy:9180` | every request through the stack's port, per site: rate, latency, requests in flight, errors, Caddy's CPU (dashboard row **Caddy**) |
 | `triton` | `triton:8002` | inference counts and latency per model |
 | `pushgateway` | `pushgateway:9091`, fed through Caddy's `/pushgateway` route (bearer `PUSHGATEWAY_TOKEN`) | what is pushed from outside, e.g. `slurm_job_gpu` and `slurm_job_cpu` (the GPUs and CPU cores each running job holds), `slurm_job_cpus`, `slurm_job_memory_bytes`, `slurm_job_rss_bytes` ([slurm-exporter/](../slurm-exporter/README.md)) |
 

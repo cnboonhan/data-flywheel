@@ -4,6 +4,15 @@
 	# /data/caddy/pki/authorities/local/root.crt; clients trust that file.
 	local_certs
 	auto_https disable_redirects
+	# Request count, latency, sizes and requests in flight per site (host), served on :9180 below for Prometheus.
+	metrics {
+		per_host
+	}
+}
+
+# Prometheus's endpoint for the metrics above: plain HTTP, inside the compose network only (the port isn't published).
+http://:9180 {
+	metrics /metrics
 }
 
 # Everything is on one port: 8443 inside the container, published as CADDY_PORT

@@ -23,6 +23,10 @@ scrape_configs:
   - job_name: triton
     file_sd_configs: [{ files: [/etc/prometheus-sd/triton.json] }]   # TRITON_NODE:8102, written by ctl.sh up
 
+  # Caddy's metrics: every request through the stack's one port, per site (services/caddy/Caddyfile, :9180).
+  - job_name: caddy
+    static_configs: [{ targets: ["caddy:9180"] }]
+
   # Metrics pushed from outside, e.g. which GPU each Slurm job holds (services/slurm-exporter); the pushed job,
   # instance and gpu labels are kept (honor_labels), so slurm_job_gpu joins dcgm's series on (instance, gpu).
   - job_name: pushgateway
