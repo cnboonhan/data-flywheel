@@ -71,10 +71,10 @@
     <h2>Language models</h2>
     <pre class="cmd">curl -ik https://llm.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'</pre>
-    <table><thead><tr><th>Model</th><th>Context</th><th>Inputs</th><th>Speed</th><th>Requests/s</th><th>In progress</th></tr></thead>
+    <table><thead><tr><th>Model</th><th>Context</th><th>Inputs</th><th>Speed (15 min)</th><th>Requests/s (5 min)</th><th>In progress</th></tr></thead>
       <tbody id="llmRows"><tr><td colspan="6">loading&hellip;</td></tr></tbody></table>
     <h2 style="margin-top:18px">Image models</h2>
-    <table><thead><tr><th>Model</th><th>Requests/s</th><th>In progress</th></tr></thead>
+    <table><thead><tr><th>Model</th><th>Requests/s (5 min)</th><th>In progress</th></tr></thead>
       <tbody id="tritonRows"><tr><td colspan="3">loading&hellip;</td></tr></tbody></table>
     <small id="loadGpus"></small>
   </section>
