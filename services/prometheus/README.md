@@ -1,6 +1,6 @@
 # prometheus
 
-Metrics store (config `prometheus.yml`) for every GPU node of the cluster and for Triton, kept 30 days in `$STATE_DIR/prometheus`. No UI or route of its own: read it in [Grafana](../grafana/README.md), dashboard **Flywheel → GPU nodes**.
+Metrics store (config `prometheus.yml`) for every GPU node of the cluster and for Triton, kept 90 days (at most 250 GB) in `$STATE_DIR/prometheus`. No UI or route of its own: read it in [Grafana](../grafana/README.md), dashboard **Flywheel → GPU nodes**.
 
 | Job | Source | What |
 |---|---|---|

@@ -222,6 +222,10 @@ MLFLOW_TRACKING_USERNAME=$ADMIN_USER
 MLFLOW_TRACKING_PASSWORD=$mltok
 MLFLOW_TRACKING_SERVER_CERT_PATH=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
 MLFLOW_DISABLE_AGENT_HINT=1
+# Large artifacts through the server: its presigned URLs point at http://versitygw:7070, which only resolves inside
+# the stack's network (downloads hang otherwise).
+MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false
+MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD=false
 S3_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT
 AWS_CA_BUNDLE=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt
 AWS_ACCESS_KEY_ID=$ADMIN_USER

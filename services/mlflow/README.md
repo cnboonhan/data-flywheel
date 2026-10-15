@@ -7,7 +7,7 @@ Experiment tracking and model registry at `/mlflow`, built from `Dockerfile` wit
    ```bash
    export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
    export MLFLOW_TRACKING_USERNAME=<name> MLFLOW_TRACKING_PASSWORD=mlf_...
-   export MLFLOW_TRACKING_SERVER_CERT_PATH=flywheel-ca.crt MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD=false
+   export MLFLOW_TRACKING_SERVER_CERT_PATH=flywheel-ca.crt MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD=false MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false
    curl -u <name>:mlf_... https://$SERVICE_HOST:$CADDY_PORT/mlflow/api/2.0/mlflow/registered-models/search
    ```
 3. After editing `Dockerfile`, rebuild.
@@ -16,6 +16,7 @@ Experiment tracking and model registry at `/mlflow`, built from `Dockerfile` wit
    ```
 
 **Notes**
+- Keep both `MLFLOW_ENABLE_PROXY_MULTIPART_*` off outside the stack: for large artifacts the server would hand the client presigned URLs at `http://versitygw:7070`, which only resolves inside the stack's network, and the transfer hangs.
 - Log in to the UI with Keycloak; use a personal access token for API clients. Members of `admins` are admins; everyone else gets `EDIT` wherever no permission is set. Set per-experiment and per-model permissions in the admin UI at `/mlflow/oidc/ui/` (stored in `$STATE_DIR/mlflow/oidc_auth.db`).
 - Slurm jobs use the admin token that `ctl.sh up` writes to `$STATE_DIR/flywheel.env`; rerun `up` if it stops working.
 - From another container on the compose network, use `http://mlflow:5000` (no `/mlflow` prefix; Caddy adds it with `X-Forwarded-Prefix`).

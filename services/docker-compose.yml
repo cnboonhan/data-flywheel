@@ -121,7 +121,8 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d   # about 14 GB at 36 nodes every 15 s; untuned
+      - --storage.tsdb.retention.time=90d   # ~1.9 GB a day uncompacted (36 nodes every 15 s), so ~100-170 GB
+      - --storage.tsdb.retention.size=250GB   # cap in case the series grow; the oldest blocks go first
     volumes:
       - ./prometheus:/etc/prometheus:ro   # a folder, so nodes.json and the config follow git's file replacements
       - ${STATE_DIR}/prometheus:/prometheus

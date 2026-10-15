@@ -58,6 +58,11 @@ common = dict(network_mode="host", user=user, ipc="host", shm_size="32gb",
               logging={"driver": "json-file", "options": {"max-size": "20m", "max-file": "5"}})   # 100 MB of logs; untuned
 
 
+def namespace(m):
+    """Each model's own Dynamo namespace: in a shared one, every engine registers at the same endpoint and the second fails."""
+    return "flywheel-" + m["name"].replace(".", "-")
+
+
 def engine(m, path, extra, rank):
     p = m["ports"]
     cmd = ["numactl", "--membind", cfg["host_numa_nodes"],   # host memory on the CPU nodes only (models.yaml)
@@ -69,7 +74,7 @@ def engine(m, path, extra, rank):
     env = {**cfg["common_env"], **m.get("env", {}), "HOME": "/cache", "HF_HOME": "/cache/hf",
            "ETCD_ENDPOINTS": "http://127.0.0.1:2379", "DYN_REQUEST_PLANE": "tcp", "DYN_EVENT_PLANE": "zmq",
            "DYN_TCP_RPC_HOST": "127.0.0.1", "DYN_SYSTEM_HOST": "127.0.0.1", "DYN_SYSTEM_PORT": str(p["system"]),
-           "DYN_SYSTEM_ENABLED": "true"}
+           "DYN_SYSTEM_ENABLED": "true", "DYN_NAMESPACE": namespace(m)}
     return {**common, "image": m["image"], "restart": "no", "command": cmd, "environment": env,
             "devices": ["nvidia.com/gpu=all", "/dev/infiniband"], "cap_add": ["IPC_LOCK", "SYS_NICE"],   # IB; numactl
             "ulimits": {"memlock": -1, "stack": 67108864},
@@ -93,6 +98,7 @@ for m in cfg["models"]:
     head_svc[f"frontend-{n}"] = {**common, "image": m["image"], "restart": "unless-stopped",
                                  "command": ["python3", "-m", "dynamo.frontend", "--http-host", "127.0.0.1",
                                              "--http-port", str(p["frontend"]), "--router-mode", "round-robin",
+                                             "--namespace", namespace(m),
                                              *m.get("frontend_args", [])],
                                  "environment": {"ETCD_ENDPOINTS": "http://127.0.0.1:2379", "DYN_REQUEST_PLANE": "tcp",
                                                  "DYN_EVENT_PLANE": "zmq", "HOME": "/tmp"},
