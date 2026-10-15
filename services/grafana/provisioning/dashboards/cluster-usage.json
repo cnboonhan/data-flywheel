@@ -1012,7 +1012,20 @@
       "align": "left"
      }
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "node \\ GPU"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     }
+    ]
    },
    "options": {
     "showHeader": true,
