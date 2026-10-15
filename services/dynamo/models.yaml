@@ -129,6 +129,16 @@ models:
     args: [--max-model-len, "32768", --enable-multimodal]
     env: {}
 
+  - name: qwen3-vl-30b-a3b
+    registered: Qwen3-VL-30B-A3B-Instruct
+    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
+    placement: {node: $TRITON_NODE, gpus: [2], share: 0.26}   # GPU 2's last share: 58 GiB of bf16 weights, ~9 GiB of KV cache (~90k tokens)
+    ports: {frontend: 8297, system: 9327}
+    frontend_args: [--dyn-chat-processor, vllm, --tool-call-parser, hermes, --enable-auto-tool-choice]   # Instruct: no reasoning
+    args: [--max-model-len, "32768", --enable-multimodal,
+           --max-num-seqs, "32", --limit-mm-per-prompt, '{"image": 4}']   # Triton's limits: else profiling fills the share
+    env: {}
+
   - name: qwen3.8-flash-next
     registered: Qwen3.8-Flash-Next-NVFP4
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.6.0-deepseek-v4.1-flash-dev.2   # vLLM 0.31, which its architecture needs
