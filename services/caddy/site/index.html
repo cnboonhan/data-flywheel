@@ -28,13 +28,27 @@
   .hover:hover + .shown { display: block; }
   #flyer { width: min(518px, 90vw); }   /* the GIF's own width */
   #arch { width: min(1100px, 94vw); left: 3vw; }   /* the SVG is 1570 px wide; centred under a 720 px column */
-  #archText { border-bottom: 1px dotted var(--muted); }
+  #archText, .role > span { border-bottom: 1px dotted var(--muted); }
+  /* a role's page (devroles/*.md) pops up over the word; it is a child of the word, so the pointer can move into it and scroll */
+  #roles { position: relative; color: var(--muted); margin: -16px 0 24px; }   /* the cards align with the column, not the word */
+  .role { cursor: default; }
+  .role .card { position: absolute; z-index: 10; display: none; top: 100%; left: 0; width: min(900px, 92vw); max-height: 75vh; overflow: auto;
+                padding: 4px 18px 14px; color: var(--fg); background: var(--box); font-size: 14px;
+                border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 25%); }
+  .role:hover .card { display: block; }
+  .card h1 { font-size: 18px; margin: 10px 0 4px; } .card h2 { font-size: 15px; margin: 14px 0 6px; } .card p { color: var(--fg); margin: 0 0 8px; }
+  .card img { width: 100%; height: auto; }
+  .card table { border-collapse: collapse; width: 100%; } .card td, .card th { border-top: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); padding: 5px 8px; text-align: left; vertical-align: top; }
 </style>
 </head>
 <body>
 <main>
   <h1><span id="flywheel" class="hover">Data Flywheel</span><img id="flyer" class="shown" alt="The Singapore Flyer with a bufo in every capsule"></h1>
-  <p><span id="archText" class="hover">Implementation of this architecture</span><img id="arch" class="shown" src="/assets/architecture.svg" alt="The data flywheel architecture: Tooling, Infra, Processed, Train, Evaluate"> &middot; Developer roles: <a href="https://github.com/cnboonhan/data-flywheel/blob/main/devroles/scientist.md">Scientist</a>, <a href="https://github.com/cnboonhan/data-flywheel/blob/main/devroles/engineering.md">Engineering</a></p>
+  <p><span id="archText" class="hover">Implementation of this architecture</span><img id="arch" class="shown" src="/assets/architecture.svg" alt="The data flywheel architecture: Tooling, Infra, Processed, Train, Evaluate"></p>
+  <div id="roles">Developer roles:
+    <span class="role"><span>Scientist</span><div class="card">{{include "/devroles/scientist.md" | markdown}}</div></span>,
+    <span class="role"><span>Engineering</span><div class="card">{{include "/devroles/engineering.md" | markdown}}</div></span>
+  </div>
   <ul>
     <li><a href="/gitea/">Gitea</a> <small>Pipelines repo and Actions runners for processing and mixing datasets</small></li>
     <li><a href="https://fiftyone.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/">FiftyOne</a> <small>Browse the ingested datasets (videos, episodes, metadata)</small></li>

@@ -4,7 +4,7 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 
 | URL | Upstream |
 |---|---|
-| `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/`; hovering the title shows `site/flywheel.gif`, the line below it `assets/architecture.svg` (repo `assets/` at `/assets/`), next to links to the [devroles](../../devroles/) pages on GitHub |
+| `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/`; hovering the title shows `site/flywheel.gif`, the line below it `assets/architecture.svg` (repo `assets/` at `/assets/`), and hovering a developer role pops up its [devroles](../../devroles/) page, which the template includes and renders (`/devroles/` itself answers 404: the folder also holds private notes) |
 | `/gitea`, `/mlflow`, `/grafana`, `/loki` | the service |
 | `/auth`, `/oauth2` | Keycloak, oauth2-proxy |
 | `/pushgateway/metrics/job/...` (PUT, POST, DELETE) | Pushgateway, bearer token `PUSHGATEWAY_TOKEN` ([slurm-exporter/](../slurm-exporter/README.md)) |

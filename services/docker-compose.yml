@@ -29,6 +29,7 @@ services:
       - ./caddy/site:/srv:ro
       - ../assets/bufo/all-the-bufo:/srv/bufo:ro   # submodule assets/bufo: the landing page's hover images
       - ../assets:/srv/assets:ro   # the architecture diagram on the landing page; a folder, since git replaces files and a file mount would go stale
+      - ../devroles:/srv/devroles:ro   # the role pages the landing page includes on hover; not served by themselves (Caddyfile)
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
       - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro   # raw files Rerun imports by URL, served on rerun.<host>/raw/

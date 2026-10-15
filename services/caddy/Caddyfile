@@ -114,6 +114,11 @@ https://{$SERVICE_HOST}:8443 {
 		rewrite * /root.crt
 		file_server
 	}
+	# devroles/*.md are only included into the landing page by its template, never served: the folder also holds private
+	# notes (critical-path.md), and this site has no login.
+	handle /devroles/* {
+		respond 404
+	}
 	handle {
 		root * /srv
 		templates
