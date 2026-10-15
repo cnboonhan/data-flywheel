@@ -88,7 +88,8 @@ def engine(m, path, extra, rank=None):
         place = ["--nnodes", "2", "--node-rank", str(rank), "--master-addr", addr(HEAD), "--master-port", str(p["rendezvous"])]
         place += ["--headless"] if rank else []   # rank 1 only computes; no discovery, no system API
         devices = ["nvidia.com/gpu=all", "/dev/infiniband"]   # NCCL over IB between the trays
-    cmd = ["numactl", "--membind", cfg["host_numa_nodes"],   # host memory on the CPU nodes only (models.yaml)
+    numa = m.get("host_numa_nodes", cfg["host_numa_nodes"])   # host memory on the CPU nodes only (models.yaml); "" off
+    cmd = [*(["numactl", "--membind", numa] if numa else []),
            "python3", "-m", "dynamo.vllm", "--model", path, "--served-model-name", m["name"],
            *cfg["common_args"], *m["args"], *place, *extra]
     env = {**cfg["common_env"], **m.get("env", {}), "HOME": "/cache", "HF_HOME": "/cache/hf",

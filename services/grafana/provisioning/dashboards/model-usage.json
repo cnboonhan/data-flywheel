@@ -706,6 +706,246 @@
      "sort": "desc"
     }
    }
+  },
+  {
+   "type": "row",
+   "title": "Response speed (per model, from the engines)",
+   "id": 16,
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 48
+   }
+  },
+  {
+   "type": "table",
+   "title": "Averages over the time range",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 17,
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 49
+   },
+   "description": "Mean time to first token, generation speed per request (tokens/s, from the mean time per output token) and response time, per model.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:time_to_first_token_seconds_sum\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:time_to_first_token_seconds_count\", job=~\"dynamo|triton\"}[$__range]))",
+     "legendFormat": "ttft",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:request_time_per_output_token_seconds_count\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:request_time_per_output_token_seconds_sum\", job=~\"dynamo|triton\"}[$__range]))",
+     "legendFormat": "tok/s",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_sum\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[$__range]))",
+     "legendFormat": "response",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[$__range]))",
+     "legendFormat": "requests",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "Value #A": "time to first token (s)",
+       "Value #B": "generation speed (tokens/s)",
+       "Value #C": "response time (s)",
+       "Value #D": "requests"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 2
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Generation speed per request",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 18,
+   "description": "Tokens per second each request gets while generating (1 / mean time per output token), over 5 min.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 57
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:request_time_per_output_token_seconds_count\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:request_time_per_output_token_seconds_sum\", job=~\"dynamo|triton\"}[5m]))",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Mean time to first token",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 19,
+   "description": "Queueing plus prefill, over 5 min.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 57
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:time_to_first_token_seconds_sum\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:time_to_first_token_seconds_count\", job=~\"dynamo|triton\"}[5m]))",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Mean response time",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 20,
+   "description": "From arrival to the last token, over 5 min; grows with the answer's length.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 57
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:e2e_request_latency_seconds_sum\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[5m]))",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
   }
  ],
  "templating": {
