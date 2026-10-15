@@ -15,7 +15,7 @@ vertical axis until its silhouette from the capture point matches its last-seen 
 Without --asset, a checklist in the terminal asks which objects to generate.
 
 Models (services/triton/triton_endpoint.py; each a model name on the flywheel Triton or a full URL):
-    VLM_ENDPOINT      Qwen3.5-122B-A10B      what the object is, its colours in words (sim/pano_ideate/models.py)
+    VLM_MODEL         qwen3.5-122b-a10b      what the object is, its colours in words (LLM gateway; sim/pano_ideate/models.py)
     EDIT_ENDPOINT     Qwen-Image-Edit-2511   the drawing, the painted renders
     SEGMENT_ENDPOINT  sam2.1-hiera-large     cutting the drawing out
     MESH_ENDPOINT     TripoSG                the shape
@@ -355,7 +355,7 @@ def run(session: Path, out_root: Path, assets: list[str] | None = None, seed: in
     """Generate the session's objects; assets: only these (each an asset name such as 00_chair, or a label such as
     chair), else every one."""
     triton, generator = Triton(), Endpoint("MESH", "TripoSG")
-    log(f"{triton.vlm_}\n{triton.edit_}\n{triton.segment_}\n{generator}")
+    log(f"VLM: {triton.vlm_url} {triton.vlm_model}\n{triton.edit_}\n{triton.segment_}\n{generator}")
     with zipfile.ZipFile(session) as z:
         scene = json.loads(z.read("scene.json"))
         h = scene["frame"]["camera_height"]

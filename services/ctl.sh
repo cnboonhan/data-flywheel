@@ -53,49 +53,103 @@ keep_off_gpu_memory() {
   docker update --cpuset-mems "$(IFS=,; echo "${mems[*]}")" $("${compose[@]}" ps -q) >/dev/null
 }
 
-# Dynamo on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md): render the compose files from dynamo/models.yaml and the
-# MLflow `dynamo` aliases, then start the shared services and each model's engine on both trays, one model at a time,
-# putting all but the default to sleep (all awake at once would not fit the GPUs).
+# Dynamo (dynamo/README.md): serves the models whose MLflow alias `dynamo` is set, where models.yaml places them (the
+# trays, or a node's GPUs). render: write each node's compose file from models.yaml and the aliases (dynamo/render.py).
+# up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
+# node's services up (unchanged ones keep running) and wait for each served model. sync: up, only when the aliases moved
+# or an engine is down; timer: run sync every minute on DYNAMO_HEAD, so setting or moving an alias is all a change takes.
 dynamo() {
-  local out="$STATE_DIR/dynamo" head_addr worker_addr
-  head_addr=$(getent hosts "$DYNAMO_HEAD" | awk '{print $1; exit}'); worker_addr=$(getent hosts "$DYNAMO_WORKER" | awk '{print $1; exit}')
-  on() { local node=$1 file=$2; shift 2
-    ssh "$node" "bash -lc $(printf '%q' "cd $(printf '%q' "$out") && docker compose --env-file $(printf '%q' "$here/.env") -f $file $(printf '%q ' "$@")")"; }
+  local out="$STATE_DIR/dynamo"
+  on() { local node=$1; shift
+    ssh "$node" "bash -lc $(printf '%q' "cd $(printf '%q' "$out") && docker compose -p flywheel-dynamo --env-file $(printf '%q' "$here/.env") -f $node.json $(printf '%q ' "$@")")"; }
+  q() { python3 -c "import json,sys; d=json.load(open('$out/nodes.json')); print($1)" 2>/dev/null; }   # from nodes.json
+  engines() { ssh "$1" "bash -lc 'docker ps $2 --filter name=flywheel-dynamo-engine- --format {{.Names}}'" | LC_ALL=C sort | xargs; }
+  wanted() { python3 -c 'import json,sys; print(" ".join(sorted("flywheel-dynamo-"+s+"-1" for s in json.load(open(sys.argv[1]))["services"] if s.startswith("engine-"))))' "$out/$1.json" | tr ' ' '\n' | LC_ALL=C sort | xargs; }
   case ${1:-} in
     render)
-      mkdir -p "$out/etcd" "$out/cache"
-      (set -a; . "$STATE_DIR/flywheel.env"; DYNAMO_HEAD_ADDR=$head_addr uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out")
-      for m in $(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["order"]))' "$out/gateway.json"); do mkdir -p "$out/cache/$m"; done ;;
+      mkdir -p "$out/cache"
+      (set -a; . "$STATE_DIR/flywheel.env"; uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out") || return 1
+      for m in $(q '" ".join(d["served"])'); do mkdir -p "$out/cache/$m"; done
+      for node in $(q '" ".join(d["nodes"])'); do mkdir -p "$out/etcd-$node"; done ;;   # else dockerd makes them, root-owned
     up)
-      dynamo render
-      on "$DYNAMO_HEAD" head.json up -d --build etcd gateway $(python3 -c 'import json,sys; print(" ".join("frontend-"+m for m in json.load(open(sys.argv[1]))["order"]))' "$out/gateway.json")
-      local m default port order
-      default=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["default"])' "$out/gateway.json")
-      order=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join([m for m in d["order"] if m != d["default"]] + [d["default"]]))' "$out/gateway.json")
-      for m in $order; do   # the default last, so it is the one left awake
-        port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["models"][sys.argv[2]]["system"].rsplit(":",1)[1])' "$out/gateway.json" "$m")
-        on "$DYNAMO_WORKER" worker.json up -d "engine-$m"
-        on "$DYNAMO_HEAD" head.json up -d "engine-$m"
-        echo "dynamo: $m loading (minutes: weights from /tier1, then compilation)"
-        until ssh "$DYNAMO_HEAD" "curl -fs http://127.0.0.1:$port/health" >/dev/null 2>&1; do
-          for node in "$DYNAMO_HEAD" "$DYNAMO_WORKER"; do
+      exec 9>"$out/up.lock"   # one up at a time, by hand or from the timer's sync
+      flock -n 9 || { echo "dynamo: another up is running" >&2; return 1; }
+      local before node m sv old
+      before=$(q '" ".join(d["nodes"])')
+      dynamo render || return 1
+      rm -f "$out/failed"
+      for node in $before; do   # nodes that no longer run anything
+        [[ " $(q '" ".join(d["nodes"])') " == *" $node "* ]] ||
+          { echo "dynamo: nothing left on $node"; ssh "$node" "bash -lc 'docker compose -p flywheel-dynamo down --remove-orphans'"; }
+      done
+      for node in $(q '" ".join(d["nodes"])'); do   # engines no longer served hold the GPUs: remove them first
+        old=$(LC_ALL=C comm -23 <(engines "$node" -a | tr ' ' '\n' | sed '/^$/d' | LC_ALL=C sort) \
+                                <(wanted "$node" | tr ' ' '\n' | sed '/^$/d' | LC_ALL=C sort) | xargs)
+        [[ -z $old ]] || { echo "dynamo: removing $old on $node"; ssh "$node" "bash -lc 'docker rm -f $old'" >/dev/null; }
+      done
+      for node in $(q '" ".join(sorted(d["nodes"], key=lambda n: n == "'"$DYNAMO_HEAD"'"))'); do   # the head (rank 0) last
+        # linger: else logind deletes the engines' /dev/shm files whenever our last ssh session to the node ends
+        ssh "$node" loginctl enable-linger
+        on "$node" up -d --build --remove-orphans
+      done
+      for m in $(q '" ".join(d["served"])'); do
+        sv=($(q "' '.join(map(str, (d['served']['$m']['node'], d['served']['$m']['system'], d['served']['$m']['tray'])))"))
+        echo "dynamo: $m loading on ${sv[0]} (minutes: weights from /tier1, then compilation)"
+        until ssh "${sv[0]}" "curl -fs http://127.0.0.1:${sv[1]}/health" >/dev/null 2>&1; do
+          for node in "${sv[0]}" $([[ ${sv[2]} == True ]] && echo "$DYNAMO_WORKER"); do
             [[ $(ssh "$node" "bash -lc 'docker inspect -f {{.State.Running}} flywheel-dynamo-engine-$m-1'") == true ]] ||
-              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo [worker] logs engine-$m)" >&2; return 1; }
+              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; cksum "$out"/*.json > "$out/failed"; return 1; }
             # a worker that dies leaves its container up and the other rank waiting forever
             ! ssh "$node" "bash -lc 'docker logs flywheel-dynamo-engine-$m-1 2>&1 | grep -q -E \"WorkerProc hit an exception|EngineCore encountered a fatal error\"'" ||
-              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo [worker] logs engine-$m)" >&2; return 1; }
+              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; cksum "$out"/*.json > "$out/failed"; return 1; }
           done
           sleep 10
         done
-        [[ $m == "$default" ]] || { ssh "$DYNAMO_HEAD" "curl -fs -X POST -H 'Content-Type: application/json' -d '{\"level\": 2}' http://127.0.0.1:$port/engine/control/sleep" >/dev/null && echo "dynamo: $m asleep"; }
-      done
-      echo "dynamo: $default awake; gateway on $head_addr:8199" ;;
+        echo "dynamo: $m serving on ${sv[0]}"
+      done ;;
+    sync)
+      local before node
+      before=$(cat "$out"/*.json 2>/dev/null | cksum)
+      dynamo render >/dev/null || return 1
+      if [[ $(cat "$out"/*.json | cksum) == "$before" ]]; then   # same files: only check the engines are up
+        local down=
+        for node in $(q '" ".join(d["nodes"])'); do [[ $(engines "$node") == "$(wanted "$node")" ]] || down=1; done
+        [[ -z $down ]] && return 0
+        # a start that failed isn't retried until the aliases or the config change (ctl.sh dynamo up retries by hand)
+        [[ -f $out/failed ]] && cmp -s "$out/failed" <(cksum "$out"/*.json) && return 0
+      fi
+      flock -n "$out/up.lock" true || return 0   # an up is running already (by hand or the last sync)
+      echo "dynamo: serving $(q '", ".join(d["served"])')"
+      dynamo up ;;
+    timer)   # install or refresh the sync timer on DYNAMO_HEAD (linger keeps user timers running without a login)
+      ssh "$DYNAMO_HEAD" "mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/flywheel-dynamo-sync.service && cat > ~/.config/systemd/user/flywheel-dynamo-sync.timer <<'TIMER'
+[Unit]
+Description=Serve the Dynamo models whose MLflow alias dynamo is set
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+
+[Install]
+WantedBy=timers.target
+TIMER
+loginctl enable-linger && systemctl --user daemon-reload && systemctl --user enable --now flywheel-dynamo-sync.timer && systemctl --user list-timers flywheel-dynamo-sync.timer --no-pager" <<UNIT
+[Unit]
+Description=Serve the Dynamo models whose MLflow alias dynamo is set
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -lc 'flock -n -E 0 $out/sync.lock $here/ctl.sh dynamo sync'
+UNIT
+      ;;
     down)
-      on "$DYNAMO_WORKER" worker.json down; on "$DYNAMO_HEAD" head.json down ;;
+      for node in $(q '" ".join(d["nodes"])'); do on "$node" down --remove-orphans; done ;;
+    on)      # compose on one node: ctl.sh dynamo on <node> ps|logs|...
+      on "${@:2}" ;;
     worker)
-      on "$DYNAMO_WORKER" worker.json "${@:2}" ;;
+      on "$DYNAMO_WORKER" "${@:2}" ;;
     *)
-      on "$DYNAMO_HEAD" head.json "$@" ;;
+      on "$DYNAMO_HEAD" "$@" ;;
   esac
 }
 
@@ -243,6 +297,9 @@ ROBODOJO_DIR=$STATE_DIR/robodojo
 BUCKETS_DIR=$STATE_DIR/versitygw/buckets
 DATA_ROOT=$STATE_DIR/xpolicylab
 TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
+# The LLM gateway (Dynamo's models, OpenAI API): sim tools' VLM, scripts
+LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1
+LLM_TOKEN=$LLM_TOKEN
 SERVICE_NODE=$SERVICE_NODE
 TRITON_TOKEN=${TRITON_TOKEN:-}
 EOF

@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server on two GPUs of a node of its own (`TRITON_NODE`, `TRITON_GPU0`, `TRITON_GPU1` in [`.env.example`](../.env.example); `compose.yml`, started by `ctl.sh up`), serving models from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
+Triton Inference Server on two GPUs of a node of its own (`TRITON_NODE`, `TRITON_GPU0`, `TRITON_GPU1` in [`.env.example`](../.env.example); `compose.yml`, started by `ctl.sh up`), serving the image models and robot policies from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
 
 ## Serve a model
 
@@ -24,23 +24,7 @@ chunk = c.infer(name, inputs, headers={"authorization": "Bearer " + os.environ["
 
 Models are stateless: one observation in, one action chunk out. `state` is packed per arm as `[arm, ee]` in the embodiment's `arms` order.
 
-Call an LLM or VLM (vLLM backend) through the `generate` endpoint. Apply the model's chat template yourself and send images as base64:
-
-```python
-import base64, json, os, requests
-from transformers import AutoProcessor
-proc = AutoProcessor.from_pretrained("Qwen/Qwen3.5-122B-A10B")      # the tokenizer and chat template only
-msgs = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "What is on the counter?"}]}]
-prompt = proc.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, enable_thinking=False)
-r = requests.post(f"https://{os.environ['TRITON_URL']}/v2/models/Qwen3.5-122B-A10B/generate",
-                  headers={"Authorization": "Bearer " + os.environ["TRITON_TOKEN"]}, verify=os.environ["AWS_CA_BUNDLE"],
-                  json={"text_input": prompt, "image": [base64.b64encode(open("view.jpg", "rb").read()).decode()],
-                        "exclude_input_in_output": True,
-                        "sampling_parameters": json.dumps({"temperature": 0, "max_tokens": 1000})})
-answer = r.json()["text_output"]
-```
-
-Send many requests at once: vLLM batches them on the GPU.
+Language models (LLMs, VLMs) are served by [Dynamo](../dynamo/README.md) behind the LLM gateway (OpenAI API), not here. Triton's vLLM backend still serves a Hugging Face model whose version has the alias `triton` (`generate` endpoint: `text_input` with the chat template applied, `image` as base64, `sampling_parameters` as JSON), for a model Dynamo can't run.
 
 Call the image and geometry models (Python backends, below) with `tritonclient.http`: images go as encoded bytes (JPEG or PNG), results come back as binary tensors. From a laptop, open the tunnel and set `TRITON_URL`, `TRITON_TOKEN` and the CA as in the [quickstart](../../quickstart.md).
 
@@ -100,6 +84,7 @@ A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` 
 - Send gRPC metadata keys in lowercase (`authorization`). `tritonclient.http` adds entries to the `headers` dict it is given, so pass a fresh dict on every call.
 - Expect about 40 ms per ACT call with three 640×480 cameras from the login node.
 - After editing `Dockerfile` (`tritonserver:26.08-vllm-python-py3`, vLLM 0.27 and torch 2.14 built for sm_103, plus the ONNX Runtime backend from `tritonserver:26.08-py3`), rebuild on the node with `services/ctl.sh triton build`, then `services/ctl.sh triton up -d` (and in the stack for the sync-triton job: `services/ctl.sh build`).
+- Dynamo's models share this node's GPUs (`services/dynamo/models.yaml`: Qwen3.5-122B on `TRITON_GPU1`, the small Qwen models beside the Python backends on `TRITON_GPU0` and on GPU 1); a Triton vLLM model needs a GPU share they leave free.
 - A vLLM model runs as one instance on one whole GPU, the second of Triton's GPUs (`TRITON_GPU1`, index 1 inside it) unless the model version's tag `triton.gpu` names another index; don't split one across GPUs (the 122B hit uncorrectable NVLink errors). Its engine arguments are `VLLM_ENGINE` in `sync.py` (32k context, 90% of the GPU, up to 4 images per prompt); tag `triton.vllm` with a JSON object to override them for one version. A resync of a vLLM model unloads it before loading the new copy (Triton otherwise loads the new copy first, and two don't fit its GPU share), so it is down for its load time. vLLM models report their tokens on the metrics port (`vllm:prompt_tokens_total`, `vllm:generation_tokens_total`, ...; Grafana **Flywheel → Model usage**).
 - The Python-backend Hugging Face models run as one instance each on the first of Triton's GPUs (`TRITON_GPU0`, index 0 inside it; `TRITON_PYTHON_GPU`, or tag `triton.gpu`), about 71 GB together (the image editor 68 GB). They run with cuDNN off: in this image it makes Qwen-Image-Edit return noise and has no kernel for MoGe's transposed convolutions on GB300.
 - Expect on the Python backends: an image edit at 1024×1024 in ~16 s (40 steps), MoGe on one 1024 px view in ~0.6 s and on a 4096×2048 panorama in ~110 s (its 20 views, then the merge on the CPU), LLMDet and SAM in well under a second per view.

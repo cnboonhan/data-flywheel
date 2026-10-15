@@ -72,7 +72,7 @@ Check before use:
 
 | Variable | Default model | Used for | Licence |
 |---|---|---|---|
-| `VLM_ENDPOINT` | Qwen3.5-122B-A10B | describing objects to the editor; listing them (`objects.py`) | Apache-2.0 |
+| `VLM_MODEL` | qwen3.5-122b-a10b (LLM gateway: `LLM_URL`, `LLM_TOKEN`) | describing objects to the editor; listing them (`objects.py`) | Apache-2.0 |
 | `EDIT_ENDPOINT` | Qwen-Image-Edit-2511 | drawing modes, erasing and placing objects | Apache-2.0 |
 | `DEPTH_ENDPOINT` | moge-3-vitg | metric depth | MIT |
 | `DETECT_ENDPOINT` | llmdet_large | finding missed objects (`objects.py` only) | Apache-2.0 |

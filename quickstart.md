@@ -143,7 +143,7 @@ Read them in Grafana (`https://$SERVICE_HOST:$CADDY_PORT/grafana`): **Explore**,
 ```bash
 triton() { curl -s --cacert $FLYWHEEL_CA -H "Authorization: Bearer $TRITON_TOKEN" "https://$TRITON_URL/v2/$1" "${@:2}"; }
 triton health/ready -o /dev/null -w '%{http_code}\n'               # 200 when up
-triton repository/index -X POST                                   # models and their state
+triton repository/index -X POST                                   # models and their state (image models, policies)
 triton models/<model>                                             # its inputs and outputs
 ```
 
@@ -157,4 +157,4 @@ curl -s --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H "Authorization: Beare
   -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-From Python and for mission-critical requests: [dynamo/](services/dynamo/README.md#use).
+The first lists the models served now (GLM-5.3 and the Qwen LLMs and VLMs). From Python, with images, and for mission-critical requests: [dynamo/](services/dynamo/README.md#use).

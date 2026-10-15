@@ -1,22 +1,26 @@
-"""The models pano_ideate uses, each served by Triton at its own endpoint (services/triton/triton_endpoint.py), so the
-steps and the viewer run on any machine that reaches them, a laptop included, without a GPU.
+"""The models pano_ideate uses: the VLM through the LLM gateway (Dynamo, OpenAI API), the others each served by Triton at
+its own endpoint (services/triton/triton_endpoint.py), so the steps and the viewer run on any machine that reaches
+them, a laptop included, without a GPU.
 
     | Role    | Variable          | Default model          | Licence    | Used for                                  |
-    | VLM     | VLM_ENDPOINT      | Qwen3.5-122B-A10B      | Apache-2.0 | listing objects, planning actions         |
+    | VLM     | VLM_MODEL         | qwen3.5-122b-a10b      | Apache-2.0 | listing objects, planning actions         |
     | EDIT    | EDIT_ENDPOINT     | Qwen-Image-Edit-2511   | Apache-2.0 | end states, removing and placing objects  |
     | DEPTH   | DEPTH_ENDPOINT    | moge-3-vitg            | MIT        | metric depth                              |
     | DETECT  | DETECT_ENDPOINT   | llmdet_large           | Apache-2.0 | finding objects                           |
     | SEGMENT | SEGMENT_ENDPOINT  | sam2.1-hiera-large     | Apache-2.0 | outlining objects                         |
 
-Each variable is a full URL (https://<host:port>/v2/models/<model>) or a model name on the flywheel Triton (TRITON_URL,
-else triton.$SERVICE_HOST:$CADDY_PORT); the token is TRITON_TOKEN (or <ROLE>_TOKEN), the CA AWS_CA_BUNDLE (quickstart.md). The VLM's
-chat template comes from its Hugging Face tokenizer (VLM_TOKENIZER; a few MB, no weights, no torch).
+The VLM is a model on the LLM gateway (LLM_URL, LLM_TOKEN, quickstart.md; VLM_MODEL picks another of its models).
+Each other variable is a full URL (https://<host:port>/v2/models/<model>) or a model name on the flywheel Triton
+(TRITON_URL, else triton.$SERVICE_HOST:$CADDY_PORT); the token is TRITON_TOKEN (or <ROLE>_TOKEN), the CA AWS_CA_BUNDLE
+(or FLYWHEEL_CA).
 """
 
 import base64
 import json
 import os
+import ssl
 import sys
+import urllib.request
 from pathlib import Path
 
 import cv2
@@ -37,31 +41,35 @@ def png(image: np.ndarray) -> bytes:
 
 class Triton:
     def __init__(self):
-        self.vlm_ = Endpoint("VLM", "Qwen3.5-122B-A10B")
+        self.vlm_model = os.environ.get("VLM_MODEL", "qwen3.5-122b-a10b")
+        self.vlm_url = os.environ.get("LLM_URL") or (f"https://llm.{os.environ['SERVICE_HOST']}:{os.environ['CADDY_PORT']}/v1"
+                                                     if os.environ.get("SERVICE_HOST") else None)
         self.edit_ = Endpoint("EDIT", "Qwen-Image-Edit-2511")
         self.depth_ = Endpoint("DEPTH", "moge-3-vitg")
         self.detect_ = Endpoint("DETECT", "llmdet_large")
         self.segment_ = Endpoint("SEGMENT", "sam2.1-hiera-large")
-        self.url = self.vlm_.host
-        self._tokenizer = None
+        self.url = self.edit_.host
 
     def __repr__(self):
-        return ", ".join(map(repr, (self.vlm_, self.edit_, self.depth_, self.detect_, self.segment_)))
+        return ", ".join([f"VLM: {self.vlm_url} {self.vlm_model}"] + list(map(repr, (self.edit_, self.depth_, self.detect_,
+                                                                                      self.segment_))))
 
     def vlm(self, text: str, image: np.ndarray | None = None, max_tokens: int = 1000) -> str:
         """One answer from the VLM (greedy, thinking off), about the RGB image if given; at most max_tokens (1000 by
         default, untuned)."""
-        if self._tokenizer is None:
-            from transformers import AutoTokenizer
-            self._tokenizer = AutoTokenizer.from_pretrained(os.environ.get("VLM_TOKENIZER", "Qwen/Qwen3.5-122B-A10B"))
-        content = ([{"type": "image"}] if image is not None else []) + [{"type": "text", "text": text}]
-        prompt = self._tokenizer.apply_chat_template([{"role": "user", "content": content}], add_generation_prompt=True,
-                                                     tokenize=False, enable_thinking=False)
-        body = {"text_input": prompt, "exclude_input_in_output": True,
-                "sampling_parameters": json.dumps({"temperature": 0, "max_tokens": max_tokens})}
-        if image is not None:
-            body["image"] = [base64.b64encode(jpg(image, 92)).decode()]   # quality 92: untuned
-        return self.vlm_.generate(body)["text_output"].strip()
+        if not self.vlm_url:
+            raise SystemExit("VLM: set LLM_URL and LLM_TOKEN (quickstart.md)")
+        content = [{"type": "text", "text": text}]
+        if image is not None:   # quality 92: untuned
+            content.insert(0, {"type": "image_url", "image_url": {
+                "url": "data:image/jpeg;base64," + base64.b64encode(jpg(image, 92)).decode()}})
+        body = {"model": self.vlm_model, "messages": [{"role": "user", "content": content}], "temperature": 0,
+                "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False}}
+        req = urllib.request.Request(self.vlm_url.rstrip("/") + "/chat/completions", json.dumps(body).encode(),
+                                     {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ.get("LLM_TOKEN", "")})
+        ca = os.environ.get("FLYWHEEL_CA") or os.environ.get("AWS_CA_BUNDLE")
+        with urllib.request.urlopen(req, context=ssl.create_default_context(cafile=ca), timeout=900) as r:   # as Triton's calls
+            return json.loads(r.read())["choices"][0]["message"]["content"].strip()
 
     def edit(self, images: list[np.ndarray], prompt: str, steps: int = 40, seed: int = 0, cfg: float = 4.0,
              negative: str = " ") -> np.ndarray:

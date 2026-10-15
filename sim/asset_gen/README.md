@@ -60,7 +60,7 @@ Notes:
 
 | Variable | Default model | Used for | Licence |
 |---|---|---|---|
-| `VLM_ENDPOINT` | Qwen3.5-122B-A10B | what the object is, its colours in words | Apache-2.0 |
+| `VLM_MODEL` | qwen3.5-122b-a10b (LLM gateway: `LLM_URL`, `LLM_TOKEN`) | what the object is, its colours in words | Apache-2.0 |
 | `EDIT_ENDPOINT` | Qwen-Image-Edit-2511 | the drawing, the paintings | Apache-2.0 |
 | `SEGMENT_ENDPOINT` | sam2.1-hiera-large | cutouts, checking each painting's outline | Apache-2.0 |
 | `MESH_ENDPOINT` | TripoSG | the shape | MIT |
