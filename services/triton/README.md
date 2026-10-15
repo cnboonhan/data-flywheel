@@ -26,7 +26,7 @@ Models are stateless: one observation in, one action chunk out. `state` is packe
 
 Language models (LLMs, VLMs) are served by [Dynamo](../dynamo/README.md) behind the LLM gateway (OpenAI API), not here. Triton's vLLM backend still serves a Hugging Face model whose version has the alias `triton` (`generate` endpoint: `text_input` with the chat template applied, `image` as base64, `sampling_parameters` as JSON), for a model Dynamo can't run.
 
-Call the image and geometry models (Python backends, below) with `tritonclient.http`: images go as encoded bytes (JPEG or PNG), results come back as binary tensors. From a laptop, open the tunnel and set `TRITON_URL`, `TRITON_TOKEN` and the CA as in the [quickstart](../../quickstart.md).
+Call the image and geometry models (Python backends, below) with `tritonclient.http`: images go as encoded bytes (JPEG or PNG), results come back as binary tensors. From a laptop, open the tunnel and set `TRITON_URL` and the CA as in the [quickstart](../../quickstart.md); no token is needed.
 
 ```python
 import os, numpy as np, tritonclient.http as th
@@ -46,7 +46,7 @@ r = c.infer("Qwen-Image-Edit-2511", [tensor("images", [jpg], "BYTES"), tensor("p
 png = r.as_numpy("image")[0]                                               # the edited image, PNG bytes
 ```
 
-The sim tools ([pano_ideate](../../sim/pano_ideate/README.md), [asset_gen](../../sim/asset_gen/README.md), [colmap_splat](../../sim/colmap_splat/README.md#train)) call models through `triton_endpoint.py`: one `Endpoint(role, default_model)` per model they need, configured by `<ROLE>_ENDPOINT` (a model name on this Triton, or a full `https://<host:port>/v2/models/<model>` on any Triton), `<ROLE>_TOKEN` (else `TRITON_TOKEN`) and `<ROLE>_CA` (else `AWS_CA_BUNDLE`). Each tool's README lists its roles.
+The sim tools ([pano_ideate](../../sim/pano_ideate/README.md), [asset_gen](../../sim/asset_gen/README.md), [colmap_splat](../../sim/colmap_splat/README.md#train)) call models through `triton_endpoint.py`: one `Endpoint(role, default_model)` per model they need, configured by `<ROLE>_ENDPOINT` (a model name on this Triton, or a full `https://<host:port>/v2/models/<model>` on any Triton), and `<ROLE>_CA` (else `AWS_CA_BUNDLE`); no token. Each tool's README lists its roles.
 
 ```python
 from triton_endpoint import Endpoint                  # services/triton on sys.path

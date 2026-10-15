@@ -11,7 +11,7 @@ them, a laptop included, without a GPU.
 
 The VLM is a model on the LLM gateway (LLM_URL, quickstart.md; VLM_MODEL picks another of its models).
 Each other variable is a full URL (https://<host:port>/v2/models/<model>) or a model name on the flywheel Triton
-(TRITON_URL, else triton.$SERVICE_HOST:$CADDY_PORT); the token is TRITON_TOKEN (or <ROLE>_TOKEN), the CA AWS_CA_BUNDLE
+(TRITON_URL, else triton.$SERVICE_HOST:$CADDY_PORT), no token; the CA AWS_CA_BUNDLE
 (or FLYWHEEL_CA).
 """
 

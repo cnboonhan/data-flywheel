@@ -7,7 +7,7 @@ any Triton server (README.md, "Call a model from your own code").
 
 <ROLE>_ENDPOINT is either a full URL, https://<host:port>/v2/models/<model> (any Triton server), or a model name on
 the flywheel Triton, or unset: the default model there. The flywheel Triton is TRITON_URL, else
-triton.$SERVICE_HOST:$CADDY_PORT (quickstart.md). The token is <ROLE>_TOKEN, else TRITON_TOKEN; the CA
+triton.$SERVICE_HOST:$CADDY_PORT (quickstart.md). No token is needed; <ROLE>_TOKEN, else TRITON_TOKEN, is sent if set; the CA
 bundle <ROLE>_CA, else AWS_CA_BUNDLE. Needs numpy and tritonclient[http].
 """
 

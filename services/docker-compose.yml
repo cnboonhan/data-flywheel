@@ -23,7 +23,7 @@ services:
       LOKI_PUSH_TOKEN: ${LOKI_PUSH_TOKEN:-}   # bearer token for POST /loki/api/v1/push from outside
       PUSHGATEWAY_TOKEN: ${PUSHGATEWAY_TOKEN:-}   # bearer token for pushes to /pushgateway/metrics/job/... from outside
       RERUN_RAW_TOKEN: ${RERUN_RAW_TOKEN:-}   # path token for raw bags in Rerun links
-      TRITON_TOKEN: ${TRITON_TOKEN:-}         # bearer token for triton.<host>
+      TRITON_TOKEN: ${TRITON_TOKEN:-}         # bearer token for Triton's admin calls (load/unload, settings); inference is open
       TRITON_ADDR: ${TRITON_ADDR:-}           # TRITON_NODE's address (ctl.sh); Triton runs there (triton/compose.yml)
       TRITON_KEY: ${TRITON_KEY:-}             # the header Triton requires, added on the way through
       LLM_GATEWAY_ADDR: ${LLM_GATEWAY_ADDR:-}   # DYNAMO_HEAD's address (ctl.sh): the LLM gateway behind llm.<host>

@@ -76,7 +76,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 
 Everything lives in `$STATE_DIR/<service>`, owned by `$SERVICE_UID:$SERVICE_GID`, including buckets, envs, caches, checkpoints and evaluation results (`versitygw/buckets`, `envs`, `uv-cache`, `xpolicylab`, `robodojo`); the checkout holds code only. `ctl.sh up` creates every directory it mounts, because a path dockerd has to create ends up root-owned.
 
-`ctl.sh up` also writes `$STATE_DIR/flywheel.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL`/`TRITON_TOKEN`, `SERVICE_NODE`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Load it on a cluster node to use the services from a shell, a Slurm job or a sim tool:
+`ctl.sh up` also writes `$STATE_DIR/flywheel.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL` (and `TRITON_TOKEN`, only for Triton's admin calls), `SERVICE_NODE`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Load it on a cluster node to use the services from a shell, a Slurm job or a sim tool:
 
 ```bash
 set -a; . $STATE_DIR/flywheel.env; set +a
