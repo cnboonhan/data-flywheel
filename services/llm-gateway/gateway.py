@@ -1,8 +1,11 @@
 """The LLM gateway: one OpenAI-compatible endpoint for Dynamo's models, with access tokens, a critical-traffic flag and
-on-demand model switching (only one model is awake on the GPUs at a time; the others sleep in CPU memory).
+on-demand model switching (only one model is awake on the GPUs at a time; the others sleep with their weights dropped
+and reload them from disk on waking: vLLM's level-1 sleep, which keeps them in CPU memory, garbled output after a wake
+and ran the trays out of CPU memory).
 
     POST /v1/chat/completions, /v1/completions, /v1/responses, ...   forwarded to the frontend of the body's `model`
     GET  /v1/models    every configured model, awake or asleep        GET /health, GET /metrics (Prometheus)
+    GET  /metrics/<model>/frontend|engine   that model's Dynamo metrics, relayed from 127.0.0.1 (Prometheus job dynamo)
 
 Tokens: `Authorization: Bearer <LLM_TOKEN>` (normal) or `<LLM_CRITICAL_TOKEN>`. A request is critical when it carries
 `X-Priority: critical` *and* the critical token; the flag from any other token is ignored. Critical requests:
@@ -11,7 +14,7 @@ Tokens: `Authorization: Bearer <LLM_TOKEN>` (normal) or `<LLM_CRITICAL_TOKEN>`. 
 A normal request for a sleeping model waits until the awake model has been idle IDLE_S, or until it has waited
 MAX_WAIT_S, so normal traffic can't keep the GPUs swapping, and no model starves.
 
-Config: GATEWAY_CONFIG (JSON: models {name: {frontend, system}}, default, order), GATEWAY_LISTEN host:port.
+Config: GATEWAY_CONFIG (JSON: models {name: {frontend, system, model_path}}, default, order), GATEWAY_LISTEN host:port.
 """
 import asyncio
 import json
@@ -26,7 +29,7 @@ TOKENS = {os.environ.get("LLM_TOKEN", ""): "normal", os.environ.get("LLM_CRITICA
 TOKENS.pop("", None)
 IDLE_S = float(os.environ.get("IDLE_S", 60))            # idle time before a normal request may switch models; untuned
 MAX_WAIT_S = float(os.environ.get("MAX_WAIT_S", 600))   # a waiting normal request switches anyway after this; untuned
-WAKE_TIMEOUT_S = 900   # waking a sleeping model (weights back from CPU memory) and it listing again; untuned
+WAKE_TIMEOUT_S = 1200   # a wake: reloading the weights from disk (GLM-5.3's 704 GiB took 163 s; Kimi K3 is 2x) and listing
 PRIORITY = {"critical": "100", "normal": "0"}   # Dynamo's x-dynamo-request-priority: higher runs first
 
 state = {"awake": None, "switching": None, "switches": 0}
@@ -48,10 +51,28 @@ async def listed(name):
 
 
 async def control(name, action, body):
-    async with http.post(f"{MODELS[name]['system']}/engine/control/{action}", json=body,
+    """POST to the engine's system API (`control/sleep`, `update_weights_from_disk`, ...); it answers errors with 200."""
+    async with http.post(f"{MODELS[name]['system']}/engine/{action}", json=body,
                          timeout=ClientTimeout(total=WAKE_TIMEOUT_S)) as r:
-        if r.status >= 300:
-            raise web.HTTPServiceUnavailable(text=f"{action} {name}: HTTP {r.status} {await r.text()}")
+        text = await r.text()
+        try:
+            ok = r.status < 300 and json.loads(text).get("status") == "ok"
+        except ValueError:
+            ok = False
+        if not ok:
+            raise web.HTTPServiceUnavailable(text=f"{action} {name}: HTTP {r.status} {text}")
+
+
+async def sleep(name):
+    await control(name, "control/sleep", {"level": 2})   # level 2: drop the weights too; nothing kept in CPU memory
+
+
+async def wake(name):
+    """Wake `name` and reload its weights from disk (a level-2 sleep left the weights' memory unset)."""
+    await control(name, "control/wake_up", {})
+    await control(name, "pause_generation", {"mode": "abort", "clear_cache": True})
+    await control(name, "update_weights_from_disk", {"model_path": MODELS[name]["model_path"]})
+    await control(name, "resume_generation", {})
 
 
 async def switch_to(name):
@@ -63,9 +84,9 @@ async def switch_to(name):
     state["switching"] = name
     try:
         if cur and cur != name:
-            await control(cur, "sleep", {"level": 1})   # level 1: weights to CPU memory; drains what it is running
+            await sleep(cur)   # drains what it is running first
             state["awake"] = None
-        await control(name, "wake_up", {})
+        await wake(name)
         deadline = time.monotonic() + WAKE_TIMEOUT_S
         while not await listed(name):
             if time.monotonic() > deadline:
@@ -158,6 +179,21 @@ async def metrics(_):
     return web.Response(text="\n".join(lines) + "\n", content_type="text/plain")
 
 
+async def model_metrics(request):
+    """A model's Dynamo metrics for Prometheus, which can't reach them on 127.0.0.1: its frontend's (requests, tokens,
+    time to first token, inter-token latency) or its engine's (vLLM: tokens, running and waiting requests, KV cache).
+    Read-only; empty while the engine sleeps."""
+    name, part = request.match_info["model"], request.match_info["part"]
+    if name not in MODELS or part not in ("frontend", "engine"):
+        raise web.HTTPNotFound()
+    url = MODELS[name]["frontend" if part == "frontend" else "system"] + "/metrics"
+    try:
+        async with http.get(url, timeout=ClientTimeout(total=10)) as r:
+            return web.Response(text=await r.text() if r.status == 200 else "", content_type="text/plain")
+    except Exception:   # noqa: BLE001  a stopped frontend or engine has no metrics; the scrape still succeeds
+        return web.Response(text="", content_type="text/plain")
+
+
 async def startup(app):
     global http
     http = ClientSession()
@@ -175,6 +211,7 @@ app = web.Application(client_max_size=64 * 2 ** 20)   # 64 MiB bodies: a few ima
 app.router.add_get("/v1/models", models)
 app.router.add_get("/health", health)
 app.router.add_get("/metrics", metrics)
+app.router.add_get("/metrics/{model}/{part}", model_metrics)
 app.router.add_route("POST", "/v1/{tail:.*}", forward)
 app.on_startup.append(startup)
 app.on_cleanup.append(cleanup)

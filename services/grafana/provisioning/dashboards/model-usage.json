@@ -1,0 +1,715 @@
+{
+ "uid": "model-usage",
+ "title": "Model usage",
+ "tags": [
+  "flywheel"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "refresh": "1m",
+ "panels": [
+  {
+   "type": "row",
+   "title": "Totals over the time range",
+   "id": 1,
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "type": "table",
+   "title": "LLM gateway (Dynamo) by model",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 2,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase(llm_gateway_requests_total[$__range]))",
+     "legendFormat": "requests",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase(llm_gateway_requests_total{class=\"critical\"}[$__range]))",
+     "legendFormat": "critical",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:prompt_tokens_total\", job=\"dynamo\"}[$__range]))",
+     "legendFormat": "prompt tokens",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:generation_tokens_total\", job=\"dynamo\"}[$__range]))",
+     "legendFormat": "generated tokens",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "description": "Requests the gateway forwarded, and the tokens the engines processed, per model over the dashboard's time range.",
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "renameByName": {
+       "Value #A": "requests",
+       "Value #B": "critical",
+       "Value #C": "prompt tokens",
+       "Value #D": "generated tokens"
+      },
+      "excludeByName": {
+       "Time": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "table",
+   "title": "Triton by model",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 3,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase(nv_inference_request_success{job=\"triton\"}[$__range]))",
+     "legendFormat": "requests",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase(nv_inference_request_failure{job=\"triton\"}[$__range]))",
+     "legendFormat": "failures",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:prompt_tokens_total\", job=\"triton\"}[$__range]))",
+     "legendFormat": "prompt tokens",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase({__name__=\"vllm:generation_tokens_total\", job=\"triton\"}[$__range]))",
+     "legendFormat": "generated tokens",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "description": "Successful and failed inferences per model; tokens for the vLLM-backend models only.",
+   "transformations": [
+    {
+     "id": "merge"
+    },
+    {
+     "id": "organize",
+     "options": {
+      "renameByName": {
+       "Value #A": "requests",
+       "Value #B": "failures",
+       "Value #C": "prompt tokens",
+       "Value #D": "generated tokens"
+      },
+      "excludeByName": {
+       "Time": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "LLM gateway (Dynamo)",
+   "id": 4,
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 9
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Requests per second",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 5,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model, class) (rate(llm_gateway_requests_total[5m]))",
+     "legendFormat": "{{model}} {{class}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Tokens per second",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 6,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:prompt_tokens_total\", job=\"dynamo\"}[5m]))",
+     "legendFormat": "{{model}} prompt"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:generation_tokens_total\", job=\"dynamo\"}[5m]))",
+     "legendFormat": "{{model}} generated"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Time to first token (p50, p95)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 7,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 18
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le, model) (rate({__name__=\"vllm:time_to_first_token_seconds_bucket\", job=\"dynamo\"}[5m])))",
+     "legendFormat": "{{model}} p50"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le, model) (rate({__name__=\"vllm:time_to_first_token_seconds_bucket\", job=\"dynamo\"}[5m])))",
+     "legendFormat": "{{model}} p95"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Requests running and waiting in the engine",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 8,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 18
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) ({__name__=\"vllm:num_requests_running\", job=\"dynamo\"})",
+     "legendFormat": "{{model}} running"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) ({__name__=\"vllm:num_requests_waiting\", job=\"dynamo\"})",
+     "legendFormat": "{{model}} waiting"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (class) (llm_gateway_waiting)",
+     "legendFormat": "gateway: {{class}} waiting for a switch"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "state-timeline",
+   "title": "Awake model",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 9,
+   "gridPos": {
+    "h": 5,
+    "w": 18,
+    "x": 0,
+    "y": 26
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "llm_gateway_awake",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "asleep",
+         "color": "transparent"
+        },
+        "1": {
+         "text": "awake",
+         "color": "green"
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   },
+   "options": {
+    "showValue": "never",
+    "mergeValues": true
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Switches",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 10,
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 26
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "increase(llm_gateway_switches_total[$__range])",
+     "legendFormat": "switches"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "description": "Model switches in the time range: each costs minutes (the woken model reloads its weights)."
+  },
+  {
+   "type": "row",
+   "title": "Triton",
+   "id": 11,
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 31
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Inferences per second",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 12,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate(nv_inference_request_success{job=\"triton\"}[5m]))",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Mean request latency",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 13,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate(nv_inference_request_duration_us{job=\"triton\"}[5m])) / sum by (model) (rate(nv_inference_request_success{job=\"triton\"}[5m])) / 1e6",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "description": "Server-side time per request, queueing included.",
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Tokens per second (vLLM models)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 14,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 40
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:prompt_tokens_total\", job=\"triton\"}[5m]))",
+     "legendFormat": "{{model}} prompt"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (rate({__name__=\"vllm:generation_tokens_total\", job=\"triton\"}[5m]))",
+     "legendFormat": "{{model}} generated"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Failures per second",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 15,
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 40
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model, reason) (rate(nv_inference_request_failure{job=\"triton\"}[5m])) > 0",
+     "legendFormat": "{{model}} {{reason}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "calcs": [
+      "mean",
+      "max"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "description": "Usage of every model the stack serves: Dynamo through the LLM gateway, and Triton."
+}

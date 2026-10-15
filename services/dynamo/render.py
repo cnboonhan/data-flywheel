@@ -3,7 +3,8 @@
     python render.py OUT_DIR      (ctl.sh dynamo render: OUT_DIR = $STATE_DIR/dynamo)
 
 Writes head.json (DYNAMO_HEAD: etcd, a frontend per model, the gateway, each model's rank-0 engine), worker.json
-(DYNAMO_WORKER: each model's headless rank-1 engine) and gateway.json. Everything runs on the host network; all but
+(DYNAMO_WORKER: each model's headless rank-1 engine), gateway.json, and the Prometheus targets of its models'
+metrics ($STATE_DIR/prometheus-sd/dynamo.json). Everything runs on the host network; all but
 the gateway and the vLLM rendezvous listen on 127.0.0.1, since Dynamo has no authentication of its own.
 
 Each model's weights are the MLflow version its registered model's alias `dynamo` points to, read in place from the
@@ -105,7 +106,8 @@ for m in cfg["models"]:
                                  "depends_on": ["etcd"]}
     head_svc[f"engine-{n}"] = {**engine(m, path, extra, 0), "depends_on": ["etcd"]}
     worker_svc[f"engine-{n}"] = engine(m, path, extra, 1)
-    gw_models[n] = {"frontend": f"http://127.0.0.1:{p['frontend']}", "system": f"http://127.0.0.1:{p['system']}"}
+    gw_models[n] = {"frontend": f"http://127.0.0.1:{p['frontend']}", "system": f"http://127.0.0.1:{p['system']}",
+                    "model_path": path}   # the weights a wake reloads (the gateway sleeps models at level 2)
 head_svc["gateway"] = {**common, "build": os.path.join(here, "..", "llm-gateway"), "image": "flywheel-llm-gateway:latest",
                        "restart": "unless-stopped", "user": user,
                        "environment": {"GATEWAY_CONFIG": "/config/gateway.json", "GATEWAY_LISTEN": f"{head}:{GATEWAY_PORT}",
@@ -117,4 +119,9 @@ json.dump({"name": "flywheel-dynamo", "services": worker_svc}, open(os.path.join
 json.dump({"models": gw_models, "default": cfg["default_awake"] if cfg["default_awake"] in gw_models else next(iter(gw_models), None),
            "order": [n for n in (m["name"] for m in cfg["models"]) if n in gw_models]},
           open(os.path.join(out, "gateway.json"), "w"), indent=1)
+# Prometheus job dynamo: each model's frontend and engine metrics, relayed by the gateway (127.0.0.1 is out of its reach).
+sd = [{"targets": [f"{head}:{GATEWAY_PORT}"], "labels": {"model": n, "part": part, "__metrics_path__": f"/metrics/{n}/{part}"}}
+      for n in gw_models for part in ("frontend", "engine")]
+os.makedirs(os.path.join(state, "prometheus-sd"), exist_ok=True)
+json.dump(sd, open(os.path.join(state, "prometheus-sd", "dynamo.json"), "w"), indent=1)
 print(f"rendered {', '.join(gw_models) or 'no models'} into {out}" + (f"; no `dynamo` alias yet: {', '.join(skipped)}" if skipped else ""))

@@ -1,13 +1,15 @@
 # prometheus
 
-Metrics store (config `prometheus.yml`) for every GPU node of the cluster and for Triton, kept 90 days (at most 250 GB) in `$STATE_DIR/prometheus`. No UI or route of its own: read it in [Grafana](../grafana/README.md), dashboard **Flywheel → GPU nodes**.
+Metrics store (config `prometheus.yml`) for every GPU node of the cluster and for the served models (Triton, Dynamo), kept 90 days (at most 250 GB) in `$STATE_DIR/prometheus`. No UI or route of its own: read it in [Grafana](../grafana/README.md), dashboard **Flywheel → GPU nodes**.
 
 | Job | Source | What |
 |---|---|---|
 | `dcgm` | NVIDIA dcgm-exporter on every node, port 9400 | per GPU: utilisation (`DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_PROF_GR_ENGINE_ACTIVE`, `DCGM_FI_PROF_PIPE_TENSOR_ACTIVE`), memory (`DCGM_FI_DEV_FB_USED`), power, temperature, clocks, NVLink bandwidth, XID errors, remapped rows |
 | `node` | node_exporter on every node, port 9100 | CPU, memory, disk, network |
 | `caddy` | `caddy:9180` | every request through the stack's port, per site: rate, latency, requests in flight, errors, Caddy's CPU (dashboard row **Caddy**) |
-| `triton` | `triton:8002` | inference counts and latency per model |
+| `triton` | Triton's metrics port on `TRITON_NODE` | per model: inference counts and latency; for vLLM-backend models, vLLM's tokens and time to first token |
+| `llm-gateway` | the gateway (`DYNAMO_HEAD:8199`) | requests per model and class (normal, critical), in flight, waiting for a switch, the awake model, switches |
+| `dynamo` | each Dynamo model's frontend and engine, relayed by the gateway (`/metrics/<model>/frontend\|engine`; labels `model`, `part`) | vLLM's tokens, time to first token, running and waiting requests, KV cache (`vllm:*`); Dynamo's request and latency metrics (`dynamo_*`) |
 | `pushgateway` | `pushgateway:9091`, fed through Caddy's `/pushgateway` route (bearer `PUSHGATEWAY_TOKEN`) | what is pushed from outside, e.g. `slurm_job_gpu` and `slurm_job_cpu` (the GPUs and CPU cores each running job holds), `slurm_job_cpus`, `slurm_job_memory_bytes`, `slurm_job_rss_bytes` ([slurm-exporter/](../slurm-exporter/README.md)) |
 
 Every node series carries `instance` (the node's name), `partition` (its Slurm partition) and, for GPUs, `gpu` (its index).
@@ -15,6 +17,7 @@ Every node series carries `instance` (the node's name), `partition` (its Slurm p
 ## Use
 
 1. Open Grafana, then **Dashboards → Flywheel → GPU nodes**, and pick a partition or node at the top. Its **Jobs** row has each job's GPUs, VRAM, CPU and RAM against what it was allocated; its **Nodes** row each node's CPU, RAM, GPU and VRAM use.
+   For the served models, open **Flywheel → Model usage**: requests and tokens per model over the time range (gateway and Triton), and requests, tokens, time to first token and latency over time.
 2. Or query in **Explore** (data source Prometheus), e.g. the GPUs idle for the last hour:
    ```
    avg_over_time(DCGM_FI_DEV_GPU_UTIL[1h]) == 0

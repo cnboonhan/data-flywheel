@@ -32,6 +32,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
@@ -154,7 +155,9 @@ def package_vllm(mv, run, ckpt, dst, params):
     json.dump(engine, open(os.path.join(v, "model.json"), "w"), indent=1)
     gpu = int(mv.tags.get("triton.gpu", VLLM_GPU))
     lines = ['backend: "vllm"', f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]"]
-    return "\n".join(lines + param_lines(params)) + "\n"
+    # vLLM's own metrics on Triton's metrics port (vllm:prompt_tokens_total, vllm:generation_tokens_total, time to first
+    # token, ... per model): the token usage Prometheus tracks
+    return "\n".join(lines + param_lines({"REPORT_CUSTOM_METRICS": "true", **params})) + "\n"
 
 
 # Hugging Face models served by a Python backend (services/triton/backends/<name>.py) instead of vLLM, keyed by repo;
@@ -423,6 +426,16 @@ def sync(args):
     for name, version, action in rows:
         err = None
         if action == "load":
+            code, cfg = triton(f"/v2/models/{name}/config")
+            if code == 200 and cfg.get("backend") == "vllm":
+                # Triton loads the new copy before it drops the old one, and a vLLM model's share of its GPU leaves no
+                # room for two: unload first (the model is down until the new copy is ready, ~4 min for the 122B)
+                triton(f"/v2/repository/models/{name}/unload", {})
+                for _ in range(60):   # wait up to 5 min (tries x 5 s) for the old engine to free its GPU memory
+                    if triton(f"/v2/models/{name}/ready")[0] != 200:
+                        break
+                    time.sleep(5)
+                time.sleep(15)   # the engine process exits after Triton marks the model unloaded; untuned
             code, out = triton(f"/v2/repository/models/{name}/load", {})
             err = None if code == 200 else out.get("error", f"HTTP {code}")
         else:

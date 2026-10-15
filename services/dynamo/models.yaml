@@ -1,17 +1,18 @@
 # The LLMs Dynamo serves on DYNAMO_HEAD + DYNAMO_WORKER (one vLLM engine per model, split over both trays' 8 GPUs, rank 0
-# on the head, rank 1 headless on the worker). Only one is awake at a time; the others sleep in the trays' CPU memory and
-# the gateway (llm-gateway/) wakes the one a request names. `ctl.sh dynamo render` turns this into the nodes' compose
-# files, taking each model's weights from the MLflow version its registered model's alias `dynamo` points to (set the
-# alias, render, `ctl.sh dynamo up`). A version's tag `dynamo.args` (a JSON list) appends engine flags for that version.
+# on the head, rank 1 headless on the worker). Only one is awake at a time; the others sleep with their weights dropped,
+# and the gateway (llm-gateway/) wakes the one a request names, reloading its weights from the mlflow bucket.
+# `ctl.sh dynamo render` turns this into the nodes' compose files, taking each model's weights from the MLflow version
+# its registered model's alias `dynamo` points to (set the alias, render, `ctl.sh dynamo up`). A version's tag `dynamo.args` (a JSON list) appends engine flags for that version.
 #
 # Per model: name (the OpenAI `model` clients send), registered (MLflow registered model), image (Dynamo's vLLM runtime
 # for that model; frontend and gateway pair with it), ports (frontend, worker system API, vLLM rendezvous; all on the
 # head's localhost except the rendezvous, which the worker tray reaches), frontend_args, args (engine flags), env.
 # Flags follow Dynamo's and vLLM's recipes for these models (services/dynamo/README.md); none is tuned here yet.
 
-default_awake: kimi-k3   # awake after `ctl.sh dynamo up`; untuned choice
+default_awake: glm-5.3   # awake after `ctl.sh dynamo up`: the model in use; switching to another takes minutes
 # The trays' CPU-memory NUMA nodes (`numactl -H`: the nodes with CPUs; each GPU's memory is a node too). Engines are
-# bound to them, so a sleeping model's weights and other host buffers can't land in a GPU's memory and block its wake.
+# bound to them, so their host buffers and the file cache of the weights they read can't fill a GPU's memory (a level-1
+# sleep's CPU copy of the weights landed there and blocked the wake).
 host_numa_nodes: "0,1"
 
 common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp, --enable-sleep-mode,
@@ -32,11 +33,16 @@ models:
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1   # carries the K3 patch set (MoonViT on SM100, ...)
     ports: {frontend: 8191, system: 9311, rendezvous: 29511}
     frontend_args: [--dyn-chat-processor, dynamo]
-    args: [--max-model-len, "262144", --gpu-memory-utilization, "0.85", --max-num-seqs, "64", --enable-multimodal, --kv-cache-dtype, fp8,
+    args: [--max-model-len, "262144", --gpu-memory-utilization, "0.85", --max-num-seqs, "64", --enable-multimodal,
            --load-format, fastsafetensors, --attention-backend, FLASHINFER_MLA,
            --scheduler-cls, vllm.v1.core.sched.async_scheduler.AsyncScheduler,
-           --dyn-tool-call-parser, kimi_k3, --reasoning-parser, kimi_k3, --dyn-reasoning-parser, kimi_k3]
-    # max-model-len 262144: a quarter of K3's 1M, to leave KV room at 0.85 of each GPU; max-num-seqs 64: untuned
+           --dyn-tool-call-parser, kimi_k3, --reasoning-parser, kimi_k3, --dyn-reasoning-parser, kimi_k3,
+           --tensor-parallel-size, "4", --pipeline-parallel-size, "2"]
+    # max-model-len 262144: a quarter of K3's 1M, to leave KV room at 0.85 of each GPU; max-num-seqs 64: untuned.
+    # TP4 x PP2 (a pipeline stage per tray) instead of common_args' TP8: at TP8 or 16 the image's K3 MoE tail fusion
+    # switches on, and it refuses sleep mode, which the gateway's switching needs. bf16 KV cache (~2.7M tokens): with
+    # fp8, K3's attention asserts on an fp8 prefill query that this image's prefill backend doesn't provide at TP4
+    # Still fails starting with sleep mode in this image (README: notes): leave Kimi-K3's `dynamo` alias unset
     env: {}   # the recipe's FlashInfer MNNVL all-reduce needs the NVLink fabric (common_env)
 
   - name: glm-5.3

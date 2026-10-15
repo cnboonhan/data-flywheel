@@ -81,10 +81,13 @@ dynamo() {
           for node in "$DYNAMO_HEAD" "$DYNAMO_WORKER"; do
             [[ $(ssh "$node" "bash -lc 'docker inspect -f {{.State.Running}} flywheel-dynamo-engine-$m-1'") == true ]] ||
               { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo [worker] logs engine-$m)" >&2; return 1; }
+            # a worker that dies leaves its container up and the other rank waiting forever
+            ! ssh "$node" "bash -lc 'docker logs flywheel-dynamo-engine-$m-1 2>&1 | grep -q -E \"WorkerProc hit an exception|EngineCore encountered a fatal error\"'" ||
+              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo [worker] logs engine-$m)" >&2; return 1; }
           done
           sleep 10
         done
-        [[ $m == "$default" ]] || { ssh "$DYNAMO_HEAD" "curl -fs -X POST -H 'Content-Type: application/json' -d '{\"level\": 1}' http://127.0.0.1:$port/engine/control/sleep" >/dev/null && echo "dynamo: $m asleep"; }
+        [[ $m == "$default" ]] || { ssh "$DYNAMO_HEAD" "curl -fs -X POST -H 'Content-Type: application/json' -d '{\"level\": 2}' http://127.0.0.1:$port/engine/control/sleep" >/dev/null && echo "dynamo: $m asleep"; }
       done
       echo "dynamo: $default awake; gateway on $head_addr:8199" ;;
     down)

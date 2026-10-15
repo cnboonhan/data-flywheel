@@ -14,6 +14,11 @@
 #   moonshotai/Kimi-K3                      model    *                           Kimi-K3                (1.56 TB, Kimi K3 License; Dynamo)
 #   zai-org/GLM-5.3                         model    *                           GLM-5.3                (756 GB, GLM-5.3 License; Dynamo)
 #   thinkingmachines/Inkling-NVFP4          model    *                           Inkling-NVFP4          (592 GB, Apache-2.0; Dynamo)
+#   Qwen/Qwen3.6-27B-FP8                    model    *                           Qwen3.6-27B-FP8        (31 GB, Apache-2.0; Triton vLLM)
+#   Qwen/Qwen3.6-35B-A3B-FP8                model    *                           Qwen3.6-35B-A3B-FP8    (37 GB, Apache-2.0; Triton vLLM)
+#   Qwen/Qwen3.8-27B-FP8                    model    *                           Qwen3.8-27B-FP8        (31 GB, Apache-2.0; Triton vLLM)
+#   nvidia/Qwen3.8-Flash-Next-NVFP4         model    *                           Qwen3.8-Flash-Next-NVFP4 (133 GB, NVIDIA Open Model License; needs vLLM >= 0.31)
+#   Qwen/Qwen3-VL-8B-Instruct               model    *                           Qwen3-VL-8B-Instruct   (18 GB, Apache-2.0; Triton vLLM)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:
