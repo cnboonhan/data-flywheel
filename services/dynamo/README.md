@@ -1,6 +1,6 @@
 # dynamo
 
-The stack's language models on NVIDIA Dynamo, behind the LLM gateway at `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (OpenAI API). What is served is set in MLflow: every model whose registered model has the alias `dynamo`, where `models.yaml` places it. Image models and robot policies stay on [Triton](../triton/README.md).
+The stack's language models on NVIDIA Dynamo, behind the [LLM gateway](../llm-gateway/README.md) at `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (OpenAI API). What is served is set in MLflow: every model whose registered model has the alias `dynamo`, where `models.yaml` places it. Image models and robot policies stay on [Triton](../triton/README.md).
 
 ```mermaid
 flowchart LR
