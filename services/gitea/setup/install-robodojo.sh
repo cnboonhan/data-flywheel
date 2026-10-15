@@ -58,6 +58,9 @@ echo "[3/8] IsaacLab"
 # aarch64 keep IsaacLab's choice: the driver (580) supports CUDA 13 and the cu128 aarch64
 # wheels don't come with torchaudio.
 # Editable installs must point at this checkout (re-run after moving the repo): skip only if they already do.
+# isaaclab.sh apt-installs cmake through sudo when none is on PATH, which a job container without root can't; the venv's
+# cmake (on PATH once activated) skips that.
+uv pip install -q cmake
 if ! python -c "import isaaclab, sys; sys.exit(0 if isaaclab.__file__.startswith('$PROJECT_ROOT/') else 1)" 2>/dev/null; then
   (cd third_party/IsaacLab && ./isaaclab.sh --install none) || echo "isaaclab.sh exited non-zero; checking the install below"
 fi
@@ -66,7 +69,10 @@ uv pip install -q "${pins[@]}"
 python -c "import isaaclab, torch; print('isaaclab ok, torch', torch.__version__)"
 
 echo "[4/8] curobo"
-uv pip install -q scikit-build-core cmake ninja setuptools wheel   # build deps for --no-build-isolation (xatlas needs scikit-build-core)
+uv pip install -q scikit-build-core cmake ninja setuptools wheel   # build deps for --no-build-isolation
+# curobo's trimesh[easy] needs xatlas, which builds from source; built inside curobo's --no-build-isolation install it
+# gets the pinned packaging==23.0, too old for scikit-build-core (packaging.utils.InvalidName). Build it first, isolated.
+uv pip install -q xatlas==0.0.11
 cu=$(python -c "import torch; print('cu13' if torch.version.cuda.startswith('13') else 'cu12')")
 constraints=$(mktemp); printf '%s\n' "${pins[@]}" "stable-baselines3<2.8" > "$constraints"
 reinstall=(); python -c "import curobo, sys; sys.exit(0 if curobo.__file__.startswith('$PROJECT_ROOT/') else 1)" 2>/dev/null || reinstall=(--reinstall-package nvidia-curobo)
