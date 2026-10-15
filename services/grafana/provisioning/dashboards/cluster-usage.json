@@ -860,7 +860,7 @@
        "instance\\gpu": "node \\ GPU"
       },
       "indexByName": {
-       "node \\ GPU": 0,
+       "instance\\gpu": 0,
        "0": 1,
        "1": 2,
        "2": 3,
@@ -986,7 +986,7 @@
        "instance\\gpu": "node \\ GPU"
       },
       "indexByName": {
-       "node \\ GPU": 0,
+       "instance\\gpu": 0,
        "0": 1,
        "1": 2,
        "2": 3,
