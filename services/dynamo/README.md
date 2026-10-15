@@ -13,7 +13,7 @@ flowchart LR
 | Model (`model` in requests) | Placement | Notes |
 |---|---|---|
 | `glm-5.3` | the trays (`DYNAMO_HEAD` + `DYNAMO_WORKER`, 8 GPUs) | one tray model at a time |
-| `kimi-k3`, `inkling` | the trays | Kimi K3 doesn't start yet ([Notes](#notes)) |
+| `kimi-k3`, `inkling` | the trays | Kimi K3 with expert parallelism, ~50 tok/s ([Notes](#notes)) |
 | `qwen3.5-122b-a10b` | `DYNAMO_NODE` GPU 3 | the sim tools' VLM |
 | `qwen3.6-27b`, `qwen3.8-27b` | `DYNAMO_NODE` GPU 2, beside Triton's image models | |
 | `qwen3.6-35b-a3b`, `qwen3-vl-8b`, `qwen3.8-flash-next` | `DYNAMO_NODE` GPU 1 | Flash-Next on vLLM 0.31's image |
@@ -69,7 +69,7 @@ A sync refuses two tray models at once, and shares over a GPU's budget (`models.
 - **Between GPUs:** the NVLink fabric memory (NCCL's MNNVL, NVLS, FlashInfer's MNNVL all-reduce, torch symmetric memory across trays) hangs or fails on racks 01 and 02, even within one tray; plain P2P within a tray works (~660 GiB/s). So engines turn those off (`common_env`) and talk between trays over InfiniBand (`/dev/infiniband`, ~210 GiB/s all-reduce bus bandwidth vs ~3 over TCP). FlashInfer's `CUDA_ERROR_NOT_PERMITTED` warning is expected.
 - **Host memory:** engines run under `numactl --membind` on the nodes' CPU NUMA nodes (`host_numa_nodes`), so their host buffers and the file cache of the weights they read stay out of the GPUs' memory.
 - **Small models' limits:** 32k context, 32 requests at once, 4 images per request (as they had on Triton); without them vLLM's start-up profiling fills the model's share and it fails (`No available memory for the cache blocks`).
-- **Kimi K3 doesn't start in `vllm-runtime:1.5.0-kimi-k3-dev.1` on two trays:** at TP8 its MoE tail fusion shares memory over all 8 GPUs, which across trays needs the NVLink fabric (`Failed to send fd`); at TP4 x PP2 (`models.yaml`) the second stage fails capturing CUDA graphs (`CUDA error: invalid argument` pinning KDA metadata). Untried: `--enforce-eager` (no CUDA graphs, slower decoding). Each attempt keeps the trays from other models for ~25 min. htx_xingyu serves Kimi K3 on rack 01.
+- **Kimi K3 runs with expert parallelism** (`--enable-expert-parallel`): split by tensor parallelism at TP8, its MoE tail fusion shares memory over all 8 GPUs (torch symmetric memory), which across trays needs the NVLink fabric, and its start hangs for 10 min, then fails (`DistStoreError ... CUDASymmetricMemory`); vLLM has no switch for the fusion. With EP the experts exchange tokens over InfiniBand: expect ~50 tok/s for one request (~85 on rack 01, where the fabric works). It stays on `vllm-runtime:1.5.0-kimi-k3-dev.1`: Dynamo 1.6's vLLM 0.31 image has no K3 parsers, and its vLLM chat processor refuses K3's config (`--mamba-block-size can only be set with --enable-prefix-caching`).
 - **No sleep mode:** models are stopped and started, not slept. vLLM's level-1 sleep garbled GLM-5.3's output after a wake and, with two models asleep, ran the trays out of CPU memory; level 2 with a weight reload worked for GLM-5.3 (~3 min) but Kimi K3's image refuses sleep mode.
 - No token and no rate limits: anyone who reaches the stack's port can use these models. Only the gateways listen beyond localhost (port 8199 on each node); etcd, the frontends and the engines' system APIs (stop, sleep, load weights) stay on 127.0.0.1.
 - Untested: GLM-5.3 on `vllm-runtime:1.5.1` pins transformers 5.14.1 where vLLM's recipe asks for 5.15 (outputs look right).

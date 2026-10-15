@@ -121,7 +121,15 @@ def frontend(m):
                         "--router-mode", "round-robin", "--namespace", namespace(m), *m.get("frontend_args", [])],
             "environment": {"ETCD_ENDPOINTS": "http://127.0.0.1:2379", "DYN_REQUEST_PLANE": "tcp", "DYN_EVENT_PLANE": "zmq",
                             "HOME": "/tmp"},
-            "depends_on": ["etcd"]}
+            "depends_on": ["etcd"],
+            # Dynamo's own chat processor reads the tokenizer and config from the engine's model path (vLLM's gets them
+            # from the engine), so only its frontends see the weights' directory
+            **({"volumes": [f"{state}/versitygw/buckets/mlflow:/mlflow:ro"]}
+               if _flag(m.get("frontend_args", []), "--dyn-chat-processor") == "dynamo" else {})}
+
+
+def _flag(flags, name):
+    return flags[flags.index(name) + 1] if name in flags else None
 
 
 def etcd(node):

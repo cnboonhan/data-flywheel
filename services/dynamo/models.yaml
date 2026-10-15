@@ -34,22 +34,24 @@ common_env:
 models:
   - name: kimi-k3
     licence: "Kimi K3 licence (modified MIT)"
-    about: "Moonshot's largest MoE: long context, agents (not served: see README)"
+    about: "Moonshot's largest MoE: long context, agents, images"
     registered: Kimi-K3
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1   # carries the K3 patch set (MoonViT on SM100, ...)
+    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1   # carries the K3 patch set and Dynamo's K3 parsers
     ports: {frontend: 8191, system: 9311, rendezvous: 29511}
+    # Dynamo's chat processor: vLLM's (in Dynamo 1.6's vLLM 0.31 image) builds K3's config without prefix caching and
+    # refuses it (`--mamba-block-size can only be set with --enable-prefix-caching`), and Dynamo 1.6 has no K3 parsers
     frontend_args: [--dyn-chat-processor, dynamo]
     args: [--max-model-len, "262144", --gpu-memory-utilization, "0.85", --max-num-seqs, "64", --enable-multimodal,
+           --limit-mm-per-prompt, '{"image": 4}', --enable-expert-parallel,
            --load-format, fastsafetensors, --attention-backend, FLASHINFER_MLA,
            --scheduler-cls, vllm.v1.core.sched.async_scheduler.AsyncScheduler,
-           --dyn-tool-call-parser, kimi_k3, --reasoning-parser, kimi_k3, --dyn-reasoning-parser, kimi_k3,
-           --tensor-parallel-size, "4", --pipeline-parallel-size, "2"]
-    # TP4 x PP2 (a pipeline stage per tray): at TP8 the image's K3 MoE tail fusion switches on and shares memory over
-    # all 8 GPUs (torch symmetric memory), which across trays needs the NVLink fabric that hangs here (README: notes)
-    # max-model-len 262144: a quarter of K3's 1M, to leave KV room at 0.85 of each GPU; max-num-seqs 64: untuned.
-    # bf16 KV cache, as htx_xingyu's working K3 (01-C13/14): with fp8, K3's attention asserts on an fp8 prefill query
-    # this image's prefill backend doesn't provide
-    env: {}   # the recipe's FlashInfer MNNVL all-reduce needs the NVLink fabric (common_env)
+           --dyn-tool-call-parser, kimi_k3, --reasoning-parser, kimi_k3, --dyn-reasoning-parser, kimi_k3]
+    # TP8 with expert parallelism: with the experts split by TP, K3's MoE tail fusion switches on at TP8 and shares
+    # memory over all 8 GPUs (torch symmetric memory), which across trays needs the NVLink fabric that hangs here
+    # (README: notes); with EP the experts exchange tokens over InfiniBand instead (~50 tok/s for one request).
+    # max-model-len 262144: a quarter of K3's 1M; at 0.85 of each GPU that leaves ~1.08M tokens of KV cache (4 requests
+    # at full length). max-num-seqs 64: untuned. bf16 KV cache: with fp8, K3's attention asserts on an fp8 prefill query.
+    env: {}   # the image's other symmetric-memory kernel (VLLM_KIMI_K3_GEMM_RS) is off by default
 
   - name: glm-5.3
     licence: "GLM-5.3 licence (MIT-like)"
