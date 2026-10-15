@@ -825,7 +825,7 @@
    },
    "id": 20,
    "gridPos": {
-    "h": 46,
+    "h": 37,
     "w": 10,
     "x": 0,
     "y": 11
@@ -950,7 +950,7 @@
    },
    "id": 21,
    "gridPos": {
-    "h": 46,
+    "h": 37,
     "w": 14,
     "x": 10,
     "y": 11
@@ -1041,7 +1041,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 57
+    "y": 48
    }
   },
   {
@@ -1057,7 +1057,7 @@
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 58
+    "y": 49
    },
    "targets": [
     {
@@ -1112,7 +1112,7 @@
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 58
+    "y": 49
    },
    "targets": [
     {
@@ -1167,7 +1167,7 @@
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 58
+    "y": 49
    },
    "targets": [
     {
@@ -1222,7 +1222,7 @@
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 67
+    "y": 58
    },
    "targets": [
     {
@@ -1274,7 +1274,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 76
+    "y": 67
    }
   },
   {
@@ -1289,7 +1289,7 @@
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 77
+    "y": 68
    },
    "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command.",
    "targets": [
@@ -1479,7 +1479,7 @@
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 88
+    "y": 79
    },
    "description": "Running Slurm jobs the job pusher's account sees (slurm-exporter): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -1697,7 +1697,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 98
+    "y": 89
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -1778,7 +1778,7 @@
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 98
+    "y": 89
    },
    "targets": [
     {
@@ -1826,7 +1826,7 @@
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 98
+    "y": 89
    },
    "targets": [
     {
