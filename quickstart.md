@@ -136,7 +136,7 @@ curl -s -o /dev/null -w '%{http_code}\n' --cacert $FLYWHEEL_CA -H "Authorization
   "{\"streams\":[{\"stream\":{\"job\":\"robot\",\"host\":\"$(hostname)\"},\"values\":[[\"$(date +%s%N)\",\"hello\"]]}]}"
 ```
 
-Read them in Grafana (`https://$SERVICE_HOST:$CADDY_PORT/grafana`): **Explore**, data source Loki, query `{job="robot"}`. Queries need the SSO login, so there is no token for reading from a shell. GPU and node metrics are on the dashboard **Flywheel → GPU nodes** ([prometheus/](services/prometheus/README.md)).
+Read them in Grafana (`https://$SERVICE_HOST:$CADDY_PORT/grafana`): **Explore**, data source Loki, query `{job="robot"}`. Queries need the SSO login, so there is no token for reading from a shell. GPU, CPU and memory use, free GPUs and who uses them are on the dashboard **Flywheel → Cluster usage** ([prometheus/](services/prometheus/README.md)).
 
 ### Triton: served models
 

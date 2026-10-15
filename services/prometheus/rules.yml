@@ -9,3 +9,9 @@ groups:
         expr: count by (user, partition) (slurm_job_gpu{job="slurm_jobs"})
       - record: flywheel:user_gpus_busy        # the same GPUs weighted by utilisation: 2 GPUs at 50% = 1
         expr: sum by (user, partition) (DCGM_FI_DEV_GPU_UTIL / 100 * on (instance, gpu) group_left (user, partition) slurm_job_gpu{job="slurm_jobs"})
+      # The same from what runs on the GPUs, Slurm or not (prometheus/gpu_processes.py; on nodes it can't reach, the Slurm
+      # jobs): GPUs each user holds, and those GPUs weighted by utilisation. A GPU two users share counts for each.
+      - record: flywheel:user_gpus_in_use
+        expr: count by (user, partition) ((count by (instance, gpu, user) (label_replace(gpu_process_count{job="gpu_processes"}, "instance", "$1", "node", "(.*)")) or on (instance, gpu) count by (instance, gpu, user) (slurm_job_gpu{job="slurm_jobs"})) * on (instance, gpu) group_left (partition) (0 * DCGM_FI_DEV_GPU_UTIL + 1))
+      - record: flywheel:user_gpus_busy_any
+        expr: sum by (user, partition) ((count by (instance, gpu, user) (label_replace(gpu_process_count{job="gpu_processes"}, "instance", "$1", "node", "(.*)")) or on (instance, gpu) count by (instance, gpu, user) (slurm_job_gpu{job="slurm_jobs"})) * 0 + on (instance, gpu) group_left (partition) DCGM_FI_DEV_GPU_UTIL / 100)

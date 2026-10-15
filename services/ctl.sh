@@ -533,6 +533,38 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   exit 0
 fi
 
+# Who uses each GPU and each node's CPU memory, pushed for Prometheus (prometheus/gpu_processes.py): once, or
+# `monitor timer` to run it every minute on this node (systemd user timer).
+if [[ $1 == monitor ]]; then
+  if [[ ${2:-} == timer ]]; then
+    mkdir -p ~/.config/systemd/user
+    cat > ~/.config/systemd/user/flywheel-gpu-processes.service <<UNIT
+[Unit]
+Description=Push who uses each GPU to Prometheus
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -lc 'flock -n -E 0 $STATE_DIR/gpu-processes.lock $here/ctl.sh monitor'
+UNIT
+    cat > ~/.config/systemd/user/flywheel-gpu-processes.timer <<'TIMER'
+[Unit]
+Description=Push who uses each GPU to Prometheus
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
+TIMER
+    loginctl enable-linger && systemctl --user daemon-reload && systemctl --user enable --now flywheel-gpu-processes.timer
+    systemctl --user list-timers flywheel-gpu-processes.timer --no-pager
+  else
+    FLYWHEEL_CA=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt python3 "$here/prometheus/gpu_processes.py"
+  fi
+  exit 0
+fi
+
 if [[ $1 == dynamo ]]; then
   dynamo "${@:2}"
   exit 0

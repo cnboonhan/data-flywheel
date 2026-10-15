@@ -37,9 +37,9 @@
  },
  "links": [
   {
-   "title": "GPU nodes",
+   "title": "Cluster usage",
    "type": "link",
-   "url": "/grafana/d/gpu-nodes/gpu-nodes",
+   "url": "/grafana/d/cluster-usage/cluster-usage",
    "keepTime": true
   }
  ],
@@ -474,7 +474,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "DCGM_FI_DEV_FB_USED * on (instance, gpu) group_left () slurm_job_gpu{job=\"slurm_jobs\", job_id=\"$job\"} * 1048576",
+     "expr": "sum by (instance, gpu) (label_replace(gpu_process_memory_bytes{job=\"gpu_processes\", slurm_job=\"$job\"}, \"instance\", \"$1\", \"node\", \"(.*)\"))",
      "legendFormat": "{{instance}} GPU {{gpu}}"
     }
    ],
@@ -500,7 +500,8 @@
      "sort": "desc"
     }
    },
-   "id": 9
+   "id": 9,
+   "description": "GPU memory the job's processes hold on each of its GPUs (prometheus/gpu_processes.py; DCGM's used memory also counts file cache on GB300 nodes)."
   },
   {
    "type": "timeseries",
