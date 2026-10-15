@@ -24,7 +24,7 @@ Call it like any OpenAI endpoint ([dynamo/](../dynamo/README.md#use)). To run a 
 
 ## Run
 
-It runs and updates with Dynamo: `ctl.sh dynamo up` (and its sync timer) builds the image (`Dockerfile`) and starts a gateway on every node that serves a model, plus on `DYNAMO_HEAD` always.
+It runs and updates with Dynamo: `ctl.sh dynamo up` (also run by the Gitea workflow `sync-dynamo`) builds the image (`Dockerfile`) and starts a gateway on every node that serves a model, plus on `DYNAMO_HEAD` always.
 
 ```bash
 services/ctl.sh dynamo logs -f gateway                       # DYNAMO_HEAD's

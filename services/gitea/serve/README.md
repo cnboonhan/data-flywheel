@@ -1,5 +1,8 @@
 # serve
 
-Model serving stage. `sync-triton` (dispatch it) loads every registered model whose MLflow alias `triton` names a version into Triton, and unloads the rest.
+Model serving stage. Each workflow serves the registered models whose MLflow alias names a version, and stops the rest; dispatch it after setting or removing an alias.
 
-1. To serve or unload a model, set or remove its MLflow alias as described in [triton/](../../triton/README.md#serve-a-model).
+| Workflow | Alias | Serves on |
+|---|---|---|
+| `sync-triton` | `triton` | Triton: image models, robot policies ([triton/](../../triton/README.md#serve-a-model)) |
+| `sync-dynamo` | `dynamo` | Dynamo: language models ([dynamo/](../../dynamo/README.md#serve-swap-and-stop-models)) |

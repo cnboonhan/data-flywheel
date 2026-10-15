@@ -25,6 +25,7 @@ fi
 set -a; source .env; set +a
 # Triton runs on TRITON_NODE (triton/compose.yml); containers here reach it by address, as they can't resolve node names.
 TRITON_ADDR=$(getent hosts "$TRITON_NODE" | awk '{print $1; exit}'); export TRITON_ADDR
+SERVICE_ADDR=$(getent hosts "$SERVICE_NODE" | awk '{print $1; exit}')   # sync-dynamo's job reaches the node by address
 LLM_GATEWAY_ADDR=$(getent hosts "${DYNAMO_HEAD:-}" | awk '{print $1; exit}' || true); export LLM_GATEWAY_ADDR   # dynamo/
 
 if [[ $# -eq 0 ]]; then
@@ -56,8 +57,8 @@ keep_off_gpu_memory() {
 # Dynamo (dynamo/README.md): serves the models whose MLflow alias `dynamo` is set, where models.yaml places them (the
 # trays, or a node's GPUs). render: write each node's compose file from models.yaml and the aliases (dynamo/render.py).
 # up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
-# node's services up (unchanged ones keep running) and wait for each served model. sync: up, only when the aliases moved
-# or an engine is down; timer: run sync every minute on DYNAMO_HEAD, so setting or moving an alias is all a change takes.
+# node's services up (unchanged ones keep running) and wait for each served model. The Gitea workflow sync-dynamo runs
+# up (gitea/serve/sync-dynamo.yml), with a key that may run nothing else (dynamo_sync_key).
 dynamo() {
   local out="$STATE_DIR/dynamo"
   on() { local node=$1; shift
@@ -72,12 +73,11 @@ dynamo() {
       for m in $(q '" ".join(d["served"])'); do mkdir -p "$out/cache/$m"; done
       for node in $(q '" ".join(d["nodes"])'); do mkdir -p "$out/etcd-$node"; done ;;   # else dockerd makes them, root-owned
     up)
-      exec 9>"$out/up.lock"   # one up at a time, by hand or from the timer's sync
+      exec 9>"$out/up.lock"   # one up at a time, by hand or from sync-dynamo
       flock -n 9 || { echo "dynamo: another up is running" >&2; return 1; }
       local before node m sv old
       before=$(q '" ".join(d["nodes"])')
       dynamo render || return 1
-      rm -f "$out/failed"
       for node in $before; do   # nodes that no longer run anything
         [[ " $(q '" ".join(d["nodes"])') " == *" $node "* ]] ||
           { echo "dynamo: nothing left on $node"; ssh "$node" "bash -lc 'docker compose -p flywheel-dynamo down --remove-orphans'"; }
@@ -98,50 +98,15 @@ dynamo() {
         until ssh "${sv[0]}" "curl -fs http://127.0.0.1:${sv[1]}/health" >/dev/null 2>&1; do
           for node in "${sv[0]}" $([[ ${sv[2]} == True ]] && echo "$DYNAMO_WORKER"); do
             [[ $(ssh "$node" "bash -lc 'docker inspect -f {{.State.Running}} flywheel-dynamo-engine-$m-1'") == true ]] ||
-              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; cksum "$out"/*.json > "$out/failed"; return 1; }
+              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; return 1; }
             # a worker that dies leaves its container up and the other rank waiting forever
             ! ssh "$node" "bash -lc 'docker logs flywheel-dynamo-engine-$m-1 2>&1 | grep -q -E \"WorkerProc hit an exception|EngineCore encountered a fatal error\"'" ||
-              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; cksum "$out"/*.json > "$out/failed"; return 1; }
+              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; return 1; }
           done
           sleep 10
         done
         echo "dynamo: $m serving on ${sv[0]}"
       done ;;
-    sync)
-      local before node
-      before=$(cat "$out"/*.json 2>/dev/null | cksum)
-      dynamo render >/dev/null || return 1
-      if [[ $(cat "$out"/*.json | cksum) == "$before" ]]; then   # same files: only check the engines are up
-        local down=
-        for node in $(q '" ".join(d["nodes"])'); do [[ $(engines "$node") == "$(wanted "$node")" ]] || down=1; done
-        [[ -z $down ]] && return 0
-        # a start that failed isn't retried until the aliases or the config change (ctl.sh dynamo up retries by hand)
-        [[ -f $out/failed ]] && cmp -s "$out/failed" <(cksum "$out"/*.json) && return 0
-      fi
-      flock -n "$out/up.lock" true || return 0   # an up is running already (by hand or the last sync)
-      echo "dynamo: serving $(q '", ".join(d["served"])')"
-      dynamo up ;;
-    timer)   # install or refresh the sync timer on DYNAMO_HEAD (linger keeps user timers running without a login)
-      ssh "$DYNAMO_HEAD" "mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/flywheel-dynamo-sync.service && cat > ~/.config/systemd/user/flywheel-dynamo-sync.timer <<'TIMER'
-[Unit]
-Description=Serve the Dynamo models whose MLflow alias dynamo is set
-
-[Timer]
-OnBootSec=2min
-OnUnitInactiveSec=1min
-
-[Install]
-WantedBy=timers.target
-TIMER
-loginctl enable-linger && systemctl --user daemon-reload && systemctl --user enable --now flywheel-dynamo-sync.timer && systemctl --user list-timers flywheel-dynamo-sync.timer --no-pager" <<UNIT
-[Unit]
-Description=Serve the Dynamo models whose MLflow alias dynamo is set
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash -lc 'flock -n -E 0 $out/sync.lock $here/ctl.sh dynamo sync'
-UNIT
-      ;;
     down)
       for node in $(q '" ".join(d["nodes"])'); do on "$node" down --remove-orphans; done ;;
     on)      # compose on one node: ctl.sh dynamo on <node> ps|logs|...
@@ -159,6 +124,18 @@ triton_compose() {
 }
 
 gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; }
+
+# The key sync-dynamo logs in with, as this account, to the service node: its forced command is `ctl.sh dynamo up`, so
+# the key can serve the aliased models and do nothing else (no shell, no forwarding). Made once; its line in
+# ~/.ssh/authorized_keys (shared by the nodes) is rewritten when the key or the checkout's path changes.
+dynamo_sync_key() {
+  local key="$STATE_DIR/dynamo/sync_key" line keys=~/.ssh/authorized_keys
+  mkdir -p "$STATE_DIR/dynamo"
+  [[ -s $key ]] || ssh-keygen -q -t ed25519 -N '' -C flywheel-sync-dynamo -f "$key"
+  line="restrict,command=\"bash -lc '$here/ctl.sh dynamo up'\" $(cat "$key.pub")"
+  grep -qxF "$line" "$keys" 2>/dev/null && return 0
+  (umask 077; { grep -v ' flywheel-sync-dynamo$' "$keys" 2>/dev/null || true; echo "$line"; } > "$keys.new") && mv "$keys.new" "$keys"
+}
 
 # First-run setup Gitea can't take from env: the admin user, the runner's
 # registration token, and the `pipelines` repo with the example workflow.
@@ -207,6 +184,10 @@ bootstrap_gitea() {
       -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$HF_TOKEN")" \
       "$api/repos/$ADMIN_USER/pipelines/actions/secrets/HF_TOKEN" >/dev/null
   fi
+  dynamo_sync_key
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"data": open(sys.argv[1]).read()}))' "$STATE_DIR/dynamo/sync_key")" \
+    "$api/repos/$ADMIN_USER/pipelines/actions/secrets/DYNAMO_SSH_KEY" >/dev/null
   # The header key Triton requires (sync-triton), synced on every up.
   "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$TRITON_KEY")" \
@@ -222,7 +203,8 @@ bootstrap_gitea() {
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
   for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
            "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID" \
-           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=0"; do   # Triton's one GPU is 0 inside it
+           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=0" \
+           "DYNAMO_SSH_HOST=$SERVICE_ADDR" "DYNAMO_SSH_USER=$USER" "DYNAMO_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)"; do   # Triton's one GPU is 0 inside it
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null

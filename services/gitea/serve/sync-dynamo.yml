@@ -1,0 +1,28 @@
+# Serve the language models on Dynamo (services/dynamo/README.md): every registered model whose alias `dynamo` names a
+# version is started where dynamo/models.yaml places it, and a model whose alias is gone is stopped; the others keep
+# running. Runs `ctl.sh dynamo up` on the service node over ssh, as the service account: the job's key (secret
+# DYNAMO_SSH_KEY, set by ctl.sh up) may run that command and nothing else. Runs on demand only.
+name: sync-dynamo
+concurrency:
+  group: sync-dynamo
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   # waits for each model to answer: ~7 min for GLM-5.3, ~25 for a tray model that fails; untuned
+    env:
+      SSH_KEY: ${{ secrets.DYNAMO_SSH_KEY }}
+      SSH_HOST: ${{ vars.DYNAMO_SSH_HOST }}            # the service node (ctl.sh up)
+      KNOWN_HOSTS: ${{ vars.DYNAMO_KNOWN_HOSTS }}      # its host keys (ctl.sh up)
+      SSH_USER: ${{ vars.DYNAMO_SSH_USER }}
+    steps:
+      - shell: bash
+        run: |
+          umask 077; key=$(mktemp); hosts=$(mktemp)
+          printf '%s\n' "$SSH_KEY" > "$key"; printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          # The key's forced command is `ctl.sh dynamo up`, whatever is asked for here.
+          ssh -i "$key" -o IdentitiesOnly=yes -o UserKnownHostsFile="$hosts" -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" dynamo-up

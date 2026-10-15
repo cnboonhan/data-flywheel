@@ -1,6 +1,6 @@
 """The LLM gateway: one OpenAI-compatible endpoint for Dynamo's served model, with access tokens and a critical-traffic
 flag. Which model is served is decided in MLflow, not by requests: the registered model whose alias `dynamo` is set
-(services/dynamo/README.md); moving the alias swaps the model (ctl.sh dynamo sync restarts the engines).
+(services/dynamo/README.md); moving the alias swaps the model (sync-dynamo restarts the engines).
 
     POST /v1/chat/completions, /v1/completions, /v1/responses, ...   forwarded to the frontend of the body's `model`
     GET  /v1/models    the served models: ready, context window, licence, inputs        GET /health, GET /metrics

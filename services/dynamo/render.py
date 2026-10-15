@@ -6,8 +6,8 @@ A model is served when its registered model's MLflow alias `dynamo` is set, at t
 mlflow bucket (that version's tag `dynamo.args`, a JSON list, appends engine flags). Its placement in models.yaml says
 where: `trays` (both of DYNAMO_HEAD's and DYNAMO_WORKER's 8 GPUs, rank 0 on the head and rank 1 headless on the worker;
 one such model at a time) or a node and GPUs with a share of each GPU's memory (the shares on one GPU must fit its
-budget in models.yaml `gpus`). Setting or moving an alias changes what is served (`ctl.sh dynamo sync`, which its timer
-runs every minute).
+budget in models.yaml `gpus`). Setting or moving an alias changes what is served at the next sync (Gitea workflow
+sync-dynamo, or `ctl.sh dynamo up`).
 
 Writes OUT_DIR/<node>.json (each node's services: etcd, the frontends and engines of the models whose rank 0 runs there,
 and a gateway; rank-1 engines on the worker), OUT_DIR/<node>.gateway.json (that gateway's models; DYNAMO_HEAD's is the

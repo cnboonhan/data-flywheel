@@ -1,6 +1,6 @@
 # The LLMs Dynamo can serve on DYNAMO_HEAD + DYNAMO_WORKER (a vLLM engine over both trays' 8 GPUs, rank 0 on the
 # head, rank 1 headless on the worker), one at a time: the model whose registered model's MLflow alias `dynamo` is set,
-# at that version. Moving the alias to another model swaps it (ctl.sh dynamo sync, every minute on its timer): the old
+# at that version. Moving the alias to another model swaps it (Gitea workflow sync-dynamo, or ctl.sh dynamo up): the old
 # engines stop and the new model cold-starts (minutes). A version's tag `dynamo.args` (a JSON list) appends engine flags.
 #
 # Per model: name (the OpenAI `model` clients send), registered (MLflow registered model), image (Dynamo's vLLM runtime

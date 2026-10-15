@@ -7,7 +7,7 @@ flowchart LR
   C["clients<br/>(OpenAI API)"] -->|llm.host| Caddy --> G["gateway (DYNAMO_HEAD)<br/>critical flag"]
   G --> T["8-GPU model<br/>rank 0 head + rank 1 worker<br/>InfiniBand between trays"]
   G --> G2["gateway (DYNAMO_NODE)"] --> S["one engine per model<br/>on its GPUs"]
-  M["MLflow alias dynamo"] -.->|ctl.sh dynamo sync, every minute| T & S
+  M["MLflow alias dynamo"] -.->|Gitea workflow sync-dynamo| T & S
 ```
 
 | Model (`model` in requests) | Placement | Notes |
@@ -46,15 +46,11 @@ A model that isn't served answers `503` with what is; one that is starting (minu
    c.set_registered_model_alias("GLM-5.3", "dynamo", "1")
    c.delete_registered_model_alias("Kimi-K3", "dynamo")
    ```
-2. Wait: within a minute the sync timer stops what lost its alias and starts what gained one; other models keep running. Expect ~7 min for GLM-5.3 (~15 the first time, compiling kernels), a few minutes for the small models.
-3. Follow it in the timer's log, or start it by hand:
-   ```bash
-   ssh $DYNAMO_HEAD journalctl --user -u flywheel-dynamo-sync -f
-   services/ctl.sh dynamo up
-   ```
+2. Dispatch the Gitea workflow `sync-dynamo` ([how](../gitea/README.md)). It stops what lost its alias and starts what gained one; other models keep running. It ends when every served model answers: expect ~7 min for GLM-5.3 (~15 the first time, compiling kernels), a few minutes for the small models. Follow it in the run's log.
+3. Or run the same from a shell: `services/ctl.sh dynamo up`.
 4. Check a model: `services/ctl.sh dynamo on <node> logs -f engine-<model>` (`dynamo logs` for `DYNAMO_HEAD`, `dynamo worker logs` for `DYNAMO_WORKER`), the gateway's `GET /health`, Grafana **Flywheel → Model usage**.
 
-The sync refuses two tray models at once, and shares over a GPU's budget (`models.yaml` `gpus`); it then serves nothing new until the aliases are fixed. A start that fails isn't retried until the aliases or the config change: read the engine's log, fix, then `services/ctl.sh dynamo up`.
+A sync refuses two tray models at once, and shares over a GPU's budget (`models.yaml` `gpus`); it then serves nothing new until the aliases are fixed. A sync whose model fails to start fails: read the engine's log, fix, then dispatch it again. An engine that dies later stays down until the next sync.
 
 ## Add a model
 
@@ -64,15 +60,11 @@ The sync refuses two tray models at once, and shares over a GPU's budget (`model
 
 ## Before the first start
 
-1. Install the sync timer on `DYNAMO_HEAD` (it also turns on linger there):
-   ```bash
-   services/ctl.sh dynamo timer
-   ```
-2. Check the GPUs are free of file cache: `nvidia-smi` should show each GPU's memory free bar its known users. On a GB300 node each GPU's memory is a NUMA node and Linux puts file cache there (shown as used, with no process), and it does not give it back when CUDA allocates. vLLM refuses to start below its share × 276 GiB free. Evict it with `sync; echo 3 | sudo tee /proc/sys/vm/drop_caches` (root).
+1. Check the GPUs are free of file cache: `nvidia-smi` should show each GPU's memory free bar its known users. On a GB300 node each GPU's memory is a NUMA node and Linux puts file cache there (shown as used, with no process), and it does not give it back when CUDA allocates. vLLM refuses to start below its share × 276 GiB free. Evict it with `sync; echo 3 | sudo tee /proc/sys/vm/drop_caches` (root).
 
 ## Notes
 
-- **The sync timer** is a systemd user timer, `flywheel-dynamo-sync`, on `DYNAMO_HEAD` under the service account. A minute after each run ends it runs `ctl.sh dynamo sync`: `render.py` reads the `dynamo` aliases from MLflow and writes the nodes' compose files; if nothing changed and every engine that should run is up, it stops there (~3 s), else it runs `ctl.sh dynamo up`. Only one sync or `up` runs at a time. Check it with `systemctl --user list-timers 'flywheel-*'` on `DYNAMO_HEAD`; pause it with `systemctl --user stop flywheel-dynamo-sync.timer` (`start` to resume).
+- **`sync-dynamo`** logs in to the service node over ssh as the service account and runs `ctl.sh dynamo up`: `render.py` reads the `dynamo` aliases from MLflow and writes the nodes' compose files, then each node's services are brought up (unchanged ones keep running). Its key (`$STATE_DIR/dynamo/sync_key`, Gitea secret `DYNAMO_SSH_KEY`, made by `ctl.sh up`) is in `~/.ssh/authorized_keys` with that command forced, so it can do nothing else. Only one `up` runs at a time.
 - **Linger:** `dynamo up` turns on systemd linger for the service account on every node it uses. Without it logind deletes the engines' `/dev/shm` files whenever the account's last ssh session to a node ends, and the engines die at start (`FileNotFoundError` in `SemLock._rebuild` or `ShmRingBuffer`).
 - **Between GPUs:** the NVLink fabric memory (NCCL's MNNVL, NVLS, FlashInfer's MNNVL all-reduce, torch symmetric memory across trays) hangs or fails on racks 01 and 02, even within one tray; plain P2P within a tray works (~660 GiB/s). So engines turn those off (`common_env`) and talk between trays over InfiniBand (`/dev/infiniband`, ~210 GiB/s all-reduce bus bandwidth vs ~3 over TCP). FlashInfer's `CUDA_ERROR_NOT_PERMITTED` warning is expected.
 - **Host memory:** engines run under `numactl --membind` on the nodes' CPU NUMA nodes (`host_numa_nodes`), so their host buffers and the file cache of the weights they read stay out of the GPUs' memory.
