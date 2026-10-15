@@ -44,6 +44,8 @@
   #load th, #load td { padding: 5px 10px; text-align: right; border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent); }
   #load th:first-child, #load td:first-child, #load th:nth-child(3), #load td:nth-child(3) { text-align: left; }
   #load td small { display: block; font-size: 12px; } #load th { color: var(--muted); font-weight: 500; }
+  pre.cmd { font: 12px/1.5 ui-monospace, Menlo, monospace; background: var(--box); border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent);
+             border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; overflow-x: auto; white-space: pre; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.up { background: var(--accent); }
 </style>
@@ -67,6 +69,8 @@
   </ul>
   <section id="load">
     <h2>Language models <small style="display:inline">&middot; live, refreshed every 15 s &middot; <a href="/grafana/d/model-usage">usage in Grafana</a></small></h2>
+    <pre class="cmd">curl https://llm.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'</pre>
     <table><thead><tr><th>Model</th><th>Context</th><th>Inputs</th><th>Speed</th><th>Requests/s</th><th>In progress</th></tr></thead>
       <tbody id="llmRows"><tr><td colspan="6">loading&hellip;</td></tr></tbody></table>
     <h2 style="margin-top:18px">Image models <small style="display:inline">&middot; on Triton (<code>https://triton.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v2/models/&lt;name&gt;</code>)</small></h2>
