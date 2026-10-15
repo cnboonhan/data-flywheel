@@ -1,0 +1,39 @@
+# Triton on TRITON_NODE, a node of its own, away from the stack's: `ctl.sh up` runs it there as project flywheel-triton
+# (`ctl.sh triton <compose args>` for the rest). It sees two of that node's GPUs, TRITON_GPU0 and TRITON_GPU1, which are
+# 0 and 1 inside: Python-backend models on 0, the vLLM model on 1 (TRITON_PYTHON_GPU, TRITON_VLLM_GPU for sync.py).
+# Its ports are published on the node, so every API but health needs the header triton-key: TRITON_KEY, which Caddy
+# (triton.<host>) and sync.py send; clients go through Caddy. Metrics (node port 8102) are open, for Prometheus.
+services:
+  triton:
+    build: .
+    image: flywheel-triton:26.08
+    restart: unless-stopped
+    user: "${SERVICE_UID}:${SERVICE_GID}"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }   # up to 100 MB of logs; untuned
+    command:
+      - tritonserver
+      - --model-repository=/triton/models
+      - --model-control-mode=explicit
+      - --load-model=*            # on (re)start: whatever the last sync left in the repository
+      - --exit-on-error=false     # a model that fails to load doesn't keep the others down
+      - --http-restricted-api=metadata,inference,shared-memory,model-config,model-repository,statistics,trace,logging:triton-key=${TRITON_KEY:?TRITON_KEY must be set}
+      - --grpc-restricted-protocol=metadata,inference,shared-memory,model-config,model-repository,statistics,trace,logging:triton-key=${TRITON_KEY}
+    environment:
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"   # the repository is read-only
+    devices:
+      - nvidia.com/gpu=${TRITON_GPU0}
+      - nvidia.com/gpu=${TRITON_GPU1}
+    ports:   # 8100-8102 on the node: its 8000 was taken
+      - "8100:8000"   # HTTP
+      - "8101:8001"   # gRPC
+      - "8102:8002"   # metrics
+    shm_size: 16gb                   # Python-backend models pass tensors through shared memory; 16 GB untuned
+    ulimits:                         # no memlock limit, 64 MiB stack: NVIDIA's recommended `docker run` for Triton
+      memlock: -1
+      stack: 67108864
+    volumes:
+      - ${STATE_DIR}/versitygw/buckets/triton:/triton:ro   # the bucket, not models/: the gateway deletes empty folders
+      - ${STATE_DIR}/versitygw/buckets/mlflow:/mlflow:ro   # registered weights, read in place by vLLM models (sync.py)

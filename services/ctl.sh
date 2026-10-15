@@ -6,6 +6,7 @@
 #   services/ctl.sh setup     (re)build the Slurm-side environments (Gitea workflow setup-envs)
 #   services/ctl.sh s3-policies  re-apply the S3 bucket policies (after editing versitygw/upload-only.txt)
 #   services/ctl.sh ps|logs|pull|config|<any compose args>
+#   services/ctl.sh triton <compose args>   Triton's own project on TRITON_NODE (ps, logs, build, ...)
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
 # over ssh; the repo and the state dir are on /tier1, so paths are the same.
@@ -21,9 +22,11 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 set -a; source .env; set +a
+# Triton runs on TRITON_NODE (triton/compose.yml); containers here reach it by address, as they can't resolve node names.
+TRITON_ADDR=$(getent hosts "$TRITON_NODE" | awk '{print $1; exit}'); export TRITON_ADDR
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-8: the usage block at the top of this file
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-9: the usage block at the top of this file
   exit 1
 fi
 
@@ -34,6 +37,11 @@ if [[ $(hostname -s) != "${SERVICE_NODE%%.*}" ]]; then
 fi
 
 compose=(docker compose --project-name flywheel)
+
+# docker compose for Triton's own project on TRITON_NODE (over ssh; the checkout and STATE_DIR are on shared storage).
+triton_compose() {
+  ssh "$TRITON_NODE" "bash -lc $(printf '%q' "cd $(printf '%q' "$here/triton") && docker compose --project-name flywheel-triton --env-file ../.env -f compose.yml $(printf '%q ' "$@")")"
+}
 
 gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; }
 
@@ -84,6 +92,10 @@ bootstrap_gitea() {
       -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$HF_TOKEN")" \
       "$api/repos/$ADMIN_USER/pipelines/actions/secrets/HF_TOKEN" >/dev/null
   fi
+  # The header key Triton requires (sync-triton), synced on every up.
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$TRITON_KEY")" \
+    "$api/repos/$ADMIN_USER/pipelines/actions/secrets/TRITON_KEY" >/dev/null
   # Path token for raw bags in Rerun links (sync-fiftyone-raw): RERUN_RAW_TOKEN in .env, synced on every up.
   if [[ -n ${RERUN_RAW_TOKEN:-} ]]; then
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
@@ -94,7 +106,8 @@ bootstrap_gitea() {
   local f path
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
   for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
-           "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID"; do
+           "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID" \
+           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=1"; do   # Triton's GPUs are 0, 1 inside it
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
@@ -352,7 +365,7 @@ fi
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
-  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone prometheus slurm-exporter keycloak/db keycloak/import keycloak/login-background versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
+  for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone prometheus prometheus-sd slurm-exporter keycloak/db keycloak/import keycloak/login-background versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
     mkdir -p "$STATE_DIR/$d"
   done
   # The Slurm job pusher, where an account that sees every job can read it (it may not be able to read this checkout).
@@ -383,7 +396,16 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_jobs
   apply_s3_policies
   "${compose[@]}" up -d "${@:2}"
+  # Triton on its node, and where Prometheus finds its metrics.
+  mkdir -p "$STATE_DIR/prometheus-sd"
+  printf '[{"targets": ["%s:8102"], "labels": {"node": "%s"}}]\n' "$TRITON_ADDR" "$TRITON_NODE" > "$STATE_DIR/prometheus-sd/triton.json"
+  triton_compose up -d
   setup_envs
+  exit 0
+fi
+
+if [[ $1 == triton ]]; then
+  triton_compose "${@:2}"
   exit 0
 fi
 

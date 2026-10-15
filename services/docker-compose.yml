@@ -24,6 +24,8 @@ services:
       PUSHGATEWAY_TOKEN: ${PUSHGATEWAY_TOKEN:-}   # bearer token for pushes to /pushgateway/metrics/job/... from outside
       RERUN_RAW_TOKEN: ${RERUN_RAW_TOKEN:-}   # path token for raw bags in Rerun links
       TRITON_TOKEN: ${TRITON_TOKEN:-}         # bearer token for triton.<host>
+      TRITON_ADDR: ${TRITON_ADDR:-}           # TRITON_NODE's address (ctl.sh); Triton runs there (triton/compose.yml)
+      TRITON_KEY: ${TRITON_KEY:-}             # the header Triton requires, added on the way through
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro
@@ -122,6 +124,7 @@ services:
     volumes:
       - ./prometheus:/etc/prometheus:ro   # a folder, so nodes.json and the config follow git's file replacements
       - ${STATE_DIR}/prometheus:/prometheus
+      - ${STATE_DIR}/prometheus-sd:/etc/prometheus-sd:ro   # targets ctl.sh writes, e.g. Triton on TRITON_NODE
 
   # Metrics pushed from outside the stack (Caddy's /pushgateway route, bearer token), e.g. which GPU each Slurm job
   # holds (slurm-exporter/exporter.py --push); Prometheus scrapes it. Pushes are kept in memory: lost on restart until
@@ -259,32 +262,7 @@ services:
     environment:
       HOME: /tmp
 
-  # Triton Inference Server on all of the node's GPUs (CDI), with the vLLM backend for LLMs. Its model repository is the
-  # triton bucket's models/ folder, read in place; the sync-triton workflow fills it from the MLflow registry and loads
-  # and unloads models (explicit model control). Reached through Caddy on triton.<host> (HTTP and gRPC, bearer token).
-  # See triton/README.md.
-  triton:
-    <<: *common
-    build: ./triton
-    image: flywheel-triton:26.08
-    command:
-      - tritonserver
-      - --model-repository=/triton/models
-      - --model-control-mode=explicit
-      - --load-model=*            # on (re)start: whatever the last sync left in the repository
-      - --exit-on-error=false     # a model that fails to load doesn't keep the others down
-    environment:
-      HOME: /tmp
-      PYTHONDONTWRITEBYTECODE: "1"   # the repository is read-only
-    devices:
-      - nvidia.com/gpu=all
-    shm_size: 16gb                   # Python-backend models pass tensors through shared memory; 16 GB untuned
-    ulimits:                         # no memlock limit, 64 MiB stack: NVIDIA's recommended `docker run` for Triton
-      memlock: -1
-      stack: 67108864
-    volumes:
-      - ${STATE_DIR}/versitygw/buckets/triton:/triton:ro   # the bucket, not models/: the gateway deletes empty folders
-      - ${STATE_DIR}/versitygw/buckets/mlflow:/mlflow:ro   # registered weights, read in place by vLLM models (sync.py)
+  # Triton runs on its own node (TRITON_NODE): triton/compose.yml, started by ctl.sh up; Caddy and Prometheus reach it there.
 
   # --- Single sign-on -------------------------------------------------------
   keycloak-db:

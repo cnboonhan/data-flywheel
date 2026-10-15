@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server on all GPUs of the service node (`SERVICE_NODE` in [`.env.example`](../.env.example)), serving models from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
+Triton Inference Server on two GPUs of a node of its own (`TRITON_NODE`, `TRITON_GPU0`, `TRITON_GPU1` in [`.env.example`](../.env.example); `compose.yml`, started by `ctl.sh up`), serving models from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
 
 ## Serve a model
 
@@ -96,16 +96,16 @@ A Hugging Face model goes to the Python backend that `HF_BACKENDS` in `sync.py` 
 
 ## Notes
 
-- If the service node is also a Slurm node, jobs placed there share its GPUs with Triton. Until its GPUs are removed from Slurm, submit GPU-heavy jobs with `--exclude=$SERVICE_NODE` (`flywheel.env` sets it).
+- If `TRITON_NODE` is also a Slurm node, jobs placed there may share its GPUs with Triton; keep GPU-heavy jobs off it (`--exclude=$TRITON_NODE`) until its GPUs are removed from Slurm.
 - Send gRPC metadata keys in lowercase (`authorization`). `tritonclient.http` adds entries to the `headers` dict it is given, so pass a fresh dict on every call.
 - Expect about 40 ms per ACT call with three 640×480 cameras from the login node.
-- After editing `Dockerfile` (`tritonserver:26.08-vllm-python-py3`, vLLM 0.27 and torch 2.14 built for sm_103, plus the ONNX Runtime backend from `tritonserver:26.08-py3`), rebuild with `services/ctl.sh up --build`.
-- A vLLM model runs as one instance on one whole GPU, GPU 1 unless the model version's tag `triton.gpu` names another; don't split one across GPUs (the 122B hit uncorrectable NVLink errors). Its engine arguments are `VLLM_ENGINE` in `sync.py` (32k context, 90% of the GPU, up to 4 images per prompt); tag `triton.vllm` with a JSON object to override them for one version.
-- The Python-backend Hugging Face models run as one instance each on GPU 2 (`TRITON_PYTHON_GPU`, or tag `triton.gpu`), about 71 GB together (the image editor 68 GB). They run with cuDNN off: in this image it makes Qwen-Image-Edit return noise and has no kernel for MoGe's transposed convolutions on GB300.
+- After editing `Dockerfile` (`tritonserver:26.08-vllm-python-py3`, vLLM 0.27 and torch 2.14 built for sm_103, plus the ONNX Runtime backend from `tritonserver:26.08-py3`), rebuild on the node with `services/ctl.sh triton build`, then `services/ctl.sh triton up -d` (and in the stack for the sync-triton job: `services/ctl.sh build`).
+- A vLLM model runs as one instance on one whole GPU, the second of Triton's GPUs (`TRITON_GPU1`, index 1 inside it) unless the model version's tag `triton.gpu` names another index; don't split one across GPUs (the 122B hit uncorrectable NVLink errors). Its engine arguments are `VLLM_ENGINE` in `sync.py` (32k context, 90% of the GPU, up to 4 images per prompt); tag `triton.vllm` with a JSON object to override them for one version.
+- The Python-backend Hugging Face models run as one instance each on the first of Triton's GPUs (`TRITON_GPU0`, index 0 inside it; `TRITON_PYTHON_GPU`, or tag `triton.gpu`), about 71 GB together (the image editor 68 GB). They run with cuDNN off: in this image it makes Qwen-Image-Edit return noise and has no kernel for MoGe's transposed convolutions on GB300.
 - Expect on the Python backends: an image edit at 1024×1024 in ~16 s (40 steps), MoGe on one 1024 px view in ~0.6 s and on a 4096×2048 panorama in ~110 s (its 20 views, then the merge on the CPU), LLMDet and SAM in well under a second per view.
 - TripoSG ([VAST-AI/TripoSG](https://huggingface.co/VAST-AI/TripoSG), MIT) returns a shape without colours. Its turn about the vertical is its own, close to the input's view from +z (image right +x) but not exactly, so fit the yaw against the input. Give it a cutout: it skips TripoSG's RMBG-1.4 background removal (non-commercial). Expect ~12 s per mesh at 50 steps (~1.6M faces before `faces` simplifies it).
 - vLLM models read their weights in place from the `mlflow` bucket (mounted read-only at `/mlflow`), so nothing is copied into the `triton` bucket. Expect about 4 min to load the 122B (230 GiB of weights, then compilation), so a sync that loads it takes that long.
 - Expect about 1.7 s for 17 concurrent requests with one 1024×1024 image and ~90 output tokens each on the 122B (~900 tokens/s together); the first request after a load takes ~20 s.
 - `sync.py` is the reconciler. It runs in the same image with the checkout mounted, so a change to it takes effect on the next sync without a rebuild. After changing `backends/` or a packager, dispatch `sync-triton` with `force` set to the affected models to repackage them.
 - The server reads the bucket directory read-only and reloads every model on restart. Leave `models/.keep` in place: the gateway deletes an empty folder, and Triton loses its repository with it.
-- Metrics are on port 8002 inside the compose network; [Prometheus](../prometheus/README.md) collects them (job `triton`).
+- Triton's ports are published on `TRITON_NODE` (8100 HTTP, 8101 gRPC, 8102 metrics), so every API but health requires the header `triton-key: $TRITON_KEY`; Caddy adds it for `triton.$SERVICE_HOST` and `sync-triton` sends it. [Prometheus](../prometheus/README.md) collects the metrics (job `triton`). `ctl.sh triton logs -f` shows its log.

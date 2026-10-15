@@ -31,7 +31,10 @@ jobs:
       MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
-      TRITON_URL: http://triton:8000
+      TRITON_URL: ${{ vars.TRITON_URL }}               # TRITON_NODE's Triton (ctl.sh up)
+      TRITON_KEY: ${{ secrets.TRITON_KEY }}
+      TRITON_PYTHON_GPU: ${{ vars.TRITON_PYTHON_GPU }}
+      TRITON_VLLM_GPU: ${{ vars.TRITON_VLLM_GPU }}
       FLYWHEEL_ROOT: ${{ vars.FLYWHEEL_ROOT }}
       GIT_PYTHON_REFRESH: quiet
       PYTHONDONTWRITEBYTECODE: "1"   # the job runs as root; don't leave root-owned __pycache__ in the checkout

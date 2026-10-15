@@ -171,10 +171,14 @@ https://triton.{$SERVICE_HOST}:8443 {
 		@grpc header Content-Type application/grpc*
 		# Triton's default ports: gRPC on 8001 (HTTP/2, cleartext inside), HTTP on 8000.
 		handle @grpc {
-			reverse_proxy h2c://triton:8001
+			reverse_proxy h2c://{$TRITON_ADDR}:8101 {
+				header_up triton-key {env.TRITON_KEY}
+			}
 		}
 		handle {
-			reverse_proxy triton:8000
+			reverse_proxy {$TRITON_ADDR}:8100 {
+				header_up triton-key {env.TRITON_KEY}
+			}
 		}
 	}
 	handle {

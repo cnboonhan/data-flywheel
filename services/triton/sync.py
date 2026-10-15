@@ -42,6 +42,7 @@ ALIAS = os.environ.get("TRITON_ALIAS", "triton")
 BUCKET = os.environ.get("TRITON_BUCKET", "triton")
 MODELS, SYNC = "models", "sync"   # the model repository Triton reads, and the sync's own records
 TRITON = os.environ.get("TRITON_URL", "http://triton:8000").rstrip("/")
+KEY = {"triton-key": os.environ["TRITON_KEY"]} if os.environ.get("TRITON_KEY") else {}   # Triton's restricted APIs
 ROOT = os.environ.get("FLYWHEEL_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 XPL = os.path.join(ROOT, "eval", "system1", "RoboDojo", "XPolicyLab")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -264,7 +265,7 @@ def put_json(key, obj):
 def triton(path, body=None, method=None):
     req = urllib.request.Request(TRITON + path, data=None if body is None else json.dumps(body).encode(),
                                  method=method or ("POST" if body is not None else "GET"),
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", **KEY})
     try:
         with urllib.request.urlopen(req, timeout=600) as r:   # a load answers once done: ~4 min for the 122B; untuned
             raw = r.read()
@@ -327,7 +328,7 @@ def smoke_python(name, kind):
         t.set_data_from_numpy(a)
         inputs.append(t)
     try:   # 10 min as in triton(); untuned
-        out = th.InferenceServerClient(TRITON.split("://")[-1], network_timeout=600).infer(name, inputs)
+        out = th.InferenceServerClient(TRITON.split("://")[-1], network_timeout=600).infer(name, inputs, headers=dict(KEY))
     except Exception as e:
         return f"{type(e).__name__}: {e}"
     first = PYTHON_IO[kind][1][0][0]

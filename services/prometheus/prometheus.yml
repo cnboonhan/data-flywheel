@@ -21,7 +21,7 @@ scrape_configs:
 
   # Triton's metrics (inference counts and latency per model, GPU memory per model); compose network only.
   - job_name: triton
-    static_configs: [{ targets: ["triton:8002"] }]
+    file_sd_configs: [{ files: [/etc/prometheus-sd/triton.json] }]   # TRITON_NODE:8102, written by ctl.sh up
 
   # Metrics pushed from outside, e.g. which GPU each Slurm job holds (services/slurm-exporter); the pushed job,
   # instance and gpu labels are kept (honor_labels), so slurm_job_gpu joins dcgm's series on (instance, gpu).

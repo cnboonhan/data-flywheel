@@ -12,7 +12,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
-| Triton: model serving from the MLflow registry | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (bearer token) |
+| Triton: model serving from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (bearer token) |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run
