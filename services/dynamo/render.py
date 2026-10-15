@@ -105,6 +105,15 @@ def engine(m, path, extra, rank=None):
             "volumes": [f"{state}/versitygw/buckets/mlflow:/mlflow:ro", f"{state}/dynamo/cache/{m['name']}:/cache"]}
 
 
+def info(m):
+    """What users see per model (landing page, /v1/models): licence, about, and its inputs, read from its flags."""
+    flags = [*m.get("args", []), *m.get("frontend_args", [])]
+    mm = flags[flags.index("--limit-mm-per-prompt") + 1] if "--limit-mm-per-prompt" in flags else "{}"
+    return {"licence": m.get("licence", ""), "about": m.get("about", ""), "images": "--enable-multimodal" in flags,
+            "max_images": json.loads(mm).get("image"), "reasoning": "--reasoning-parser" in flags,
+            "tools": "--enable-auto-tool-choice" in flags or "--dyn-tool-call-parser" in flags}
+
+
 def frontend(m):
     p = m["ports"]
     return {**common, "image": m["image"], "restart": "unless-stopped",
@@ -131,7 +140,7 @@ def gateway(node):
             "volumes": [f"{out}:/config:ro"]}
 
 
-services, local, served, skipped, trays, share, on_gpu = {}, {}, {}, [], [], {}, {}
+services, local, served, skipped, trays, share, on_gpu, infos = {}, {}, {}, [], [], {}, {}, {}
 for m in cfg["models"]:
     v = served_version(m["registered"])
     if v is None:
@@ -155,7 +164,9 @@ for m in cfg["models"]:
         services.setdefault(node, {})[f"engine-{n}"] = {**engine(m, path, extra),
                                                         "depends_on": {"etcd": {"condition": "service_started"}, **after}}
     services[node][f"frontend-{n}"] = frontend(m)
-    local.setdefault(node, {})[n] = {"frontend": f"http://127.0.0.1:{p['frontend']}", "system": f"http://127.0.0.1:{p['system']}"}
+    local.setdefault(node, {})[n] = {"frontend": f"http://127.0.0.1:{p['frontend']}", "system": f"http://127.0.0.1:{p['system']}",
+                                     "info": info(m)}
+    infos[n] = info(m)
     served[n] = {"node": node, "system": p["system"], "tray": pl == "trays"}
 if len(trays) > 1:
     raise SystemExit(f"the alias `dynamo` is on {', '.join(trays)}: set it on one of the tray models (each takes all 8 GPUs)")
@@ -179,8 +190,8 @@ for node in services:
     if node in local or node == HEAD:
         gw = {"models": dict(local.get(node, {})), "known": known}
         if node == HEAD:   # the main gateway: other nodes' models through their gateways
-            gw["models"].update({n: {"gateway": f"http://{addr(sv['node'])}:{GATEWAY_PORT}"} for n, sv in served.items()
-                                 if sv["node"] != HEAD})
+            gw["models"].update({n: {"gateway": f"http://{addr(sv['node'])}:{GATEWAY_PORT}", "info": infos[n]}
+                                 for n, sv in served.items() if sv["node"] != HEAD})
         json.dump(gw, open(os.path.join(out, f"{node}.gateway.json"), "w"), indent=1)
         # the gateway reads its models at start: a changed list changes its environment, so compose restarts it
         services[node]["gateway"]["environment"]["GATEWAY_CONFIG_SHA"] = hashlib.sha256(json.dumps(gw, sort_keys=True).encode()).hexdigest()[:12]

@@ -3,7 +3,7 @@ flag. Which model is served is decided in MLflow, not by requests: the registere
 (services/dynamo/README.md); moving the alias swaps the model (ctl.sh dynamo sync restarts the engines).
 
     POST /v1/chat/completions, /v1/completions, /v1/responses, ...   forwarded to the frontend of the body's `model`
-    GET  /v1/models    the served models        GET /health, GET /metrics (Prometheus)
+    GET  /v1/models    the served models: ready, context window, licence, inputs        GET /health, GET /metrics
     GET  /metrics/<model>/frontend|engine   that model's Dynamo metrics, relayed from 127.0.0.1 (Prometheus job dynamo)
 
 No token is needed. A request is critical when it carries `X-Priority: critical` *and*
@@ -94,10 +94,25 @@ async def proxy(request, base, headers, body):
         return resp
 
 
+async def describe(name):
+    """A model's entry in /v1/models: ready, its context window (from its frontend, or another node's gateway) and the
+    info models.yaml gives (licence, about, images, reasoning, tools)."""
+    entry = {"id": name, "object": "model", "owned_by": "flywheel", "ready": False, "context_window": None,
+             **MODELS[name].get("info", {})}
+    try:
+        url = MODELS[name]["gateway"] if "gateway" in MODELS[name] else MODELS[name]["frontend"]
+        async with http.get(url + "/v1/models", timeout=ClientTimeout(total=5)) as r:
+            m = next((m for m in (await r.json()).get("data", []) if m.get("id") == name), None)
+        if m:
+            entry["ready"] = m.get("ready", True)
+            entry["context_window"] = m.get("context_window")
+    except Exception:   # noqa: BLE001  down or starting: listed as not ready
+        pass
+    return entry
+
+
 async def models(request):
-    classify(request)
-    return web.json_response({"object": "list", "data": [
-        {"id": n, "object": "model", "owned_by": "flywheel", "ready": await listed(n)} for n in MODELS]})
+    return web.json_response({"object": "list", "data": [await describe(n) for n in MODELS]})
 
 
 async def health(_):

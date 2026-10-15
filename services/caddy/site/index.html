@@ -42,7 +42,8 @@
   #load { margin-top: 28px; } #load h2 { font-size: 16px; margin: 0 0 6px; }
   #load table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--box); border-radius: 8px; overflow: hidden; }
   #load th, #load td { padding: 5px 10px; text-align: right; border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent); }
-  #load th:first-child, #load td:first-child, #load td:nth-child(2) { text-align: left; } #load th { color: var(--muted); font-weight: 500; }
+  #load th:first-child, #load td:first-child, #load th:nth-child(3), #load td:nth-child(3) { text-align: left; }
+  #load td small { display: block; font-size: 12px; } #load th { color: var(--muted); font-weight: 500; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.up { background: var(--accent); }
 </style>
@@ -65,9 +66,13 @@
     <li><a href="/auth/admin/flywheel/console/">Keycloak</a> <small>Single sign-on: users and groups</small></li>
   </ul>
   <section id="load">
-    <h2>Served models <small style="display:inline">&middot; live, 5-min averages &middot; <a href="/grafana/d/model-usage">more in Grafana</a></small></h2>
-    <table><thead><tr><th>Model</th><th>Server</th><th>Requests/s</th><th>Tokens/s</th><th>In progress</th></tr></thead>
-      <tbody id="loadRows"><tr><td colspan="5">loading&hellip;</td></tr></tbody></table>
+    <h2>Language models <small style="display:inline">&middot; live, refreshed every 15 s &middot; <a href="/grafana/d/model-usage">usage in Grafana</a></small></h2>
+    <small style="margin-bottom:8px">Call any of them with the OpenAI API at <code>https://llm.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v1</code>, <code>"model": "&lt;name&gt;"</code>, no token (examples: <code>quickstart.md</code> in the repo). Reasoning models think before answering; turn it off with <code>"chat_template_kwargs": {"enable_thinking": false}</code>.</small>
+    <table><thead><tr><th>Model</th><th>Context</th><th>Inputs</th><th>Speed</th><th>Requests/s</th><th>In progress</th></tr></thead>
+      <tbody id="llmRows"><tr><td colspan="6">loading&hellip;</td></tr></tbody></table>
+    <h2 style="margin-top:18px">Image models <small style="display:inline">&middot; on Triton (<code>https://triton.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v2/models/&lt;name&gt;</code>)</small></h2>
+    <table><thead><tr><th>Model</th><th>Requests/s</th><th>In progress</th></tr></thead>
+      <tbody id="tritonRows"><tr><td colspan="3">loading&hellip;</td></tr></tbody></table>
     <small id="loadGpus"></small>
   </section>
 </main>
@@ -93,22 +98,33 @@
     a.addEventListener("mousemove", e => { pop.style.left = (e.clientX + 16) + "px"; pop.style.top = (e.clientY + 16) + "px"; });
     a.addEventListener("mouseleave", () => { pop.style.display = "none"; });
   });
-  // Served models' load: /status/load is one fixed Prometheus query (Caddyfile); refreshed every 15 s.
-  const fmt = (v, d) => v === undefined ? "–" : (+v).toFixed(d);
+  // The served models: details from the LLM gateway (/status/models) and load from one fixed Prometheus query
+  // (/status/load); both routes are in the Caddyfile. Refreshed every 15 s.
+  const fmt = (v, d) => v === undefined || v === null || !isFinite(+v) ? "–" : (+v).toFixed(d);   // no traffic: NaN
+  const ctx = n => !n ? "–" : n >= 1024 ? Math.round(n / 1024) + "k" : n;
+  const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   async function load() {
+    let models = [], m = {}, gpus = [];
+    try { models = (await (await fetch("/status/models")).json()).data; } catch (e) {}
     try {
-      const r = await (await fetch("/status/load")).json(), models = {}, gpus = [];
-      for (const { metric: m, value: [, v] } of r.data.result) {
-        if (m.m === "gpu") { gpus.push(`${m.instance.replace(/^C2-GB300-/, "")} ${(+v).toFixed(0)}%`); continue; }
-        const k = m.server + "/" + m.model; (models[k] ??= { server: m.server, model: m.model })[m.m] = v;
+      for (const { metric: x, value: [, v] } of (await (await fetch("/status/load")).json()).data.result) {
+        if (x.m === "gpu") { gpus.push(`${x.instance.replace(/^C2-GB300-/, "")} ${(+v).toFixed(0)}%`); continue; }
+        ((m[x.server] ??= {})[x.model] ??= {})[x.m] = v;
       }
-      const rows = Object.values(models).sort((a, b) => a.server.localeCompare(b.server) || a.model.localeCompare(b.model));
-      document.getElementById("loadRows").innerHTML = rows.map(x =>
-        `<tr><td><span class="dot${x.up === "0" ? "" : " up"}"></span>${x.model}</td><td>${x.server === "dynamo" ? "Dynamo (LLM gateway)" : "Triton"}</td>` +
-        `<td>${fmt(x.rps, 2)}</td><td>${x.server === "dynamo" ? fmt(x.tps, 0) : ""}</td><td>${fmt(x.busy, 0)}</td></tr>`).join("") ||
-        '<tr><td colspan="5">no data</td></tr>';
-      document.getElementById("loadGpus").textContent = gpus.length ? "GPU use on their nodes: " + gpus.sort().join(" · ") : "";
-    } catch (e) { document.getElementById("loadRows").innerHTML = '<tr><td colspan="5">load unavailable</td></tr>'; }
+    } catch (e) {}
+    const d = m.dynamo || {};
+    document.getElementById("llmRows").innerHTML = models.map(x => {
+      const l = d[x.id] || {}, inputs = ["text", x.images && `images (${x.max_images ?? "any"} per request)`, x.tools && "tools",
+                                         x.reasoning && "reasoning"].filter(Boolean).join(" · ");
+      return `<tr><td><span class="dot${x.ready ? " up" : ""}" title="${x.ready ? "up" : "starting or down"}"></span><b>${esc(x.id)}</b>` +
+             `<small>${esc(x.about)} &middot; ${esc(x.licence)}</small></td><td>${ctx(x.context_window)}</td><td>${inputs}</td>` +
+             `<td>${isFinite(+l.speed) && l.speed !== undefined ? fmt(l.speed, 0) + " tok/s" : "–"}</td><td>${fmt(l.rps, 2)}</td><td>${fmt(l.busy, 0)}</td></tr>`;
+    }).join("") || '<tr><td colspan="6">unavailable</td></tr>';
+    const t = m.triton || {};
+    document.getElementById("tritonRows").innerHTML = Object.keys(t).sort().map(k =>
+      `<tr><td>${esc(k)}</td><td>${fmt(t[k].rps, 2)}</td><td>${fmt(t[k].busy, 0)}</td></tr>`).join("") ||
+      '<tr><td colspan="3">unavailable</td></tr>';
+    document.getElementById("loadGpus").textContent = gpus.length ? "GPU use on their nodes: " + gpus.sort().join(" · ") : "";
   }
   load(); setInterval(load, 15000);
 </script>
