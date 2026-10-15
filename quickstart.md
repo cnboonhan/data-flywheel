@@ -1,6 +1,6 @@
 # Quickstart
 
-Connect to the stack from your laptop or a cluster node. You need the account details you were given: your name, a Keycloak password, an MLflow token, an S3 key pair and, to call served models, a Triton token.
+Connect to the stack from your laptop or a cluster node. You need the account details you were given: your name, a Keycloak password, an MLflow token, an S3 key pair and, to call served models, a Triton token and an LLM token.
 
 ## 1. Export the environment
 
@@ -21,6 +21,9 @@ export MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 
 # Triton (only if you call served models)
 export TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT TRITON_TOKEN=<Triton token>
+
+# LLM gateway (only if you call the large LLMs; OpenAI-compatible)
+export LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1 LLM_TOKEN=<LLM token> SSL_CERT_FILE=$FLYWHEEL_CA
 ```
 
 ## 2. Set up SSH (from a laptop)

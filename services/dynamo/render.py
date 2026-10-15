@@ -44,7 +44,7 @@ def served_version(registered):
     try:
         mv = mlflow("registered-models/alias", name=registered, alias="dynamo")["model_version"]
     except urllib.error.HTTPError as e:
-        if e.code == 404:
+        if e.code == 404 or (e.code == 400 and "alias" in e.read().decode()):   # no such model; model but no alias
             return None
         raise
     tags = {t["key"]: t["value"] for t in mv.get("tags", [])}
@@ -60,7 +60,8 @@ common = dict(network_mode="host", user=user, ipc="host", shm_size="32gb",
 
 def engine(m, path, extra, rank):
     p = m["ports"]
-    cmd = ["python3", "-m", "dynamo.vllm", "--model", path, "--served-model-name", m["name"],
+    cmd = ["numactl", "--membind", cfg["host_numa_nodes"],   # host memory on the CPU nodes only (models.yaml)
+           "python3", "-m", "dynamo.vllm", "--model", path, "--served-model-name", m["name"],
            *cfg["common_args"], *m["args"], *extra,
            "--nnodes", "2", "--node-rank", str(rank), "--master-addr", head, "--master-port", str(p["rendezvous"])]
     if rank:
@@ -70,17 +71,17 @@ def engine(m, path, extra, rank):
            "DYN_TCP_RPC_HOST": "127.0.0.1", "DYN_SYSTEM_HOST": "127.0.0.1", "DYN_SYSTEM_PORT": str(p["system"]),
            "DYN_SYSTEM_ENABLED": "true"}
     return {**common, "image": m["image"], "restart": "no", "command": cmd, "environment": env,
-            "devices": ["nvidia.com/gpu=all", "/dev/nvidia-caps-imex-channels/channel0"],   # IMEX: NVLink across trays
+            "devices": ["nvidia.com/gpu=all", "/dev/infiniband"], "cap_add": ["IPC_LOCK", "SYS_NICE"],   # IB; numactl
             "ulimits": {"memlock": -1, "stack": 67108864},
             "volumes": [f"{state}/versitygw/buckets/mlflow:/mlflow:ro", f"{state}/dynamo/cache/{m['name']}:/cache"]}
 
 
 head_svc = {"etcd": {**common, "image": "bitnamilegacy/etcd:3.6.1", "restart": "unless-stopped",
-                     "environment": {"ALLOW_NONE_AUTHENTICATION": "yes", "ETCD_DATA_DIR": "/data",
+                     "environment": {"ALLOW_NONE_AUTHENTICATION": "yes",
                                      "ETCD_LISTEN_CLIENT_URLS": "http://127.0.0.1:2379",
                                      "ETCD_ADVERTISE_CLIENT_URLS": "http://127.0.0.1:2379",
                                      "ETCD_LISTEN_PEER_URLS": "http://127.0.0.1:2380"},
-                     "volumes": [f"{state}/dynamo/etcd:/data"]}}
+                     "volumes": [f"{state}/dynamo/etcd:/bitnami/etcd"]}}   # the image's data path; ETCD_DATA_DIR isn't honoured
 worker_svc, gw_models, skipped = {}, {}, []
 for m in cfg["models"]:
     v = served_version(m["registered"])

@@ -13,7 +13,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
 | Triton: model serving from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (bearer token) |
-| Dynamo + LLM gateway: the large LLMs, critical-traffic priority, model switching (prepared) | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (gateway token) |
+| Dynamo + LLM gateway: the large LLMs (GLM-5.3), critical-traffic priority | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (gateway token) |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run

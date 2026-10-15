@@ -77,7 +77,13 @@ dynamo() {
         on "$DYNAMO_WORKER" worker.json up -d "engine-$m"
         on "$DYNAMO_HEAD" head.json up -d "engine-$m"
         echo "dynamo: $m loading (minutes: weights from /tier1, then compilation)"
-        until ssh "$DYNAMO_HEAD" "curl -fs http://127.0.0.1:$port/health" >/dev/null 2>&1; do sleep 10; done
+        until ssh "$DYNAMO_HEAD" "curl -fs http://127.0.0.1:$port/health" >/dev/null 2>&1; do
+          for node in "$DYNAMO_HEAD" "$DYNAMO_WORKER"; do
+            [[ $(ssh "$node" "bash -lc 'docker inspect -f {{.State.Running}} flywheel-dynamo-engine-$m-1'") == true ]] ||
+              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo [worker] logs engine-$m)" >&2; return 1; }
+          done
+          sleep 10
+        done
         [[ $m == "$default" ]] || { ssh "$DYNAMO_HEAD" "curl -fs -X POST -H 'Content-Type: application/json' -d '{\"level\": 1}' http://127.0.0.1:$port/engine/control/sleep" >/dev/null && echo "dynamo: $m asleep"; }
       done
       echo "dynamo: $default awake; gateway on $head_addr:8199" ;;

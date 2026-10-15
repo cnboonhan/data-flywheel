@@ -57,6 +57,9 @@ async def control(name, action, body):
 async def switch_to(name):
     """Put the awake model to sleep and wake `name` (callers hold `lock`)."""
     cur = state["awake"]
+    if cur is None and await listed(name):   # came up after the gateway started (ctl.sh dynamo up starts the gateway first)
+        state["awake"] = name
+        return
     state["switching"] = name
     try:
         if cur and cur != name:

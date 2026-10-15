@@ -10,16 +10,21 @@
 # Flags follow Dynamo's and vLLM's recipes for these models (services/dynamo/README.md); none is tuned here yet.
 
 default_awake: kimi-k3   # awake after `ctl.sh dynamo up`; untuned choice
+# The trays' CPU-memory NUMA nodes (`numactl -H`: the nodes with CPUs; each GPU's memory is a node too). Engines are
+# bound to them, so a sleeping model's weights and other host buffers can't land in a GPU's memory and block its wake.
+host_numa_nodes: "0,1"
 
 common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp, --enable-sleep-mode,
-              --scheduling-policy, priority, --enable-prefix-caching, --kv-cache-dtype, fp8]
+              --scheduling-policy, priority, --enable-prefix-caching, --kv-cache-dtype, fp8, --disable-custom-all-reduce]
 common_env:
   NCCL_SOCKET_IFNAME: bond0          # the trays' 10.80.81.x network (`ip -4 addr`); untuned
   GLOO_SOCKET_IFNAME: bond0
-  NCCL_MNNVL_ENABLE: "1"             # NVLink across the two trays (IMEX), per the Kimi K3 recipe
-  NCCL_CUMEM_ENABLE: "1"
+  # NVLink-fabric memory (MNNVL) and NVLS hang NCCL on these racks, even within one tray (README: notes); the trays
+  # talk over InfiniBand instead, GPUs within a tray over plain P2P
+  NCCL_MNNVL_ENABLE: "0"
+  NCCL_NVLS_ENABLE: "0"
+  VLLM_ALLREDUCE_USE_SYMM_MEM: "0"
   VLLM_USE_NCCL_SYMM_MEM: "0"        # Dynamo's GB300 recipe: symm-mem breaks CUDA-graph capture
-  UCX_CUDA_IPC_ENABLE_MNNVL: "y"
 
 models:
   - name: kimi-k3
@@ -32,19 +37,21 @@ models:
            --scheduler-cls, vllm.v1.core.sched.async_scheduler.AsyncScheduler,
            --dyn-tool-call-parser, kimi_k3, --reasoning-parser, kimi_k3, --dyn-reasoning-parser, kimi_k3]
     # max-model-len 262144: a quarter of K3's 1M, to leave KV room at 0.85 of each GPU; max-num-seqs 64: untuned
-    env:
-      VLLM_ALLREDUCE_USE_FLASHINFER: "1"
-      VLLM_FLASHINFER_ALLREDUCE_BACKEND: mnnvl
+    env: {}   # the recipe's FlashInfer MNNVL all-reduce needs the NVLink fabric (common_env)
 
   - name: glm-5.3
     registered: GLM-5.3
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1   # vLLM 0.28; no GLM-5.3 image of Dynamo's own (README: risk)
     ports: {frontend: 8192, system: 9312, rendezvous: 29512}
     frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, glm47, --tool-call-parser, glm47, --enable-auto-tool-choice]
-    args: [--max-model-len, "131072", --gpu-memory-utilization, "0.85",
+    args: [--max-model-len, "131072", --gpu-memory-utilization, "0.75",
            --speculative-config, '{"method":"mtp","num_speculative_tokens":5}',
-           --tool-call-parser, glm47, --reasoning-parser, glm47, --enable-auto-tool-choice]
-    # max-model-len 131072: untuned; FP8 weights take ~95 GB of each GPU
+           --reasoning-parser, glm47, --dyn-tool-call-parser, glm47, --dyn-reasoning-parser, glm45]
+    # max-model-len 131072: untuned; FP8 weights take ~91 GiB of each GPU. gpu-memory-utilization 0.75 (207 GiB, ~1M
+    # tokens of KV cache): vLLM wants that much free at start, and at 0.85 (235 GiB) Linux file cache on a GPU's memory
+    # (README) failed the check. Dynamo's worker takes the tool parser as
+    # --dyn-tool-call-parser (vLLM's own --tool-call-parser, --enable-auto-tool-choice go to the frontend); glm45 is
+    # Dynamo's GLM reasoning parser (its GLM-5.2 recipe)
     env: {}
 
   - name: inkling

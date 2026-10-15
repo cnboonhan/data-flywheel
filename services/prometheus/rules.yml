@@ -1,0 +1,11 @@
+# Per-user GPU use, recorded every minute (evaluation_interval) from the Slurm job pusher's slurm_job_gpu, so GPU-hours
+# over any range are a plain sum: sum_over_time(flywheel:user_gpus_held[30d]) / 60. Only jobs the pusher can see count,
+# and only while it runs; Docker containers outside Slurm aren't attributed to anyone.
+groups:
+  - name: flywheel-gpu-hours
+    interval: 1m
+    rules:
+      - record: flywheel:user_gpus_held        # GPUs each user's jobs hold
+        expr: count by (user, partition) (slurm_job_gpu{job="slurm_jobs"})
+      - record: flywheel:user_gpus_busy        # the same GPUs weighted by utilisation: 2 GPUs at 50% = 1
+        expr: sum by (user, partition) (DCGM_FI_DEV_GPU_UTIL / 100 * on (instance, gpu) group_left (user, partition) slurm_job_gpu{job="slurm_jobs"})
