@@ -9,7 +9,7 @@ them, a laptop included, without a GPU.
     | DETECT  | DETECT_ENDPOINT   | llmdet_large           | Apache-2.0 | finding objects                           |
     | SEGMENT | SEGMENT_ENDPOINT  | sam2.1-hiera-large     | Apache-2.0 | outlining objects                         |
 
-The VLM is a model on the LLM gateway (LLM_URL, LLM_TOKEN, quickstart.md; VLM_MODEL picks another of its models).
+The VLM is a model on the LLM gateway (LLM_URL, quickstart.md; VLM_MODEL picks another of its models).
 Each other variable is a full URL (https://<host:port>/v2/models/<model>) or a model name on the flywheel Triton
 (TRITON_URL, else triton.$SERVICE_HOST:$CADDY_PORT); the token is TRITON_TOKEN (or <ROLE>_TOKEN), the CA AWS_CA_BUNDLE
 (or FLYWHEEL_CA).
@@ -58,7 +58,7 @@ class Triton:
         """One answer from the VLM (greedy, thinking off), about the RGB image if given; at most max_tokens (1000 by
         default, untuned)."""
         if not self.vlm_url:
-            raise SystemExit("VLM: set LLM_URL and LLM_TOKEN (quickstart.md)")
+            raise SystemExit("VLM: set LLM_URL (quickstart.md)")
         content = [{"type": "text", "text": text}]
         if image is not None:   # quality 92: untuned
             content.insert(0, {"type": "image_url", "image_url": {
@@ -66,7 +66,7 @@ class Triton:
         body = {"model": self.vlm_model, "messages": [{"role": "user", "content": content}], "temperature": 0,
                 "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False}}
         req = urllib.request.Request(self.vlm_url.rstrip("/") + "/chat/completions", json.dumps(body).encode(),
-                                     {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ.get("LLM_TOKEN", "")})
+                                     {"Content-Type": "application/json"})
         ca = os.environ.get("FLYWHEEL_CA") or os.environ.get("AWS_CA_BUNDLE")
         with urllib.request.urlopen(req, context=ssl.create_default_context(cafile=ca), timeout=900) as r:   # as Triton's calls
             return json.loads(r.read())["choices"][0]["message"]["content"].strip()

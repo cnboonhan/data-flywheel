@@ -297,9 +297,8 @@ ROBODOJO_DIR=$STATE_DIR/robodojo
 BUCKETS_DIR=$STATE_DIR/versitygw/buckets
 DATA_ROOT=$STATE_DIR/xpolicylab
 TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
-# The LLM gateway (Dynamo's models, OpenAI API): sim tools' VLM, scripts
+# The LLM gateway (Dynamo's models, OpenAI API, no token): sim tools' VLM, scripts
 LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1
-LLM_TOKEN=$LLM_TOKEN
 SERVICE_NODE=$SERVICE_NODE
 TRITON_TOKEN=${TRITON_TOKEN:-}
 EOF

@@ -16,7 +16,7 @@ Every node series carries `instance` (the node's name), `partition` (its Slurm p
 
 ## Use
 
-1. Open Grafana, then **Dashboards → Flywheel → GPU nodes**, and pick a partition or node at the top. Its **Jobs** row has each job's GPUs, VRAM, CPU and RAM against what it was allocated; its **Nodes** row each node's CPU, RAM, GPU and VRAM use.
+1. Open Grafana, then **Dashboards → Flywheel → GPU nodes**, and pick a partition or node at the top. Its first row counts the GPUs, those idle (under 5% over 15 min), those no Slurm job holds, and their free memory. Its **Jobs** row has each job's GPUs, VRAM, CPU and RAM against what it was allocated; its **Nodes** row each node's CPU, RAM, GPU and VRAM use.
    For the served models, open **Flywheel → Model usage**: requests and tokens per model over the time range (gateway and Triton), and requests, tokens, time to first token and latency over time.
 2. Or query in **Explore** (data source Prometheus), e.g. the GPUs idle for the last hour:
    ```

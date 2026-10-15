@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server on two GPUs of a node of its own (`TRITON_NODE`, `TRITON_GPU0`, `TRITON_GPU1` in [`.env.example`](../.env.example); `compose.yml`, started by `ctl.sh up`), serving the image models and robot policies from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, header `Authorization: Bearer $TRITON_TOKEN`).
+Triton Inference Server on two GPUs of a node of its own (`TRITON_NODE`, `TRITON_GPU0`, `TRITON_GPU1` in [`.env.example`](../.env.example); `compose.yml`, started by `ctl.sh up`), serving the image models and robot policies from the MLflow registry at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC; no token for inference and metadata, `Authorization: Bearer $TRITON_TOKEN` to load or unload models or change the server's settings).
 
 ## Serve a model
 
@@ -14,12 +14,12 @@ Triton Inference Server on two GPUs of a node of its own (`TRITON_NODE`, `TRITON
 
 ## Call a model
 
-Use `TRITON_URL` and `TRITON_TOKEN` from `flywheel.env`:
+Use `TRITON_URL` from `flywheel.env`:
 
 ```python
 import os, tritonclient.grpc as tg
 c = tg.InferenceServerClient(os.environ["TRITON_URL"], ssl=True, root_certificates=os.environ["AWS_CA_BUNDLE"])
-chunk = c.infer(name, inputs, headers={"authorization": "Bearer " + os.environ["TRITON_TOKEN"]}).as_numpy("action")
+chunk = c.infer(name, inputs).as_numpy("action")
 ```
 
 Models are stateless: one observation in, one action chunk out. `state` is packed per arm as `[arm, ee]` in the embodiment's `arms` order.
@@ -40,11 +40,9 @@ def tensor(name, values, dtype):   # dtype: BYTES, FP32 or INT32
     return t
 
 jpg = open("view.jpg", "rb").read()
-auth = lambda: {"authorization": "Bearer " + os.environ["TRITON_TOKEN"]}   # a fresh dict per call
-r = c.infer("moge-3-vitg", [tensor("image", [jpg], "BYTES"), tensor("fov_x", [90.0], "FP32")], headers=auth())
+r = c.infer("moge-3-vitg", [tensor("image", [jpg], "BYTES"), tensor("fov_x", [90.0], "FP32")])
 distance = r.as_numpy("distance")                                          # metres, [H, W]
-r = c.infer("Qwen-Image-Edit-2511", [tensor("images", [jpg], "BYTES"), tensor("prompt", [b"Remove the bucket."], "BYTES")],
-            headers=auth())
+r = c.infer("Qwen-Image-Edit-2511", [tensor("images", [jpg], "BYTES"), tensor("prompt", [b"Remove the bucket."], "BYTES")])
 png = r.as_numpy("image")[0]                                               # the edited image, PNG bytes
 ```
 

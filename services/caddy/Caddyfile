@@ -123,6 +123,13 @@ https://{$SERVICE_HOST}:8443 {
 		rewrite * /root.crt
 		file_server
 	}
+	# The landing page's model load table: one fixed, read-only Prometheus query (requests and tokens per second, requests
+	# in progress and up/down per served model on Dynamo and Triton, GPU use of their nodes), so nothing else in
+	# Prometheus is reachable from this page, which has no login.
+	handle /status/load {
+		rewrite * /api/v1/query?query=label_replace%28label_replace%28sum%20by%20%28model%29%20%28rate%28llm_gateway_requests_total%5B5m%5D%29%29%2C%20%22m%22%2C%20%22rps%22%2C%20%22%22%2C%20%22%22%29%2C%20%22server%22%2C%20%22dynamo%22%2C%20%22%22%2C%20%22%22%29%20or%20label_replace%28label_replace%28sum%20by%20%28model%29%20%28rate%28%7B__name__%3D%22vllm%3Ageneration_tokens_total%22%2C%20job%3D%22dynamo%22%7D%5B5m%5D%29%29%2C%20%22m%22%2C%20%22tps%22%2C%20%22%22%2C%20%22%22%29%2C%20%22server%22%2C%20%22dynamo%22%2C%20%22%22%2C%20%22%22%29%20or%20label_replace%28label_replace%28sum%20by%20%28model%29%20%28%7B__name__%3D~%22vllm%3Anum_requests_%28running%7Cwaiting%29%22%2C%20job%3D%22dynamo%22%7D%29%2C%20%22m%22%2C%20%22busy%22%2C%20%22%22%2C%20%22%22%29%2C%20%22server%22%2C%20%22dynamo%22%2C%20%22%22%2C%20%22%22%29%20or%20label_replace%28label_replace%28max%20by%20%28model%29%20%28llm_gateway_served%29%2C%20%22m%22%2C%20%22up%22%2C%20%22%22%2C%20%22%22%29%2C%20%22server%22%2C%20%22dynamo%22%2C%20%22%22%2C%20%22%22%29%20or%20label_replace%28label_replace%28sum%20by%20%28model%29%20%28rate%28nv_inference_request_success%7Bjob%3D%22triton%22%7D%5B5m%5D%29%29%2C%20%22m%22%2C%20%22rps%22%2C%20%22%22%2C%20%22%22%29%2C%20%22server%22%2C%20%22triton%22%2C%20%22%22%2C%20%22%22%29%20or%20label_replace%28label_replace%28max%20by%20%28model%29%20%28nv_inference_pending_request_count%7Bjob%3D%22triton%22%7D%29%2C%20%22m%22%2C%20%22busy%22%2C%20%22%22%2C%20%22%22%29%2C%20%22server%22%2C%20%22triton%22%2C%20%22%22%2C%20%22%22%29%20or%20label_replace%28avg%20by%20%28instance%29%20%28DCGM_FI_DEV_GPU_UTIL%7Binstance%3D~%22{$SERVING_NODES}%22%7D%29%2C%20%22m%22%2C%20%22gpu%22%2C%20%22%22%2C%20%22%22%29
+		reverse_proxy prometheus:9090
+	}
 	# devroles/*.md are only included into the landing page by its template, never served: the folder also holds private
 	# notes (critical-path.md), and this site has no login.
 	handle /devroles/* {
@@ -171,14 +178,17 @@ https://rerun.{$SERVICE_HOST}:8443 {
 	}
 }
 
-# Triton for programs (robots, evaluation jobs): HTTP/REST (/v2/...) and gRPC on one name, with a bearer token
-# (TRITON_TOKEN) instead of SSO; an empty token never matches. gRPC requests are told apart by their content type.
+# Triton for programs (robots, evaluation jobs): HTTP/REST (/v2/...) and gRPC on one name. Inference and metadata need
+# no token; changing the server (loading and unloading models, log and trace settings, shared-memory regions) needs the
+# bearer token TRITON_TOKEN, else anyone could take models offline (an empty token never matches). gRPC requests are
+# told apart by their content type.
 https://triton.{$SERVICE_HOST}:8443 {
 	@token expression `{env.TRITON_TOKEN} != "" && {http.request.header.Authorization} == "Bearer " + {env.TRITON_TOKEN}`
+	@admin_http path_regexp ^/v2/(repository/models/[^/]+/(load|unload)|logging|trace(/setting)?|models/[^/]+/trace/setting|(system|cuda)sharedmemory(/.*)?)$
+	@admin_grpc path /inference.GRPCInferenceService/RepositoryModelLoad /inference.GRPCInferenceService/RepositoryModelUnload /inference.GRPCInferenceService/LogSettings /inference.GRPCInferenceService/TraceSetting /inference.GRPCInferenceService/SystemSharedMemory* /inference.GRPCInferenceService/CudaSharedMemory*
+	@grpc header Content-Type application/grpc*
 	handle @token {
-		request_header -Authorization
-		@grpc header Content-Type application/grpc*
-		# Triton's default ports: gRPC on 8001 (HTTP/2, cleartext inside), HTTP on 8000.
+		request_header -Authorization   # here, not at the top: Caddy strips before @token would see it
 		handle @grpc {
 			reverse_proxy h2c://{$TRITON_ADDR}:8101 {
 				header_up triton-key {env.TRITON_KEY}
@@ -190,13 +200,27 @@ https://triton.{$SERVICE_HOST}:8443 {
 			}
 		}
 	}
+	handle @admin_http {
+		respond "Triton: changing the server needs Authorization: Bearer <TRITON_TOKEN>" 401
+	}
+	handle @admin_grpc {
+		respond "Triton: changing the server needs Authorization: Bearer <TRITON_TOKEN>" 401
+	}
+	# Triton's default ports: gRPC on 8001 (HTTP/2, cleartext inside), HTTP on 8000.
+	handle @grpc {
+		reverse_proxy h2c://{$TRITON_ADDR}:8101 {
+			header_up triton-key {env.TRITON_KEY}
+		}
+	}
 	handle {
-		respond "Triton: send Authorization: Bearer <TRITON_TOKEN>" 401
+		reverse_proxy {$TRITON_ADDR}:8100 {
+			header_up triton-key {env.TRITON_KEY}
+		}
 	}
 }
 
-# The LLMs on Dynamo (services/dynamo): the gateway on DYNAMO_HEAD checks its own tokens (LLM_TOKEN, LLM_CRITICAL_TOKEN),
-# so no SSO here; answers stream through as they come.
+# The language models on Dynamo (services/dynamo): open, no SSO and no token; the gateway on DYNAMO_HEAD checks only the
+# critical-traffic token (LLM_CRITICAL_TOKEN). Answers stream through as they come.
 https://llm.{$SERVICE_HOST}:8443 {
 	reverse_proxy {$LLM_GATEWAY_ADDR:127.0.0.1}:8199 {
 		flush_interval -1

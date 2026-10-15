@@ -32,7 +32,7 @@
     "h": 8,
     "w": 18,
     "x": 0,
-    "y": 0
+    "y": 5
    },
    "hiddenSeries": false,
    "id": 12,
@@ -117,7 +117,7 @@
     "h": 8,
     "w": 6,
     "x": 18,
-    "y": 0
+    "y": 5
    },
    "id": 14,
    "options": {
@@ -184,7 +184,7 @@
     "h": 8,
     "w": 18,
     "x": 0,
-    "y": 8
+    "y": 13
    },
    "hiddenSeries": false,
    "id": 10,
@@ -270,7 +270,7 @@
     "h": 8,
     "w": 6,
     "x": 18,
-    "y": 8
+    "y": 13
    },
    "id": 16,
    "links": [],
@@ -326,7 +326,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 16
+    "y": 21
    },
    "hiddenSeries": false,
    "id": 2,
@@ -421,7 +421,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 24
+    "y": 29
    },
    "hiddenSeries": false,
    "id": 6,
@@ -511,7 +511,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 32
+    "y": 37
    },
    "hiddenSeries": false,
    "id": 18,
@@ -601,7 +601,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 24
+    "y": 29
    },
    "hiddenSeries": false,
    "id": 4,
@@ -687,7 +687,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 40
+    "y": 45
    },
    "panels": [],
    "id": 19
@@ -704,7 +704,7 @@
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 41
+    "y": 46
    },
    "targets": [
     {
@@ -1011,7 +1011,7 @@
     "h": 5,
     "w": 12,
     "x": 0,
-    "y": 51
+    "y": 56
    },
    "targets": [
     {
@@ -1068,7 +1068,7 @@
     "h": 5,
     "w": 12,
     "x": 12,
-    "y": 51
+    "y": 56
    },
    "targets": [
     {
@@ -1115,7 +1115,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 56
+    "y": 61
    },
    "targets": [
     {
@@ -1165,7 +1165,7 @@
     "h": 9,
     "w": 12,
     "x": 12,
-    "y": 56
+    "y": 61
    },
    "targets": [
     {
@@ -1214,7 +1214,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 65
+    "y": 70
    },
    "targets": [
     {
@@ -1286,7 +1286,7 @@
     "h": 14,
     "w": 24,
     "x": 0,
-    "y": 73
+    "y": 78
    },
    "targets": [
     {
@@ -1452,7 +1452,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 87
+    "y": 92
    },
    "panels": [],
    "id": 27
@@ -1468,7 +1468,7 @@
     "h": 12,
     "w": 24,
     "x": 0,
-    "y": 88
+    "y": 93
    },
    "description": "Per node: CPU busy and RAM in use (node_exporter), GPU utilisation and VRAM (dcgm-exporter), and how many of its GPUs jobs hold.",
    "targets": [
@@ -1694,7 +1694,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 100
+    "y": 105
    },
    "targets": [
     {
@@ -1744,7 +1744,7 @@
     "h": 9,
     "w": 12,
     "x": 12,
-    "y": 100
+    "y": 105
    },
    "targets": [
     {
@@ -1791,7 +1791,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 109
+    "y": 114
    },
    "panels": [],
    "id": 31
@@ -1807,7 +1807,7 @@
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 110
+    "y": 115
    },
    "description": "Per user, summed over their running jobs (those the Slurm job pusher can see): what they hold and use.",
    "targets": [
@@ -2109,7 +2109,7 @@
     "h": 9,
     "w": 14,
     "x": 0,
-    "y": 119
+    "y": 124
    },
    "targets": [
     {
@@ -2166,7 +2166,7 @@
     "h": 9,
     "w": 10,
     "x": 14,
-    "y": 119
+    "y": 124
    },
    "description": "Over the dashboard's time range, sampled every 5 minutes: GPU-hours held, GPU-hours busy (held x utilisation), and the busy share. Only time the pusher was running counts.",
    "targets": [
@@ -2315,7 +2315,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 128
+    "y": 133
    },
    "panels": [],
    "id": 35
@@ -2332,7 +2332,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 129
+    "y": 134
    },
    "targets": [
     {
@@ -2381,7 +2381,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 129
+    "y": 134
    },
    "targets": [
     {
@@ -2430,7 +2430,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 137
+    "y": 142
    },
    "targets": [
     {
@@ -2479,7 +2479,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 137
+    "y": 142
    },
    "targets": [
     {
@@ -2524,6 +2524,198 @@
     }
    },
    "id": 39
+  },
+  {
+   "type": "stat",
+   "title": "GPUs",
+   "description": "GPUs in the selection.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 40,
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 0,
+    "y": 0
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "count(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$instance\", gpu=~\"$gpu\"})",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs idle",
+   "description": "GPUs under 5% utilisation on average over the last 15 min: left unused, whatever holds them.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 41,
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 6,
+    "y": 0
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "count(avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$instance\", gpu=~\"$gpu\"}[15m]) < 5) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPUs not held by a Slurm job",
+   "description": "GPUs no running Slurm job holds (as far as the pusher sees). Services outside Slurm, such as Triton and Dynamo, use some of these.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 42,
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 12,
+    "y": 0
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "count(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$instance\", gpu=~\"$gpu\"} unless on (instance, gpu) slurm_job_gpu{job=\"slurm_jobs\"}) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "GPU memory free",
+   "description": "Free framebuffer memory over the selected GPUs.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 43,
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 0
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum(DCGM_FI_DEV_FB_FREE{partition=~\"$partition\", instance=~\"$instance\", gpu=~\"$gpu\"}) * 1024 * 1024",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   }
   }
  ],
  "refresh": "30s",

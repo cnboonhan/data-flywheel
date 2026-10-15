@@ -17,3 +17,4 @@ curl -k https://$SERVICE_HOST:$CADDY_PORT/grafana/api/health
 ## Notes
 
 - Log in as the admin through Keycloak or with `ADMIN_USER`: `ctl.sh up` gives the built-in admin the SSO admin's email, so both land on the same account.
+- After editing a dashboard's JSON in `provisioning/dashboards/`, restart Grafana (`services/ctl.sh restart grafana`): it doesn't pick up the change on this filesystem by itself.

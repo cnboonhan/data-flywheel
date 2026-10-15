@@ -39,6 +39,12 @@
   .card h1 { font-size: 18px; margin: 10px 0 4px; } .card h2 { font-size: 15px; margin: 14px 0 6px; } .card p { color: var(--fg); margin: 0 0 8px; }
   .card img { width: 100%; height: auto; }
   .card table { border-collapse: collapse; width: 100%; } .card td, .card th { border-top: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); padding: 5px 8px; text-align: left; vertical-align: top; }
+  #load { margin-top: 28px; } #load h2 { font-size: 16px; margin: 0 0 6px; }
+  #load table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--box); border-radius: 8px; overflow: hidden; }
+  #load th, #load td { padding: 5px 10px; text-align: right; border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent); }
+  #load th:first-child, #load td:first-child, #load td:nth-child(2) { text-align: left; } #load th { color: var(--muted); font-weight: 500; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot.up { background: var(--accent); }
 </style>
 </head>
 <body>
@@ -58,6 +64,12 @@
     <li><a href="https://s3.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/ui/">S3 Gateway UI</a> <small>Versity S3 Gateway &middot; API endpoint: <code>https://s3.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}</code></small></li>
     <li><a href="/auth/admin/flywheel/console/">Keycloak</a> <small>Single sign-on: users and groups</small></li>
   </ul>
+  <section id="load">
+    <h2>Served models <small style="display:inline">&middot; live, 5-min averages &middot; <a href="/grafana/d/model-usage">more in Grafana</a></small></h2>
+    <table><thead><tr><th>Model</th><th>Server</th><th>Requests/s</th><th>Tokens/s</th><th>In progress</th></tr></thead>
+      <tbody id="loadRows"><tr><td colspan="5">loading&hellip;</td></tr></tbody></table>
+    <small id="loadGpus"></small>
+  </section>
 </main>
 <img id="bufo" alt="">
 <script>
@@ -81,6 +93,24 @@
     a.addEventListener("mousemove", e => { pop.style.left = (e.clientX + 16) + "px"; pop.style.top = (e.clientY + 16) + "px"; });
     a.addEventListener("mouseleave", () => { pop.style.display = "none"; });
   });
+  // Served models' load: /status/load is one fixed Prometheus query (Caddyfile); refreshed every 15 s.
+  const fmt = (v, d) => v === undefined ? "–" : (+v).toFixed(d);
+  async function load() {
+    try {
+      const r = await (await fetch("/status/load")).json(), models = {}, gpus = [];
+      for (const { metric: m, value: [, v] } of r.data.result) {
+        if (m.m === "gpu") { gpus.push(`${m.instance.replace(/^C2-GB300-/, "")} ${(+v).toFixed(0)}%`); continue; }
+        const k = m.server + "/" + m.model; (models[k] ??= { server: m.server, model: m.model })[m.m] = v;
+      }
+      const rows = Object.values(models).sort((a, b) => a.server.localeCompare(b.server) || a.model.localeCompare(b.model));
+      document.getElementById("loadRows").innerHTML = rows.map(x =>
+        `<tr><td><span class="dot${x.up === "0" ? "" : " up"}"></span>${x.model}</td><td>${x.server === "dynamo" ? "Dynamo (LLM gateway)" : "Triton"}</td>` +
+        `<td>${fmt(x.rps, 2)}</td><td>${x.server === "dynamo" ? fmt(x.tps, 0) : ""}</td><td>${fmt(x.busy, 0)}</td></tr>`).join("") ||
+        '<tr><td colspan="5">no data</td></tr>';
+      document.getElementById("loadGpus").textContent = gpus.length ? "GPU use on their nodes: " + gpus.sort().join(" · ") : "";
+    } catch (e) { document.getElementById("loadRows").innerHTML = '<tr><td colspan="5">load unavailable</td></tr>'; }
+  }
+  load(); setInterval(load, 15000);
 </script>
 </body>
 </html>

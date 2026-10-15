@@ -6,12 +6,12 @@ flag. Which model is served is decided in MLflow, not by requests: the registere
     GET  /v1/models    the served models        GET /health, GET /metrics (Prometheus)
     GET  /metrics/<model>/frontend|engine   that model's Dynamo metrics, relayed from 127.0.0.1 (Prometheus job dynamo)
 
-Tokens: `Authorization: Bearer <LLM_TOKEN>` (normal) or `<LLM_CRITICAL_TOKEN>`. A request is critical when it carries
-`X-Priority: critical` *and* the critical token (the flag from any other token is ignored): it is scheduled ahead of
-normal ones inside the engine (x-dynamo-request-priority, vLLM's priority scheduler).
+No token is needed. A request is critical when it carries `X-Priority: critical` *and*
+`Authorization: Bearer <LLM_CRITICAL_TOKEN>` (the flag without that token is ignored): it is scheduled ahead of normal
+ones inside the engine (x-dynamo-request-priority, vLLM's priority scheduler).
 
 Each node that serves models runs a gateway; the one on DYNAMO_HEAD (Caddy's llm.<host>) also forwards the other nodes'
-models to their gateway, which checks the token again and counts the request.
+models to their gateway, which classifies and counts the request.
 
 Config: GATEWAY_CONFIG (JSON: models {name: {frontend, system} served here, or {gateway} on another node's gateway},
 known [names in models.yaml]), GATEWAY_LISTEN host:port.
@@ -23,8 +23,7 @@ from aiohttp import ClientSession, ClientTimeout, web
 
 CFG = json.load(open(os.environ.get("GATEWAY_CONFIG", "/config/gateway.json")))
 MODELS = CFG["models"]
-TOKENS = {os.environ.get("LLM_TOKEN", ""): "normal", os.environ.get("LLM_CRITICAL_TOKEN", ""): "critical"}
-TOKENS.pop("", None)
+CRITICAL_TOKEN = os.environ.get("LLM_CRITICAL_TOKEN", "")
 PRIORITY = {"critical": "100", "normal": "0"}   # Dynamo's x-dynamo-request-priority: higher runs first
 
 LOCAL = [m for m, c in MODELS.items() if "frontend" in c]
@@ -47,12 +46,10 @@ async def listed(name):
 
 
 def classify(request):
-    auth = request.headers.get("Authorization", "")
-    kind = TOKENS.get(auth.removeprefix("Bearer ").strip())
-    if kind is None:
-        raise web.HTTPUnauthorized(text="LLM gateway: send Authorization: Bearer <token>")
+    """critical with the flag and the critical token; anything else (no token, any other token) is normal."""
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     flagged = request.headers.get("X-Priority", "").lower() == "critical"
-    return "critical" if flagged and kind == "critical" else "normal"
+    return "critical" if flagged and CRITICAL_TOKEN and token == CRITICAL_TOKEN else "normal"
 
 
 async def forward(request):
@@ -68,7 +65,7 @@ async def forward(request):
             raise web.HTTPServiceUnavailable(text=f"{name} is not served now (served: {served}); the served model is "
                                                   "chosen by its MLflow alias `dynamo`")
         raise web.HTTPNotFound(text=f"unknown model {name!r} (served: {served})")
-    if "gateway" in MODELS[name]:   # another node's: its gateway checks the token and counts it
+    if "gateway" in MODELS[name]:   # another node's: its gateway classifies and counts it
         return await proxy(request, MODELS[name]["gateway"],
                            {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")}, body)
     if not await listed(name):

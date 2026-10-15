@@ -127,7 +127,7 @@ def gateway(node):
     return {**common, "build": os.path.join(here, "..", "llm-gateway"), "image": "flywheel-llm-gateway:latest",
             "restart": "unless-stopped",
             "environment": {"GATEWAY_CONFIG": f"/config/{node}.gateway.json", "GATEWAY_LISTEN": f"{addr(node)}:{GATEWAY_PORT}",
-                            "LLM_TOKEN": "${LLM_TOKEN}", "LLM_CRITICAL_TOKEN": "${LLM_CRITICAL_TOKEN}"},
+                            "LLM_CRITICAL_TOKEN": "${LLM_CRITICAL_TOKEN}"},   # the only token: for X-Priority: critical
             "volumes": [f"{out}:/config:ro"]}
 
 
@@ -191,6 +191,8 @@ json.dump({"nodes": sorted(services), "served": served, "trays": trays}, open(os
 sd = [{"targets": [f"{addr(sv['node'])}:{GATEWAY_PORT}"],
        "labels": {"model": n, "part": part, "__metrics_path__": f"/metrics/{n}/{part}"}}
       for n, sv in served.items() for part in ("frontend", "engine")]
+sd += [{"targets": [f"{addr(node)}:{GATEWAY_PORT}"], "labels": {"part": "gateway"}}   # the other nodes' gateways (served models,
+       for node in sorted(local) if node != HEAD]                                    # requests); the head's is job llm-gateway
 os.makedirs(os.path.join(state, "prometheus-sd"), exist_ok=True)
 json.dump(sd, open(os.path.join(state, "prometheus-sd", "dynamo.json"), "w"), indent=1)
 print(f"rendered {', '.join(f"{n} ({sv['node']})" for n, sv in served.items()) or 'no models'}"

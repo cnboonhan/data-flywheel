@@ -4,9 +4,9 @@ The stack's language models on NVIDIA Dynamo, behind the LLM gateway at `https:/
 
 ```mermaid
 flowchart LR
-  C["clients<br/>(OpenAI API)"] -->|llm.host, token| Caddy --> G["gateway (DYNAMO_HEAD)<br/>tokens · critical flag"]
+  C["clients<br/>(OpenAI API)"] -->|llm.host| Caddy --> G["gateway (DYNAMO_HEAD)<br/>critical flag"]
   G --> T["8-GPU model<br/>rank 0 head + rank 1 worker<br/>InfiniBand between trays"]
-  G -->|token| G2["gateway (TRITON_NODE)"] --> S["one engine per model<br/>on its GPUs"]
+  G --> G2["gateway (TRITON_NODE)"] --> S["one engine per model<br/>on its GPUs"]
   M["MLflow alias dynamo"] -.->|ctl.sh dynamo sync, every minute| T & S
 ```
 
@@ -20,21 +20,21 @@ flowchart LR
 
 ## Use
 
-1. Get the gateway token (`LLM_TOKEN`; for mission-critical traffic, `LLM_CRITICAL_TOKEN`) and the stack's CA ([quickstart](../../quickstart.md)).
+1. Get the stack's CA and `LLM_URL` ([quickstart](../../quickstart.md)); no token is needed (only for mission-critical traffic, `LLM_CRITICAL_TOKEN`).
 2. Call it like any OpenAI endpoint; `GET /v1/models` lists what is served now:
    ```bash
-   curl --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H "Authorization: Bearer $LLM_TOKEN" -H 'Content-Type: application/json' \
+   curl --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H 'Content-Type: application/json' \
      -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'
    ```
    ```python
    import os
    from openai import OpenAI, DefaultHttpxClient
-   llm = OpenAI(base_url=os.environ["LLM_URL"], api_key=os.environ["LLM_TOKEN"],
+   llm = OpenAI(base_url=os.environ["LLM_URL"], api_key="none",   # no token needed
                 http_client=DefaultHttpxClient(verify=os.environ["FLYWHEEL_CA"]))   # the stack's CA
    print(llm.chat.completions.create(model="glm-5.3", messages=[{"role": "user", "content": "Hello"}]).choices[0].message.content)
    ```
    Images go in a message as `{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}` (Qwen models; at most 4 per request). Reasoning models return their reasoning in `message.reasoning_content`, and it counts towards `max_tokens`; turn it off with `"chat_template_kwargs": {"enable_thinking": false}`.
-3. Mark mission-critical requests with `X-Priority: critical` and the critical token: they run ahead of normal requests in the engine. With the normal token the flag is ignored.
+3. Mark mission-critical requests with `X-Priority: critical` and `Authorization: Bearer $LLM_CRITICAL_TOKEN`: they run ahead of the others in the engine. Without that token the flag is ignored.
 
 A model that isn't served answers `503` with what is; one that is starting (minutes after a change) answers `503` until it's up.
 
@@ -78,6 +78,6 @@ The sync refuses two tray models at once, and shares over a GPU's budget (`model
 - **Small models' limits:** 32k context, 32 requests at once, 4 images per request (as they had on Triton); without them vLLM's start-up profiling fills the model's share and it fails (`No available memory for the cache blocks`).
 - **Kimi K3 doesn't start in `vllm-runtime:1.5.0-kimi-k3-dev.1` on two trays:** at TP8 its MoE tail fusion shares memory over all 8 GPUs, which across trays needs the NVLink fabric (`Failed to send fd`); at TP4 x PP2 (`models.yaml`) the second stage fails capturing CUDA graphs (`CUDA error: invalid argument` pinning KDA metadata). Untried: `--enforce-eager` (no CUDA graphs, slower decoding). Each attempt keeps the trays from other models for ~25 min. htx_xingyu serves Kimi K3 on rack 01.
 - **No sleep mode:** models are stopped and started, not slept. vLLM's level-1 sleep garbled GLM-5.3's output after a wake and, with two models asleep, ran the trays out of CPU memory; level 2 with a weight reload worked for GLM-5.3 (~3 min) but Kimi K3's image refuses sleep mode.
-- Dynamo has no authentication or rate limits of its own; only the gateways listen beyond localhost (port 8199 on each node) and they check the tokens. etcd, the frontends and the engines' system APIs stay on 127.0.0.1.
+- No token and no rate limits: anyone who reaches the stack's port can use these models. Only the gateways listen beyond localhost (port 8199 on each node); etcd, the frontends and the engines' system APIs (stop, sleep, load weights) stay on 127.0.0.1.
 - Untested: GLM-5.3 on `vllm-runtime:1.5.1` pins transformers 5.14.1 where vLLM's recipe asks for 5.15 (outputs look right).
 - Licences: the Qwen models (but Flash-Next) and Inkling Apache-2.0; Qwen3.8-Flash-Next-NVFP4 the NVIDIA Open Model License; Kimi K3 and GLM-5.3 their own (MIT-like, with conditions only for large model-as-a-service businesses).

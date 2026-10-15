@@ -1,6 +1,6 @@
 # Quickstart
 
-Connect to the stack from your laptop or a cluster node. You need the account details you were given: your name, a Keycloak password, an MLflow token and an S3 key pair; to call served models, a Triton token and an LLM token; to push logs, the Loki push token.
+Connect to the stack from your laptop or a cluster node. You need the account details you were given: your name, a Keycloak password, an MLflow token and an S3 key pair; to push logs, the Loki push token. The served models need no token.
 
 ## 1. Export the environment
 
@@ -26,11 +26,11 @@ export GITEA_URL=https://$SERVICE_HOST:$CADDY_PORT/gitea GITEA_TOKEN=<your Gitea
 # Loki (only if you push logs)
 export LOKI_URL=https://$SERVICE_HOST:$CADDY_PORT/loki LOKI_TOKEN=<Loki push token>
 
-# Triton (only if you call served models)
-export TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT TRITON_TOKEN=<Triton token>
+# Triton (image models; no token)
+export TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
 
-# LLM gateway (only if you call the large LLMs; OpenAI-compatible)
-export LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1 LLM_TOKEN=<LLM token>
+# LLM gateway (the language models; OpenAI-compatible, no token)
+export LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1
 ```
 
 ## 2. Set up SSH (from a laptop)
@@ -141,7 +141,7 @@ Read them in Grafana (`https://$SERVICE_HOST:$CADDY_PORT/grafana`): **Explore**,
 ### Triton: served models
 
 ```bash
-triton() { curl -s --cacert $FLYWHEEL_CA -H "Authorization: Bearer $TRITON_TOKEN" "https://$TRITON_URL/v2/$1" "${@:2}"; }
+triton() { curl -s --cacert $FLYWHEEL_CA "https://$TRITON_URL/v2/$1" "${@:2}"; }
 triton health/ready -o /dev/null -w '%{http_code}\n'               # 200 when up
 triton repository/index -X POST                                   # models and their state (image models, policies)
 triton models/<model>                                             # its inputs and outputs
@@ -152,8 +152,8 @@ Calling a model from Python: [triton/](services/triton/README.md#call-a-model).
 ### LLMs: the gateway
 
 ```bash
-curl -s --cacert $FLYWHEEL_CA $LLM_URL/models -H "Authorization: Bearer $LLM_TOKEN"
-curl -s --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H "Authorization: Bearer $LLM_TOKEN" -H 'Content-Type: application/json' \
+curl -s --cacert $FLYWHEEL_CA $LLM_URL/models
+curl -s --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H 'Content-Type: application/json' \
   -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
