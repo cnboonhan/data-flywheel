@@ -183,33 +183,18 @@ https://rerun.{$SERVICE_HOST}:8443 {
 	}
 }
 
-# Triton for programs (robots, evaluation jobs): HTTP/REST (/v2/...) and gRPC on one name. Inference and metadata need
-# no token; changing the server (loading and unloading models, log and trace settings, shared-memory regions) needs the
-# bearer token TRITON_TOKEN, else anyone could take models offline (an empty token never matches). gRPC requests are
-# told apart by their content type.
+# Triton for programs (robots, evaluation jobs): HTTP/REST (/v2/...) and gRPC on one name, no token. Changing the
+# server (loading and unloading models, log, trace and shared-memory settings) isn't reachable from here: sync-triton
+# does that on Triton's own port with its key. gRPC requests are told apart by their content type.
 https://triton.{$SERVICE_HOST}:8443 {
-	@token expression `{env.TRITON_TOKEN} != "" && {http.request.header.Authorization} == "Bearer " + {env.TRITON_TOKEN}`
 	@admin_http path_regexp ^/v2/(repository/models/[^/]+/(load|unload)|logging|trace(/setting)?|models/[^/]+/trace/setting|(system|cuda)sharedmemory(/.*)?)$
 	@admin_grpc path /inference.GRPCInferenceService/RepositoryModelLoad /inference.GRPCInferenceService/RepositoryModelUnload /inference.GRPCInferenceService/LogSettings /inference.GRPCInferenceService/TraceSetting /inference.GRPCInferenceService/SystemSharedMemory* /inference.GRPCInferenceService/CudaSharedMemory*
 	@grpc header Content-Type application/grpc*
-	handle @token {
-		request_header -Authorization   # here, not at the top: Caddy strips before @token would see it
-		handle @grpc {
-			reverse_proxy h2c://{$TRITON_ADDR}:8101 {
-				header_up triton-key {env.TRITON_KEY}
-			}
-		}
-		handle {
-			reverse_proxy {$TRITON_ADDR}:8100 {
-				header_up triton-key {env.TRITON_KEY}
-			}
-		}
-	}
 	handle @admin_http {
-		respond "Triton: changing the server needs Authorization: Bearer <TRITON_TOKEN>" 401
+		respond "Triton: models are loaded and unloaded by sync-triton (MLflow alias triton), not from outside" 403
 	}
 	handle @admin_grpc {
-		respond "Triton: changing the server needs Authorization: Bearer <TRITON_TOKEN>" 401
+		respond "Triton: models are loaded and unloaded by sync-triton (MLflow alias triton), not from outside" 403
 	}
 	# Triton's default ports: gRPC on 8001 (HTTP/2, cleartext inside), HTTP on 8000.
 	handle @grpc {

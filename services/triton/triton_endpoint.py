@@ -7,7 +7,7 @@ any Triton server (README.md, "Call a model from your own code").
 
 <ROLE>_ENDPOINT is either a full URL, https://<host:port>/v2/models/<model> (any Triton server), or a model name on
 the flywheel Triton, or unset: the default model there. The flywheel Triton is TRITON_URL, else
-triton.$SERVICE_HOST:$CADDY_PORT (quickstart.md). No token is needed; <ROLE>_TOKEN, else TRITON_TOKEN, is sent if set; the CA
+triton.$SERVICE_HOST:$CADDY_PORT (quickstart.md). No token is needed (<ROLE>_TOKEN is sent if set, for another server); the CA
 bundle <ROLE>_CA, else AWS_CA_BUNDLE. Needs numpy and tritonclient[http].
 """
 
@@ -38,7 +38,7 @@ class Endpoint:
                 raise SystemExit(f"{role}: set {role}_ENDPOINT, or TRITON_URL (or SERVICE_HOST and CADDY_PORT): "
                                  "see quickstart.md")
         self.role = role
-        self.token = os.environ.get(f"{role}_TOKEN") or os.environ.get("TRITON_TOKEN")
+        self.token = os.environ.get(f"{role}_TOKEN")
         self.ca = os.environ.get(f"{role}_CA") or os.environ.get("AWS_CA_BUNDLE")
         self._local = threading.local()                       # one connection per thread
 

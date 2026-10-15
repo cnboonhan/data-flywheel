@@ -13,7 +13,7 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 | `https://fiftyone.$SERVICE_HOST` | FiftyOne |
 | `https://rerun.$SERVICE_HOST` | Rerun ([rerun/](../rerun/README.md)) |
 | `https://s3.$SERVICE_HOST` (`/ui/` behind SSO) | Versity S3 gateway |
-| `https://triton.$SERVICE_HOST` | Triton: inference and metadata open; admin calls (load, unload, settings) need the bearer token `TRITON_TOKEN` ([triton/](../triton/README.md)) |
+| `https://triton.$SERVICE_HOST` | Triton: inference and metadata open, no token; admin calls (load, unload, settings) refused, as `sync-triton` manages the models ([triton/](../triton/README.md)) |
 
 Caddy's request metrics (per site: rate, latency, requests in flight; plus its CPU) are on `:9180` inside the compose network for [Prometheus](../prometheus/README.md); query them in Grafana's Explore (e.g. `rate(caddy_http_requests_total[5m])`). It is unlikely to be the bottleneck, but if requests in flight keep climbing while the backends' own latency stays flat, or its CPU stays near one core, it is.
 

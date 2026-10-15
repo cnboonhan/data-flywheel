@@ -6,7 +6,7 @@ The stack's language models on NVIDIA Dynamo, behind the [LLM gateway](../llm-ga
 flowchart LR
   C["clients<br/>(OpenAI API)"] -->|llm.host| Caddy --> G["gateway (DYNAMO_HEAD)<br/>critical flag"]
   G --> T["8-GPU model<br/>rank 0 head + rank 1 worker<br/>InfiniBand between trays"]
-  G --> G2["gateway (TRITON_NODE)"] --> S["one engine per model<br/>on its GPUs"]
+  G --> G2["gateway (DYNAMO_NODE)"] --> S["one engine per model<br/>on its GPUs"]
   M["MLflow alias dynamo"] -.->|ctl.sh dynamo sync, every minute| T & S
 ```
 
@@ -14,9 +14,9 @@ flowchart LR
 |---|---|---|
 | `glm-5.3` | the trays (`DYNAMO_HEAD` + `DYNAMO_WORKER`, 8 GPUs) | one tray model at a time |
 | `kimi-k3`, `inkling` | the trays | Kimi K3 doesn't start yet ([Notes](#notes)) |
-| `qwen3.5-122b-a10b` | `TRITON_NODE` GPU 3 | the sim tools' VLM |
-| `qwen3.6-27b`, `qwen3.8-27b` | `TRITON_NODE` GPU 2, beside Triton's image models | |
-| `qwen3.6-35b-a3b`, `qwen3-vl-8b`, `qwen3.8-flash-next` | `TRITON_NODE` GPU 1 | Flash-Next on vLLM 0.31's image |
+| `qwen3.5-122b-a10b` | `DYNAMO_NODE` GPU 3 | the sim tools' VLM |
+| `qwen3.6-27b`, `qwen3.8-27b` | `DYNAMO_NODE` GPU 2, beside Triton's image models | |
+| `qwen3.6-35b-a3b`, `qwen3-vl-8b`, `qwen3.8-flash-next` | `DYNAMO_NODE` GPU 1 | Flash-Next on vLLM 0.31's image |
 
 ## Use
 

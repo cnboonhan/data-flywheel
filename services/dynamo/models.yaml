@@ -14,10 +14,10 @@
 host_numa_nodes: "0,1"
 
 # The share of each GPU's memory that single-node models may take together (render.py checks the aliased ones), on the
-# nodes they're placed on. TRITON_NODE: GPU 2 also holds Triton's image models and policies (~103 GiB, 0.37); GPUs 1
-# and 3 are Dynamo's. 0.92: vLLM's activations and CUDA graphs need some room past the shares; untuned.
+# nodes they're placed on. DYNAMO_NODE: GPU 2 also holds Triton's image models and policies (~103 GiB, 0.37; TRITON_GPU);
+# GPUs 1 and 3 are Dynamo's. 0.92: vLLM's activations and CUDA graphs need some room past the shares; untuned.
 gpus:
-  $TRITON_NODE: {1: 0.92, 2: 0.58, 3: 0.92}
+  $DYNAMO_NODE: {1: 0.92, 2: 0.58, 3: 0.92}
 
 common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp,
               --scheduling-policy, priority, --enable-prefix-caching, --disable-custom-all-reduce]
@@ -85,14 +85,14 @@ models:
     env:
       VLLM_USE_V2_MODEL_RUNNER: "1"
 
-  # Single-node models on TRITON_NODE (placement: node, gpus, share of each GPU's memory). Context 32k tokens and the
+  # Single-node models on DYNAMO_NODE (placement: node, gpus, share of each GPU's memory). Context 32k tokens and the
   # parsers htx_xingyu's servers use for these models; untuned. Qwen3.6 and Qwen3.8 read images too.
   - name: qwen3.5-122b-a10b
     licence: "Apache-2.0"
     about: "Vision-language MoE (10B active): the sim tools' VLM"
     registered: Qwen3.5-122B-A10B
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $TRITON_NODE, gpus: [3], share: 0.90}   # 230 GiB of bf16 weights; ~15 GiB of KV cache
+    placement: {node: $DYNAMO_NODE, gpus: [3], share: 0.90}   # 230 GiB of bf16 weights; ~15 GiB of KV cache
     ports: {frontend: 8294, system: 9324}
     frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
     args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
@@ -104,7 +104,7 @@ models:
     about: "Dense 27B: reasoning, images"
     registered: Qwen3.6-27B-FP8
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $TRITON_NODE, gpus: [2], share: 0.16}   # 29 GiB of weights; ~12 GiB of KV cache
+    placement: {node: $DYNAMO_NODE, gpus: [2], share: 0.16}   # 29 GiB of weights; ~12 GiB of KV cache
     ports: {frontend: 8291, system: 9321}
     frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
     args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
@@ -116,7 +116,7 @@ models:
     about: "Newer dense 27B: reasoning, images"
     registered: Qwen3.8-27B-FP8
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $TRITON_NODE, gpus: [2], share: 0.16}   # 29 GiB of weights; ~12 GiB of KV cache
+    placement: {node: $DYNAMO_NODE, gpus: [2], share: 0.16}   # 29 GiB of weights; ~12 GiB of KV cache
     ports: {frontend: 8292, system: 9322}
     frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
     args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
@@ -128,7 +128,7 @@ models:
     about: "MoE with 3B active: the fastest here, reasoning, images"
     registered: Qwen3.6-35B-A3B-FP8
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $TRITON_NODE, gpus: [1], share: 0.19}   # 34 GiB of weights; ~15 GiB of KV cache
+    placement: {node: $DYNAMO_NODE, gpus: [1], share: 0.19}   # 34 GiB of weights; ~15 GiB of KV cache
     ports: {frontend: 8293, system: 9323}
     frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
     args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
@@ -140,7 +140,7 @@ models:
     about: "Small vision-language model: quick image questions"
     registered: Qwen3-VL-8B-Instruct
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $TRITON_NODE, gpus: [1], share: 0.11}   # 17 GiB of bf16 weights; KV cache and image activations
+    placement: {node: $DYNAMO_NODE, gpus: [1], share: 0.11}   # 17 GiB of bf16 weights; KV cache and image activations
     ports: {frontend: 8295, system: 9325}
     frontend_args: [--dyn-chat-processor, vllm, --tool-call-parser, hermes, --enable-auto-tool-choice]   # Instruct: no reasoning
     args: [--max-model-len, "32768", --enable-multimodal]
@@ -151,7 +151,7 @@ models:
     about: "Vision-language MoE (3B active), bf16"
     registered: Qwen3-VL-30B-A3B-Instruct
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $TRITON_NODE, gpus: [2], share: 0.26}   # GPU 2's last share: 58 GiB of bf16 weights, ~9 GiB of KV cache (~90k tokens)
+    placement: {node: $DYNAMO_NODE, gpus: [2], share: 0.26}   # GPU 2's last share: 58 GiB of bf16 weights, ~9 GiB of KV cache (~90k tokens)
     ports: {frontend: 8297, system: 9327}
     frontend_args: [--dyn-chat-processor, vllm, --tool-call-parser, hermes, --enable-auto-tool-choice]   # Instruct: no reasoning
     args: [--max-model-len, "32768", --enable-multimodal,
@@ -163,7 +163,7 @@ models:
     about: "Fast NVFP4 MoE: reasoning, images"
     registered: Qwen3.8-Flash-Next-NVFP4
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.6.0-deepseek-v4.1-flash-dev.2   # vLLM 0.31, which its architecture needs
-    placement: {node: $TRITON_NODE, gpus: [1], share: 0.60}   # 124 GiB of NVFP4 weights; ~35 GiB of KV cache
+    placement: {node: $DYNAMO_NODE, gpus: [1], share: 0.60}   # 124 GiB of NVFP4 weights; ~35 GiB of KV cache
     ports: {frontend: 8296, system: 9326}
     frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
     args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3]

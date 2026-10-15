@@ -1,6 +1,6 @@
 # Triton on TRITON_NODE, a node of its own, away from the stack's: `ctl.sh up` runs it there as project flywheel-triton
-# (`ctl.sh triton <compose args>` for the rest). It sees two of that node's GPUs, TRITON_GPU0 and TRITON_GPU1, which are
-# 0 and 1 inside: Python-backend models on 0, the vLLM model on 1 (TRITON_PYTHON_GPU, TRITON_VLLM_GPU for sync.py).
+# (`ctl.sh triton <compose args>` for the rest). It sees one of that node's GPUs, TRITON_GPU (0 inside), for the image
+# models and policies; Dynamo's single-node models use the node's other GPUs and the rest of this one (dynamo/models.yaml).
 # Its ports are published on the node, so every API but health needs the header triton-key: TRITON_KEY, which Caddy
 # (triton.<host>) and sync.py send; clients go through Caddy. Metrics (node port 8102) are open, for Prometheus.
 services:
@@ -24,8 +24,7 @@ services:
       HOME: /tmp
       PYTHONDONTWRITEBYTECODE: "1"   # the repository is read-only
     devices:
-      - nvidia.com/gpu=${TRITON_GPU0}
-      - nvidia.com/gpu=${TRITON_GPU1}
+      - nvidia.com/gpu=${TRITON_GPU}
     ports:   # 8100-8102 on the node: its 8000 was taken
       - "8100:8000"   # HTTP
       - "8101:8001"   # gRPC

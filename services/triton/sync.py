@@ -139,7 +139,7 @@ def package_mlp(mv, run, ckpt, dst, params):
 # of GPU 1, the Python-backend models share GPU 2 (~71 GB together); which index is a choice, not tuned.
 VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_per_prompt": {"image": 4},
                "max_num_seqs": 32}
-VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "1")
+VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "0")   # Triton has one GPU (index 0 inside)
 
 
 def package_vllm(mv, run, ckpt, dst, params):
@@ -168,7 +168,7 @@ def package_vllm(mv, run, ckpt, dst, params):
 HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
                "Ruicheng/moge-2-vitl-normal": "moge", "iSEE-Laboratory/llmdet_large": "llmdet",
                "facebook/sam2.1-hiera-large": "sam2", "VAST-AI/TripoSG": "triposg"}
-PYTHON_GPU = os.environ.get("TRITON_PYTHON_GPU", "2")
+PYTHON_GPU = os.environ.get("TRITON_PYTHON_GPU", "0")
 PYTHON_IO = {
     "qwen_image_edit": ([("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
                          ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True)],

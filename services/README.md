@@ -12,7 +12,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
-| Triton: image models and robot policies from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (no token; admin calls need `TRITON_TOKEN`) |
+| Triton: image models and robot policies from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (no token) |
 | Dynamo + LLM gateway: the language models (GLM-5.3, the Qwen LLMs and VLMs), chosen by MLflow alias | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
@@ -76,7 +76,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 
 Everything lives in `$STATE_DIR/<service>`, owned by `$SERVICE_UID:$SERVICE_GID`, including buckets, envs, caches, checkpoints and evaluation results (`versitygw/buckets`, `envs`, `uv-cache`, `xpolicylab`, `robodojo`); the checkout holds code only. `ctl.sh up` creates every directory it mounts, because a path dockerd has to create ends up root-owned.
 
-`ctl.sh up` also writes `$STATE_DIR/flywheel.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL` (and `TRITON_TOKEN`, only for Triton's admin calls), `SERVICE_NODE`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Load it on a cluster node to use the services from a shell, a Slurm job or a sim tool:
+`ctl.sh up` also writes `$STATE_DIR/flywheel.env` (readable only by you): MLflow and S3 credentials, `TRITON_URL`, `LLM_URL`, `SERVICE_NODE`, and `FLYWHEEL_ROOT`, `PROJECT_ROOT`, `ENVS_DIR`, `ROBODOJO_DIR`, `BUCKETS_DIR`, `DATA_ROOT`. Load it on a cluster node to use the services from a shell, a Slurm job or a sim tool:
 
 ```bash
 set -a; . $STATE_DIR/flywheel.env; set +a

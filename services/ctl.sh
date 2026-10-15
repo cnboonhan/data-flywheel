@@ -222,7 +222,7 @@ bootstrap_gitea() {
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
   for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
            "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID" \
-           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=1"; do   # Triton's GPUs are 0, 1 inside it
+           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=0"; do   # Triton's one GPU is 0 inside it
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
@@ -300,7 +300,6 @@ TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
 # The LLM gateway (Dynamo's models, OpenAI API, no token): sim tools' VLM, scripts
 LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1
 SERVICE_NODE=$SERVICE_NODE
-TRITON_TOKEN=${TRITON_TOKEN:-}
 EOF
   )
 }
