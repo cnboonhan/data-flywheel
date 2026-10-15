@@ -38,6 +38,19 @@ fi
 
 compose=(docker compose --project-name flywheel)
 
+# On a node whose GPUs' memory is NUMA nodes of its own (GB300), Linux puts file cache there too, and the GPUs fill up
+# without any GPU process. The stack's containers use no GPU here: hold their memory, file cache included, to the nodes
+# with CPUs. Running containers are updated in place (`docker update`), so nothing restarts. Never for GPU containers:
+# their CUDA memory is on exactly those nodes. Job containers get the same from act_runner/config.yaml.
+keep_off_gpu_memory() {
+  local d mems=() all=()
+  for d in /sys/devices/system/node/node[0-9]*; do
+    all+=("${d##*node}"); [[ -n $(cat "$d/cpulist") ]] && mems+=("${d##*node}")
+  done
+  (( ${#mems[@]} < ${#all[@]} )) || return 0   # every NUMA node has CPUs: nothing to keep off
+  docker update --cpuset-mems "$(IFS=,; echo "${mems[*]}")" $("${compose[@]}" ps -q) >/dev/null
+}
+
 # docker compose for Triton's own project on TRITON_NODE (over ssh; the checkout and STATE_DIR are on shared storage).
 triton_compose() {
   ssh "$TRITON_NODE" "bash -lc $(printf '%q' "cd $(printf '%q' "$here/triton") && docker compose --project-name flywheel-triton --env-file ../.env -f compose.yml $(printf '%q ' "$@")")"
@@ -143,7 +156,13 @@ bootstrap_jobs() {
   fi
   git -C "$repo" config http.sslCAInfo "$ca"
   git -C "$repo" config credential.helper "store --file=$STATE_DIR/.pipelines-credentials"
-  local mltok; mltok=$(mlflow_token "$ADMIN_USER" "$ADMIN_PASSWORD") || { echo "warning: no MLflow token for jobs" >&2; mltok=; }
+  # Keep the jobs' token while MLflow accepts it: minting a new one revokes the old, which fails every job running on it
+  # (a download-models-hf mid-way). A new one only when it is missing, revoked or expired (they last 365 days).
+  local mltok; mltok=$(sed -n 's/^MLFLOW_TRACKING_PASSWORD=//p' "$STATE_DIR/flywheel.env" 2>/dev/null)
+  if [[ -z $mltok ]] || ! "${compose[@]}" exec -T gitea curl -fs -o /dev/null -u "$ADMIN_USER:$mltok" -H "Host: $SERVICE_HOST" \
+       "http://mlflow:5000/api/2.0/mlflow/experiments/search?max_results=1"; then
+    mltok=$(mlflow_token "$ADMIN_USER" "$ADMIN_PASSWORD") || { echo "warning: no MLflow token for jobs" >&2; mltok=; }
+  fi
   # The same token for Actions jobs that talk to MLflow (download-models-hf): secret MLFLOW_TOKEN, variable MLFLOW_USERNAME.
   if [[ -n $mltok ]]; then
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
@@ -396,6 +415,7 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_jobs
   apply_s3_policies
   "${compose[@]}" up -d "${@:2}"
+  keep_off_gpu_memory
   # Triton on its node, and where Prometheus finds its metrics.
   mkdir -p "$STATE_DIR/prometheus-sd"
   printf '[{"targets": ["%s:8102"], "labels": {"node": "%s"}}]\n' "$TRITON_ADDR" "$TRITON_NODE" > "$STATE_DIR/prometheus-sd/triton.json"
