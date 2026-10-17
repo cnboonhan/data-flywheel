@@ -12,6 +12,10 @@ PUSHGATEWAY_TOKEN), replacing the last push, so finished processes disappear:
     gpu_process_count{node, gpu, user, workload, slurm_job}
     node_cpu_memory_total_bytes{node}, node_cpu_memory_available_bytes{node}   (available: free + file cache + reclaimable slab)
     gpu_processes_node_up{node}                                      1 when the node answered (0: unknown, e.g. ssh not allowed)
+    node_health_check_failure_seconds{node, job_id, check, detail}   the node's latest failed pre-job health check (Bright's
+                                                                     prolog, which drains the node as "Prolog error") within
+                                                                     HEALTH_DAYS, and when: the job whose start it failed,
+                                                                     the check (e.g. dmesg) and its first finding
 
 Env: SERVICE_HOST, CADDY_PORT, PUSHGATEWAY_TOKEN (services/.env), and the CA (FLYWHEEL_CA, else AWS_CA_BUNDLE).
 """
@@ -22,10 +26,13 @@ import re
 import ssl
 import subprocess
 import sys
+import time
 import urllib.request
 
 here = os.path.dirname(os.path.abspath(__file__))
 SSH_TIMEOUT_S = 40   # per node: a hung node mustn't hold up the minute's push; untuned
+HEALTH_DAYS = 7      # older failed health checks aren't reported: by then the node was resumed or is long known; untuned
+HEALTH_DIR = "/cm/local/apps/slurm/var/pre-post-job-logs/failed-pre-jobs"   # Bright's per-job output of a failed check
 
 # Runs on each node: GPUs, processes (pid, bus, MiB), per process its user, cgroup and command line, Docker names,
 # and the CPU NUMA nodes' meminfo. One line per record, tab-separated, tagged by its first field.
@@ -39,10 +46,27 @@ while IFS=$'\t' read -r tag bus pid mib; do
 done
 (docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}' 2>/dev/null || bash -lc "docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}'" 2>/dev/null) | sed 's/^/D\t/; s/ /\t/g'
 ps -eo user:64=,args= 2>/dev/null | awk '$2 == "docker" && ($3 == "run" || ($3 == "container" && $4 == "run")) {u = $1; $1 = ""; printf "R\t%s\t%s\n", u, $0}'
+f=$(find {HEALTH_DIR} -name 'job.*.log' -mtime -{HEALTH_DAYS} -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2)
+[ -n "$f" ] && printf 'H\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c %Y "$f")" "$(grep -m1 ' is FAIL' "$f")" \
+  "$(grep -m1 -oE '\[[0-9.]+\] .*' "$f")" "$(date +%s)" "$(cut -d' ' -f1 /proc/uptime)"
 for d in /sys/devices/system/node/node[0-9]*; do
   [ -n "$(cat $d/cpulist)" ] && awk -v n="${d##*node}" '/MemTotal|MemFree|Active\(file\)|Inactive\(file\)|SReclaimable/ {printf "M\t%s\t%s\t%s\n", n, $3, $4}' $d/meminfo
 done
-'''
+'''.replace("{HEALTH_DIR}", HEALTH_DIR).replace("{HEALTH_DAYS}", str(HEALTH_DAYS))   # not format(): Docker's {{.ID}}
+
+
+def health(f):
+    """An H record -> (job, check, detail): the check that failed and its first finding, a kernel message dated by
+    converting its seconds-since-boot to wall time (the node's clock now, less the time since)"""
+    _, name, _mtime, fail, first, now, uptime = (f + [""] * 7)[:7]
+    check = fail.split(" is FAIL")[0].strip() or "?"
+    detail = fail.strip()
+    m = re.match(r"\[([\d.]+)\] (.*)", first)
+    if m and now and uptime:
+        at = float(now) - (float(uptime) - float(m.group(1)))
+        msg = re.sub(r"^(INFO|WARNING|ERROR): ", "", m.group(2).strip())
+        detail = f"{msg} (at {time.strftime('%m-%d %H:%M:%S', time.localtime(at))})"
+    return name.removeprefix("job.").removesuffix(".log"), check, detail
 
 
 def workload(cg, cmd, docker):
@@ -81,7 +105,7 @@ def collect(node, ip):
     if r.returncode == 255 or not any(l.startswith("M\t") for l in r.stdout.splitlines()):   # ssh refused or failed
         return node, None
     out = r.stdout
-    gpus, procs, docker, mem, runs = {}, [], {}, {}, []
+    gpus, procs, docker, mem, runs, hc = {}, [], {}, {}, [], None
     for line in out.splitlines():
         f = line.split("\t")
         if f[0] == "G" and len(f) >= 3:
@@ -92,6 +116,8 @@ def collect(node, ip):
             docker[f[1]] = (f[2], f[3])
         elif f[0] == "R" and len(f) >= 3:
             runs.append((f[1], f[2]))
+        elif f[0] == "H" and len(f) >= 4:
+            hc = (*health(f), float(f[2]))
         elif f[0] == "M" and len(f) >= 4:
             mem[f[2]] = mem.get(f[2], 0) + int(f[3]) * 1024
     rows = {}
@@ -102,7 +128,7 @@ def collect(node, ip):
         key = (gpu, user, wl, job)
         b, c = rows.get(key, (0, 0))
         rows[key] = (b + float(mib or 0) * 2**20, c + 1)
-    return node, {"rows": rows, "mem": mem}
+    return node, {"rows": rows, "mem": mem, "health": hc}
 
 
 def esc(v):
@@ -113,7 +139,7 @@ def main():
     nodes = [(t["labels"]["node"], t["targets"][0]) for t in json.load(open(os.path.join(here, "nodes.json")))]
     lines = ["# TYPE gpu_process_memory_bytes gauge", "# TYPE gpu_process_count gauge",
              "# TYPE node_cpu_memory_total_bytes gauge", "# TYPE node_cpu_memory_available_bytes gauge",
-             "# TYPE gpu_processes_node_up gauge"]
+             "# TYPE gpu_processes_node_up gauge", "# TYPE node_health_check_failure_seconds gauge"]
     with concurrent.futures.ThreadPoolExecutor(16) as pool:   # 16 nodes at a time; untuned
         for node, r in pool.map(lambda n: collect(*n), nodes):
             lines.append(f'gpu_processes_node_up{{node="{node}"}} {int(r is not None)}')
@@ -122,6 +148,10 @@ def main():
             for (gpu, user, wl, job), (b, c) in r["rows"].items():
                 lab = f'node="{node}",gpu="{gpu}",user="{esc(user)}",workload="{esc(wl)}",slurm_job="{job}"'
                 lines += [f"gpu_process_memory_bytes{{{lab}}} {b:.0f}", f"gpu_process_count{{{lab}}} {c}"]
+            if r["health"]:
+                job, check, detail, when = r["health"]
+                lines.append(f'node_health_check_failure_seconds{{node="{node}",job_id="{esc(job)}",check="{esc(check)}",'
+                             f'detail="{esc(detail)}"}} {when:.0f}')
             m = r["mem"]
             if m.get("MemTotal:"):
                 avail = m.get("MemFree:", 0) + m.get("Active(file):", 0) + m.get("Inactive(file):", 0) + m.get("SReclaimable:", 0)
