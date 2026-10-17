@@ -9,6 +9,11 @@
                                                                   down, ...; a trailing * means not responding)
     slurm_node_last_job_start_seconds{instance, <job>, job_state}   the latest job started on the node (sacct), and when
     slurm_node_last_job_end_seconds{instance, <job>, job_state}     when it ended (0 while it runs)
+    slurm_node_reason_seconds{instance}                          when Slurm set a down or drained node's reason
+    slurm_node_cause_job_seconds{instance, cause_job, cause_user, cause_name, cause_state}   the job that tripped it, and
+                                                                  when: the one Slurm requeued or failed on it then (a
+                                                                  prolog error requeues the job it was starting), else
+                                                                  the one running then; none when the node was empty
     <job> = job_id, user, job_name, partition
 
     PUSHGATEWAY_TOKEN=<token> python3 exporter.py --push https://<host>:<port>/pushgateway [SEC]
@@ -114,20 +119,51 @@ def last_jobs(nodes, days, only=None):
     return last
 
 
+CAUSE_WINDOW_S = 120   # a requeued or failed record this close to the reason's time counts as its cause; untuned
+DOWN = re.compile(r"down|drain|fail|\*$")   # sinfo states for a node out of service (* = not responding)
+
+
+def stamp(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t))
+
+
+def cause_job(node, t):
+    """The job that tripped the node's fall at t: a record Slurm requeued or failed there then (sacct -D shows the record a
+    requeue leaves on the node), else the job running then, else None."""
+    out = run("sacct", "-a", "-D", "-X", "-n", "-P", "-N", node, "-S", stamp(t - CAUSE_WINDOW_S), "-E", stamp(t + 60),
+              "-o", "JobID,User,JobName,Partition,State,Start,End,NodeList")
+    recs = [f for f in (line.split("|") for line in out.splitlines()) if len(f) == 8]
+    failed = [f for f in recs if re.match(r"REQUEUED|NODE_FAIL|FAILED|BOOT_FAIL|LAUNCH_FAILED", f[4])
+              and abs((seconds(f[6]) or t) - t) <= CAUSE_WINDOW_S]
+    if failed:
+        return min(failed, key=lambda f: abs((seconds(f[6]) or t) - t))
+    running = [f for f in recs if 0 < seconds(f[5]) <= t and (not seconds(f[6]) or seconds(f[6]) >= t)]
+    return max(running, key=lambda f: seconds(f[5])) if running else None
+
+
 def node_metrics():
     """Each node's state and the latest job started on it."""
     state, out = {}, []
     try:
-        for line in run("sinfo", "-N", "-h", "-o", "%N|%T|%E|%P").splitlines():
-            node, st, reason, part = (line.split("|") + ["", "", ""])[:4]
-            state.setdefault(node, (st, "" if reason == "none" else reason, part.rstrip("*")))   # a line per partition
+        for line in run("sinfo", "-N", "-h", "-o", "%N|%T|%E|%P|%H").splitlines():
+            node, st, reason, part, since = (line.split("|") + ["", "", "", ""])[:5]
+            state.setdefault(node, (st, "" if reason == "none" else reason, part.rstrip("*"), seconds(since)))   # a line per partition
         last = last_jobs(state, RECENT_DAYS)
         if missing := [n for n in state if n not in last]:
             last.update(last_jobs(state, LOOKBACK_DAYS, missing))
     except Exception:   # noqa: BLE001  sinfo or sacct missing or hung: push the jobs without the nodes
         return []
-    for node, (st, reason, part) in sorted(state.items()):
+    for node, (st, reason, part, since) in sorted(state.items()):
         out.append(f'slurm_node_state{{instance="{node}",state="{esc(st)}",reason="{esc(reason)}",partition="{esc(part)}"}} 1')
+        if since and DOWN.search(st):
+            out.append(f'slurm_node_reason_seconds{{instance="{node}"}} {since:.0f}')
+            try:
+                f = cause_job(node, since)
+            except Exception:   # noqa: BLE001  sacct hung: no cause this round
+                f = None
+            if f:
+                out.append(f'slurm_node_cause_job_seconds{{instance="{node}",cause_job="{esc(f[0])}",cause_user="{esc(f[1])}",'
+                           f'cause_name="{esc(f[2])}",cause_state="{esc(f[4].split()[0])}"}} {seconds(f[6]) or seconds(f[5]):.0f}')
     for node, f in sorted(last.items()):
         lab = (f'instance="{node}",job_id="{esc(f[0])}",user="{esc(f[1])}",job_name="{esc(f[2])}",partition="{esc(f[3])}",'
                f'job_state="{esc(f[4].split()[0])}"')   # 'CANCELLED by 123' -> CANCELLED
@@ -176,7 +212,11 @@ def metrics():
               "# HELP slurm_node_last_job_start_seconds When the latest job on the node started.",
               "# TYPE slurm_node_last_job_start_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_last_job_start")],
               "# HELP slurm_node_last_job_end_seconds When it ended (0 while it runs).",
-              "# TYPE slurm_node_last_job_end_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_last_job_end")]]
+              "# TYPE slurm_node_last_job_end_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_last_job_end")],
+              "# HELP slurm_node_reason_seconds When Slurm set a down or drained node's reason.",
+              "# TYPE slurm_node_reason_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_reason")],
+              "# HELP slurm_node_cause_job_seconds The job that took the node down, and when it ended or started.",
+              "# TYPE slurm_node_cause_job_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_cause")]]
     return "\n".join(lines) + "\n"
 
 

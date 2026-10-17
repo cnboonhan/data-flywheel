@@ -10,6 +10,8 @@
 | `slurm_job_rss_bytes{<job>}` | memory in use, summed over its running steps (`sstat`) | |
 | `slurm_node_state{instance, state, reason, partition}` | each node's state (`sinfo`: idle, mixed, allocated, drained, down, ...; a trailing `*`: not responding) and why | node metrics, `on (instance)` |
 | `slurm_node_last_job_start_seconds{instance, <job>, job_state}`, `..._end_seconds` | the latest job started on the node (`sacct`, last 30 days) and when it started and ended (0 while it runs) | |
+| `slurm_node_reason_seconds{instance}` | when Slurm set a down or drained node's reason (`sinfo %H`) | |
+| `slurm_node_cause_job_seconds{instance, cause_job, cause_user, cause_name, cause_state}` | the job it went down on: the one Slurm requeued or failed on it then (`sacct -D`: a Prolog error requeues the job it was starting, NODE_FAIL marks the jobs on a node that stopped responding), else the one running then | |
 
 `<job>` is `job_id, user, job_name, partition`. It sees the jobs of whichever account runs it: if the cluster hides other users' jobs (`PrivateData=jobs`), run it as an account allowed to see every job to publish them all.
 
@@ -28,6 +30,15 @@ It needs only Python 3 and Slurm's `scontrol`, `sstat`, `sinfo` and `sacct` on `
    */30 * * * * . ~/.pushgateway.env && timeout 1790 python3 <path>/exporter.py --push https://<SERVICE_HOST>:<CADDY_PORT>/pushgateway
    ```
 4. Check that Prometheus gets it: `time() - push_time_seconds{job="slurm_jobs"}` stays under 60 and `slurm_job_gpu` lists the running jobs.
+
+## Find why a node went down
+
+Do it by hand with the same steps the exporter takes: the time Slurm set the reason, then the job records on the node at that time, requeued ones included (`-D`).
+```bash
+sinfo -N -n <node> -o "%N %T %E %H"     # state, reason, when it was set
+sacct -a -D -X -N <node> -S <time - 2 min> -E <time + 1 min> -o JobID,User,JobName%40,State,Start,End
+```
+A `REQUEUED` record ending at that time is the job whose prolog failed; `NODE_FAIL` marks the jobs on a node that stopped responding. A Prolog error is Bright's pre-job health check failing; what it found is in `/cm/local/apps/slurm/var/pre-post-job-logs/failed-pre-jobs/job.<job>.log` on the node (readable by anyone; [gpu_processes.py](../prometheus/gpu_processes.py) pushes it). A `dmesg` finding such as `task python:<pid> blocked for more than 122 seconds` comes from a job running then, not from the requeued one.
 
 ## Notes
 
