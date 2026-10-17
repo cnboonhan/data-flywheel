@@ -1,6 +1,6 @@
 # slurm-exporter
 
-`exporter.py` pushes what each running Slurm job holds and uses to the stack's Pushgateway, so [Prometheus](../prometheus/README.md) can join it with the nodes' metrics:
+`exporter.py` pushes what each running Slurm job holds and uses, and each node's state and latest job, to the stack's Pushgateway, so [Prometheus](../prometheus/README.md) can join it with the nodes' metrics:
 
 | Metric | What | Joins |
 |---|---|---|
@@ -8,12 +8,14 @@
 | `slurm_job_cpu{instance, cpu, <job>}` | each CPU core the job is pinned to | node_exporter's `node_cpu_seconds_total`, `on (instance, cpu)` |
 | `slurm_job_cpus{<job>}`, `slurm_job_memory_bytes{<job>}` | CPUs and memory allocated (0 bytes: none requested) | |
 | `slurm_job_rss_bytes{<job>}` | memory in use, summed over its running steps (`sstat`) | |
+| `slurm_node_state{instance, state, reason, partition}` | each node's state (`sinfo`: idle, mixed, allocated, drained, down, ...; a trailing `*`: not responding) and why | node metrics, `on (instance)` |
+| `slurm_node_last_job_start_seconds{instance, <job>, job_state}`, `..._end_seconds` | the latest job started on the node (`sacct`, last 30 days) and when it started and ended (0 while it runs) | |
 
 `<job>` is `job_id, user, job_name, partition`. It sees the jobs of whichever account runs it: if the cluster hides other users' jobs (`PrivateData=jobs`), run it as an account allowed to see every job to publish them all.
 
 ## Push the jobs
 
-It needs only Python 3, `scontrol` and `sstat` on `PATH` (or `SLURM_BIN`), so run it on any host with the Slurm client. `ctl.sh up` copies it to `$STATE_DIR/slurm-exporter/exporter.py`, readable by `$STATE_DIR`'s group; any copy works.
+It needs only Python 3 and Slurm's `scontrol`, `sstat`, `sinfo` and `sacct` on `PATH` (or `SLURM_BIN`), so run it on any host with the Slurm client. `ctl.sh up` copies it to `$STATE_DIR/slurm-exporter/exporter.py`, readable by `$STATE_DIR`'s group; any copy works.
 
 1. Get `PUSHGATEWAY_TOKEN` from the admin (`services/.env`) and the stack's CA certificate ([quickstart](../../quickstart.md) step 3).
 2. Check it pushes (stop it with Ctrl-C; that also deletes what it pushed).

@@ -5,6 +5,10 @@
                                                                   node_cpu_seconds_total on instance, cpu)
     slurm_job_cpus{<job>}, slurm_job_memory_bytes{<job>}         what it was allocated
     slurm_job_rss_bytes{<job>}                                   memory in use, summed over its running steps (sstat)
+    slurm_node_state{instance, state, reason, partition} 1       each node's state (sinfo: idle, mixed, allocated, drained,
+                                                                  down, ...; a trailing * means not responding)
+    slurm_node_last_job_start_seconds{instance, <job>, job_state}   the latest job started on the node (sacct), and when
+    slurm_node_last_job_end_seconds{instance, <job>, job_state}     when it ended (0 while it runs)
     <job> = job_id, user, job_name, partition
 
     PUSHGATEWAY_TOKEN=<token> python3 exporter.py --push https://<host>:<port>/pushgateway [SEC]
@@ -13,8 +17,8 @@ Every running job the running account can see (an account that sees all jobs pub
 the group job="slurm_jobs" (PUSHGATEWAY_JOB) every SEC seconds (30) and deletes it on exit, so a
 stopped pusher leaves no stale jobs behind (a killed one leaves its last push; push_time_seconds dates it). `instance`
 and `gpu` match dcgm-exporter's labels; `cpu` is Slurm's CPU_IDs, the OS core numbers wherever Slurm's
-numbering matches the OS's (check one job's Cpus_allowed_list). Needs only Python 3, `scontrol` and `sstat` on PATH
-(or SLURM_BIN). The token is
+numbering matches the OS's (check one job's Cpus_allowed_list). Needs only Python 3, `scontrol`, `sstat`, `sinfo` and
+`sacct` on PATH (or SLURM_BIN). The token is
 read from the environment, not the command line, so `ps` doesn't show it; the CA bundle from PUSHGATEWAY_CA (else
 AWS_CA_BUNDLE, else the system's).
 """
@@ -30,6 +34,8 @@ import urllib.request
 
 BIN = os.environ.get("SLURM_BIN") or os.path.dirname(shutil.which("scontrol") or "/usr/bin/scontrol")   # Slurm's bin/
 GROUP = "/metrics/job/" + os.environ.get("PUSHGATEWAY_JOB", "slurm_jobs")   # the group this script owns; a push replaces it whole
+RECENT_DAYS = 2      # the last job per node: jobs of the last 2 days for every node at once (~0.1 s of sacct); untuned
+LOOKBACK_DAYS = 30   # nodes without one: searched this far back, by node; older counts as none
 
 
 def run(*args):
@@ -76,6 +82,60 @@ def rss(job_ids):
     return out
 
 
+def hosts(nodelist):
+    """'C2-GB300-01-C[05-06,09]' -> ['C2-GB300-01-C05', 'C2-GB300-01-C06', 'C2-GB300-01-C09']; scontrol for anything else."""
+    m = re.fullmatch(r"([^\[\],]+)\[([\d,-]+)\]", nodelist)
+    if not m:
+        return run("scontrol", "show", "hostnames", nodelist).split() if "[" in nodelist else nodelist.split(",")
+    return [f"{m.group(1)}{i:0{len(a)}d}" for a, _, b in (p.partition("-") for p in m.group(2).split(","))
+            for i in range(int(a), int(b or a) + 1)]
+
+
+def seconds(t):
+    """sacct's local time, '2026-10-17T10:26:35', to epoch seconds; 0 for Unknown/None (running, never started)"""
+    try:
+        return time.mktime(time.strptime(t, "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return 0.0
+
+
+def last_jobs(nodes, days, only=None):
+    """The latest-started job on each node (sacct -X: jobs, not their steps)."""
+    args = ["sacct", "-a", "-X", "-n", "-P", "-S", f"now-{days}days", "-E", "now",
+            "-o", "JobID,User,JobName,Partition,State,Start,End,NodeList", *(["-N", ",".join(only)] if only else [])]
+    last = {}
+    for line in run(*args).splitlines():
+        f = line.split("|")
+        if len(f) != 8 or not seconds(f[5]) or f[7] in ("", "None assigned"):
+            continue
+        for node in hosts(f[7]):
+            if node in nodes and (node not in last or seconds(f[5]) > seconds(last[node][5])):
+                last[node] = f
+    return last
+
+
+def node_metrics():
+    """Each node's state and the latest job started on it."""
+    state, out = {}, []
+    try:
+        for line in run("sinfo", "-N", "-h", "-o", "%N|%T|%E|%P").splitlines():
+            node, st, reason, part = (line.split("|") + ["", "", ""])[:4]
+            state.setdefault(node, (st, "" if reason == "none" else reason, part.rstrip("*")))   # a line per partition
+        last = last_jobs(state, RECENT_DAYS)
+        if missing := [n for n in state if n not in last]:
+            last.update(last_jobs(state, LOOKBACK_DAYS, missing))
+    except Exception:   # noqa: BLE001  sinfo or sacct missing or hung: push the jobs without the nodes
+        return []
+    for node, (st, reason, part) in sorted(state.items()):
+        out.append(f'slurm_node_state{{instance="{node}",state="{esc(st)}",reason="{esc(reason)}",partition="{esc(part)}"}} 1')
+    for node, f in sorted(last.items()):
+        lab = (f'instance="{node}",job_id="{esc(f[0])}",user="{esc(f[1])}",job_name="{esc(f[2])}",partition="{esc(f[3])}",'
+               f'job_state="{esc(f[4].split()[0])}"')   # 'CANCELLED by 123' -> CANCELLED
+        out += [f"slurm_node_last_job_start_seconds{{{lab}}} {seconds(f[5]):.0f}",
+                f"slurm_node_last_job_end_seconds{{{lab}}} {seconds(f[6]):.0f}"]
+    return out
+
+
 def metrics():
     gpus, cpus, alloc = [], [], []
     ok = 1
@@ -110,6 +170,13 @@ def metrics():
              "# HELP slurm_job_rss_bytes Memory in use by the job's running steps (sstat).", "# TYPE slurm_job_rss_bytes gauge",
              *[f"slurm_job_rss_bytes{{{jl}}} {used[j]:.0f}" for j, jl, _, _ in alloc if j in used],
              "# HELP slurm_job_gpu_up 1 if scontrol answered.", "# TYPE slurm_job_gpu_up gauge", f"slurm_job_gpu_up {ok}"]
+    nodes = node_metrics()
+    lines += ["# HELP slurm_node_state 1 for each node's Slurm state (sinfo).", "# TYPE slurm_node_state gauge",
+              *[n for n in nodes if n.startswith("slurm_node_state")],
+              "# HELP slurm_node_last_job_start_seconds When the latest job on the node started.",
+              "# TYPE slurm_node_last_job_start_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_last_job_start")],
+              "# HELP slurm_node_last_job_end_seconds When it ended (0 while it runs).",
+              "# TYPE slurm_node_last_job_end_seconds gauge", *[n for n in nodes if n.startswith("slurm_node_last_job_end")]]
     return "\n".join(lines) + "\n"
 
 
