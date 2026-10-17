@@ -12,6 +12,12 @@ Checks whether GPUs on two trays of one NVL72 rack can share memory over the NVL
    services/dynamo/fabric_test/run_docker.sh <tray A> <tray B>
    ```
 
+3. For more evidence, check NVIDIA's IMEX log on a tray of the pair (readable by anyone): each line is a tray that asked another tray's IMEX to map or release its GPU memory and got no answer. It's not a test on its own: after an IMEX restart a HANG can log nothing there.
+   ```bash
+   ssh <tray> 'grep -a "Response not received\|failed to receive response" /var/log/nvidia-imex.log | cut -c2-7 | sort | uniq -c'
+   ```
+   `nvidia-smi nvlink -s` and `nvidia-smi -q` (Fabric) don't show it: the links are up and the fabric reports Healthy.
+
 | Verdict | Meaning |
 |---|---|
 | `PASS ... >= N GB/s` | fabric memory works between the trays (rack 01 trays: ~230 GB/s) |
@@ -21,6 +27,6 @@ Checks whether GPUs on two trays of one NVL72 rack can share memory over the NVL
 
 ## Notes
 
-- Results so far: rack 01 trays PASS; rack 02 trays (02-C03 + 02-C04) HANG, with the same image, launch and a healthy fabric state on both racks (`nvidia-smi -q`: Fabric Completed/Success; `nvidia-imex-ctl -N`: all 18 trays connected). The rack 02 runs shared the GPUs with a serving engine.
+- Results so far: rack 01 trays PASS (01-C05 + 01-C06); rack 02 pairs HANG (02-C03 + 02-C04, 02-C02 + 02-C04), also after IMEX was restarted on all of rack 02, with the same image and launch and a healthy fabric state on both racks (`nvidia-smi -q`: Fabric Completed/Success; `nvidia-imex-ctl -N`: all 18 trays connected). Before the restarts, rack 02's IMEX logs showed thousands of unanswered requests to other trays (rack 01's none); after them, rack 02 still hangs with nothing unusual in the IMEX log.
 - Each line before the verdict shows the tray's fabric state and whether the container sees `/dev/nvidia-caps-imex-channels/channel0`.
 - It allocates 256 MiB per GPU, so it can run beside a serving model.

@@ -13,9 +13,13 @@ done
 srun -N2 -n2 --container-image="$IMAGE" --container-mounts="$here:/test:ro" \
   --export=ALL,NCCL_MNNVL_ENABLE=0,NCCL_NVLS_ENABLE=0,NCCL_SOCKET_IFNAME=bond0,GLOO_SOCKET_IFNAME=bond0 \
   bash -c "timeout 240 torchrun --nnodes 2 --nproc-per-node 4 --node-rank \$SLURM_NODEID --master-addr $head \
-           --master-port 29597 /test/probe.py 2>&1 | grep -E '^(PASS|FAIL)|IMEX channel'; exit \${PIPESTATUS[0]}" | tee out.$$
+           --master-port 29597 /test/probe.py 2>&1" > fabric-test-$SLURM_JOB_ID.full.log 2>&1   # everything, for a FAIL or HANG
+rc=$?   # 124: timeout killed it
+grep -E '^(PASS|FAIL)|IMEX channel' fabric-test-$SLURM_JOB_ID.full.log | tee out.$$
 started=$(grep -c "IMEX channel" out.$$); verdict=$(grep -cE "^(PASS|FAIL)" out.$$); rm -f out.$$
 if (( started < 2 )); then echo "ERROR the test didn't start on both trays (see the errors above); not a verdict, run it again"
-elif (( verdict == 0 )); then echo "HANG  the GPUs never finished exchanging fabric memory handles (killed after 240 s): fabric memory doesn't work across these trays"
+elif (( verdict == 0 )) && { (( rc == 124 )) || grep -q DistStoreError fabric-test-$SLURM_JOB_ID.full.log; }; then
+  echo "HANG  the GPUs never finished exchanging fabric memory handles (timed out): fabric memory doesn't work across these trays"
+elif (( verdict == 0 )); then echo "ERROR no verdict: see the last lines of fabric-test-$SLURM_JOB_ID.full.log"; tail -5 fabric-test-$SLURM_JOB_ID.full.log | cut -c1-300
 fi
 exit 0
