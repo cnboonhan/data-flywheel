@@ -818,17 +818,413 @@
   },
   {
    "type": "table",
-   "title": "Utilisation, 15-min average (%)",
+   "title": "Slurm nodes: state and last job",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "id": 20,
    "gridPos": {
-    "h": 37,
-    "w": 10,
+    "h": 23,
+    "w": 24,
     "x": 0,
     "y": 11
+   },
+   "description": "Each node's Slurm state (sinfo: idle, mixed, allocated, drained, draining, down; a trailing * means the node isn't responding) with its reason, and since when. Failed check and Finding: why a Prolog error drained it, from the node's pre-job health check (gpu_processes.py reads Bright's failed-check output on the node): e.g. dmesg finding a process blocked for minutes, dated; the culprit is a job running then, not the one it tripped on. Tripped by: the job Slurm requeued (Prolog error) or failed (NODE_FAIL: the node stopped responding) on it at that time, else the one running then. Then the latest job started on it (sacct, last 30 days; running ones have no end). Slurm columns from the Slurm job pusher (slurm-exporter).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (instance, state, reason) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"})",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (instance, job_id, user, job_name, job_state) (slurm_node_last_job_start_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 1000",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (instance, job_id, user, job_name, job_state) (slurm_node_last_job_end_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"} > 0) * 1000",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (instance) (slurm_node_reason_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 1000",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "E",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (instance, cause_job, cause_user, cause_name, cause_state) (slurm_node_cause_job_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"})",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "F",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (instance, check, detail) (label_replace(node_health_check_failure_seconds{job=\"gpu_processes\", node=~\"$node\", node!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"instance\", \"$1\", \"node\", \"(.*)\"))",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Value #A": true,
+       "Value #E": true,
+       "Value #F": true
+      },
+      "renameByName": {
+       "instance": "Node",
+       "state": "State",
+       "reason": "Reason",
+       "Value #D": "Since",
+       "check": "Failed check",
+       "detail": "Finding",
+       "cause_job": "Tripped by job",
+       "cause_user": "Tripped by user",
+       "cause_name": "Tripped by name",
+       "cause_state": "Its state",
+       "job_id": "Last job",
+       "user": "User",
+       "job_name": "Name",
+       "job_state": "Job state",
+       "Value #B": "Started",
+       "Value #C": "Ended"
+      },
+      "indexByName": {
+       "instance": 0,
+       "state": 1,
+       "reason": 2,
+       "Value #D": 3,
+       "check": 4,
+       "detail": 5,
+       "cause_job": 6,
+       "cause_user": 7,
+       "cause_name": 8,
+       "cause_state": 9,
+       "job_id": 10,
+       "user": 11,
+       "job_name": 12,
+       "job_state": 13,
+       "Value #B": 14,
+       "Value #C": 15
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Node"
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "Started|Ended|Since"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "dateTimeAsLocal"
+       },
+       {
+        "id": "custom.width",
+        "value": 170
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Node"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 140
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "State"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 85
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Reason"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 120
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Failed check"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Finding"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 470
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Tripped by job"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 105
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Its state"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Last job"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 75
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Job state"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 100
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "Failed check|Finding"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "State"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "regex",
+          "options": {
+           "pattern": "^(down|drain|fail|maint|inval|not_resp|unk).*|.*\\*$",
+           "result": {
+            "color": "red",
+            "index": 0
+           }
+          }
+         },
+         {
+          "type": "regex",
+          "options": {
+           "pattern": "^idle.*",
+           "result": {
+            "color": "green",
+            "index": 1
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Job state"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "regex",
+          "options": {
+           "pattern": "^(FAILED|NODE_FAIL|TIMEOUT|OUT_OF_MEMORY|BOOT_FAIL).*",
+           "result": {
+            "color": "red",
+            "index": 0
+           }
+          }
+         },
+         {
+          "type": "regex",
+          "options": {
+           "pattern": "^RUNNING.*",
+           "result": {
+            "color": "blue",
+            "index": 1
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "Last job|Tripped by job"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open job ${__value.raw}",
+          "url": "/grafana/d/gpu-job/slurm-job?var-job=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Utilisation, 15-min average (%)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 21,
+   "gridPos": {
+    "h": 23,
+    "w": 10,
+    "x": 0,
+    "y": 34
    },
    "description": "Each GPU's utilisation averaged over 15 min. Grey: under 5%, effectively unused.",
    "targets": [
@@ -838,7 +1234,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}[15m])",
+     "expr": "avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[15m]) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -948,12 +1344,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 21,
+   "id": 22,
    "gridPos": {
-    "h": 37,
+    "h": 23,
     "w": 14,
     "x": 10,
-    "y": 11
+    "y": 34
    },
    "description": "The user and workload (container, Slurm job's script, or command) holding the most memory on each GPU; on nodes the collector can't reach, the Slurm job holding it (user and job name), else 'not visible'; free: no process and no Slurm job.",
    "targets": [
@@ -963,7 +1359,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "topk by (instance, gpu) (1, label_join((label_replace(gpu_process_memory_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"workload\")) or on (instance, gpu) label_join((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"job_name\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}, \"who\", \"free\", \"\", \"\")",
+     "expr": "(topk by (instance, gpu) (1, label_join((label_replace(gpu_process_memory_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"workload\")) or on (instance, gpu) label_join((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"job_name\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}, \"who\", \"free\", \"\", \"\")) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1035,13 +1431,13 @@
   {
    "type": "row",
    "title": "Over time",
-   "id": 22,
+   "id": 23,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 48
+    "y": 57
    }
   },
   {
@@ -1052,12 +1448,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 23,
+   "id": 24,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 49
+    "y": 58
    },
    "targets": [
     {
@@ -1107,12 +1503,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 24,
+   "id": 25,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 49
+    "y": 58
    },
    "targets": [
     {
@@ -1162,12 +1558,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 25,
+   "id": 26,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 49
+    "y": 58
    },
    "targets": [
     {
@@ -1217,12 +1613,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 26,
+   "id": 27,
    "gridPos": {
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 58
+    "y": 67
    },
    "targets": [
     {
@@ -1268,30 +1664,30 @@
   {
    "type": "row",
    "title": "Who is using them",
-   "id": 27,
+   "id": 28,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 67
+    "y": 76
    }
   },
   {
    "type": "table",
-   "title": "Workloads on GPUs now",
+   "title": "Workloads on GPUs: now and over the time range",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 28,
+   "id": 29,
    "gridPos": {
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 68
+    "y": 77
    },
-   "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command.",
+   "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. GPUs, Nodes, GPU util and memory are now (empty: it ended); GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
    "targets": [
     {
      "refId": "A",
@@ -1336,6 +1732,28 @@
      "legendFormat": "",
      "instant": true,
      "format": "table"
+    },
+    {
+     "refId": "E",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum_over_time((count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}))))[$__range:1m]) / 60",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "F",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum_over_time((count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}))))[$__range:1m]) / ($__range_s / 60)",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
     }
    ],
    "transformations": [
@@ -1356,7 +1774,9 @@
        "Value #A": "GPUs",
        "Value #B": "Nodes",
        "Value #C": "GPU util %",
-       "Value #D": "GPU memory GiB"
+       "Value #D": "GPU memory GiB",
+       "Value #E": "GPU-hours",
+       "Value #F": "GPU equivalent"
       },
       "indexByName": {
        "user": 0,
@@ -1365,7 +1785,9 @@
        "Value #A": 3,
        "Value #B": 4,
        "Value #C": 5,
-       "Value #D": 6
+       "Value #D": 6,
+       "Value #E": 7,
+       "Value #F": 8
       }
      }
     },
@@ -1374,7 +1796,7 @@
      "options": {
       "sort": [
        {
-        "field": "GPUs",
+        "field": "GPU-hours",
         "desc": true
        }
       ]
@@ -1389,12 +1811,24 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "GPUs|Nodes"
+       "options": "^(GPUs|Nodes)$"
       },
       "properties": [
        {
         "id": "decimals",
         "value": 0
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "GPU equivalent"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 2
        }
       ]
      },
@@ -1474,12 +1908,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 29,
+   "id": 30,
    "gridPos": {
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 79
+    "y": 88
    },
    "description": "Running Slurm jobs the job pusher's account sees (slurm-exporter): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -1687,220 +2121,6 @@
   },
   {
    "type": "table",
-   "title": "Slurm nodes: state and last job",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "prometheus"
-   },
-   "id": 30,
-   "gridPos": {
-    "h": 14,
-    "w": 24,
-    "x": 0,
-    "y": 89
-   },
-   "description": "Each node's Slurm state (sinfo: idle, mixed, allocated, drained, down; a trailing * means the node isn't responding) with its reason, and the latest job started on it (sacct, last 30 days; running ones have no end). From the Slurm job pusher (slurm-exporter).",
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
-     },
-     "expr": "max by (instance, state, reason) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\"})",
-     "legendFormat": "",
-     "instant": true,
-     "format": "table"
-    },
-    {
-     "refId": "B",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
-     },
-     "expr": "max by (instance, job_id, user, job_name, job_state) (slurm_node_last_job_start_seconds{job=\"slurm_jobs\", instance=~\"$node\"}) * 1000",
-     "legendFormat": "",
-     "instant": true,
-     "format": "table"
-    },
-    {
-     "refId": "C",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
-     },
-     "expr": "max by (instance, job_id, user, job_name, job_state) (slurm_node_last_job_end_seconds{job=\"slurm_jobs\", instance=~\"$node\"} > 0) * 1000",
-     "legendFormat": "",
-     "instant": true,
-     "format": "table"
-    }
-   ],
-   "transformations": [
-    {
-     "id": "merge",
-     "options": {}
-    },
-    {
-     "id": "organize",
-     "options": {
-      "excludeByName": {
-       "Time": true,
-       "Value #A": true
-      },
-      "renameByName": {
-       "instance": "Node",
-       "state": "State",
-       "reason": "Reason",
-       "job_id": "Last job",
-       "user": "User",
-       "job_name": "Name",
-       "job_state": "Job state",
-       "Value #B": "Started",
-       "Value #C": "Ended"
-      },
-      "indexByName": {
-       "instance": 0,
-       "state": 1,
-       "reason": 2,
-       "job_id": 3,
-       "user": 4,
-       "job_name": 5,
-       "job_state": 6,
-       "Value #B": 7,
-       "Value #C": 8
-      }
-     }
-    },
-    {
-     "id": "sortBy",
-     "options": {
-      "sort": [
-       {
-        "field": "Node"
-       }
-      ]
-     }
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {},
-    "overrides": [
-     {
-      "matcher": {
-       "id": "byRegexp",
-       "options": "Started|Ended"
-      },
-      "properties": [
-       {
-        "id": "unit",
-        "value": "dateTimeAsLocal"
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "State"
-      },
-      "properties": [
-       {
-        "id": "custom.cellOptions",
-        "value": {
-         "type": "color-text"
-        }
-       },
-       {
-        "id": "mappings",
-        "value": [
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^(down|drain|fail|maint|inval|not_resp|unk).*|.*\\*$",
-           "result": {
-            "color": "red",
-            "index": 0
-           }
-          }
-         },
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^idle.*",
-           "result": {
-            "color": "green",
-            "index": 1
-           }
-          }
-         }
-        ]
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Job state"
-      },
-      "properties": [
-       {
-        "id": "custom.cellOptions",
-        "value": {
-         "type": "color-text"
-        }
-       },
-       {
-        "id": "mappings",
-        "value": [
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^(FAILED|NODE_FAIL|TIMEOUT|OUT_OF_MEMORY|BOOT_FAIL).*",
-           "result": {
-            "color": "red",
-            "index": 0
-           }
-          }
-         },
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^RUNNING.*",
-           "result": {
-            "color": "blue",
-            "index": 1
-           }
-          }
-         }
-        ]
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Last job"
-      },
-      "properties": [
-       {
-        "id": "links",
-        "value": [
-         {
-          "title": "Open job ${__value.raw}",
-          "url": "/grafana/d/gpu-job/slurm-job?var-job=${__value.raw}&${__url_time_range}"
-         }
-        ]
-       }
-      ]
-     }
-    ]
-   },
-   "options": {
-    "showHeader": true,
-    "cellHeight": "sm"
-   }
-  },
-  {
-   "type": "table",
    "title": "GPU-hours by user (time range)",
    "datasource": {
     "type": "prometheus",
@@ -1911,7 +2131,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 103
+    "y": 98
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -1992,7 +2212,7 @@
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 103
+    "y": 98
    },
    "targets": [
     {
@@ -2040,7 +2260,7 @@
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 103
+    "y": 98
    },
    "targets": [
     {
