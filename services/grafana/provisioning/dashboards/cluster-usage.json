@@ -1782,7 +1782,7 @@
   },
   {
    "type": "table",
-   "title": "Workloads on GPUs: now and over the time range",
+   "title": "Workloads on GPUs",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1794,7 +1794,7 @@
     "x": 0,
     "y": 95
    },
-   "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. GPUs, Nodes, GPU util and memory are now (empty: it ended); GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
+   "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. Only the ones running now: GPUs, Nodes, GPU util and memory now; GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
    "targets": [
     {
      "refId": "A",
@@ -1846,7 +1846,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum_over_time((count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}))))[$__range:1m]) / 60",
+     "expr": "sum_over_time((count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}))))[$__range:1m]) / 60 and on (user, workload, slurm_job) count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1857,7 +1857,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum_over_time((count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}))))[$__range:1m]) / ($__range_s / 60)",
+     "expr": "sum_over_time((count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}))))[$__range:1m]) / ($__range_s / 60) and on (user, workload, slurm_job) count by (user, workload, slurm_job) (count by (instance, gpu, user, workload, slurm_job) ((label_replace(gpu_process_count{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"})))",
      "legendFormat": "",
      "instant": true,
      "format": "table"
