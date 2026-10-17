@@ -991,19 +991,19 @@
   },
   {
    "type": "table",
-   "title": "Slurm nodes: state and last job",
+   "title": "Nodes: health and what runs on them",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "id": 21,
    "gridPos": {
-    "h": 23,
+    "h": 31,
     "w": 24,
     "x": 0,
     "y": 21
    },
-   "description": "Each node's Slurm state (sinfo: idle, mixed, allocated, drained, draining, down; a trailing * means the node isn't responding) with its reason, and since when. Failed check and Finding: why a Prolog error drained it, from the node's pre-job health check (gpu_processes.py reads Bright's failed-check output on the node): e.g. dmesg finding a process blocked for minutes, dated; the culprit is a job running then, not the one it tripped on. Tripped by: the job Slurm requeued (Prolog error) or failed (NODE_FAIL: the node stopped responding) on it at that time, else the one running then. Then the latest job started on it (sacct, last 30 days; running ones have no end). Slurm columns from the Slurm job pusher (slurm-exporter).",
+   "description": "One row per Slurm node, by name (click a header to sort by it, e.g. Status for problems first). Status: DOWN (no ssh answer, or Slurm: down or not responding), NO SSH (up, refuses our key), DRAINED (Slurm won't start jobs on it), NO /tier1 (shared file system missing: jobs using it fail), else SLURM JOB, MANUAL JOB (GPU work started outside Slurm) or IDLE. Problem: the most telling cause, from the collector (ssh, the node's pre-job health check, mounts; gpu_processes.py) or Slurm's reason. A health-check finding such as dmesg's 'task python blocked for more than 122 seconds' comes from a job running then, not from the one it tripped. Last run job: every job running on it now, SLURM (job \u00b7 user \u00b7 name) or MANUAL (a GPU workload started outside Slurm: user \u00b7 workload); with none, the Slurm job it went down on (requeued on a Prolog error, or failed with NODE_FAIL). Slurm columns from the Slurm job pusher (slurm-exporter).",
    "targets": [
     {
      "refId": "A",
@@ -1011,7 +1011,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "max by (instance, state, reason) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"})",
+     "expr": "(max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0 + 6 and on (instance) (label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"timeout\"}, \"instance\", \"$1\", \"node\", \"(.*)\") or on (instance) slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\", state=~\"down.*|.*[*]\"})) or on (instance) (max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0 + 5 and on (instance) label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"ssh_denied\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) or on (instance) (max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0 + 4 and on (instance) slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\", state=~\".*drain.*\"}) or on (instance) (max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0 + 3 and on (instance) label_replace(node_mount_ok{job=\"gpu_processes\", node=~\"$node\", node!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"instance\", \"$1\", \"node\", \"(.*)\") == 0) or on (instance) (max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0 + 2 and on (instance) slurm_job_cpu{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) or on (instance) (max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0 + 1 and on (instance) label_replace(gpu_process_memory_bytes{job=\"gpu_processes\", slurm_job=\"\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) or on (instance) (max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 0)",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1022,7 +1022,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "max by (instance, job_id, user, job_name, job_state) (slurm_node_last_job_start_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 1000",
+     "expr": "max by (instance, slurm) (label_replace(label_join(slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"slurm\", \" \u00b7 \", \"state\", \"reason\"), \"slurm\", \"$1\", \"slurm\", \"(.*) \u00b7 $\"))",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1033,7 +1033,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "max by (instance, job_id, user, job_name, job_state) (slurm_node_last_job_end_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"} > 0) * 1000",
+     "expr": "max by (instance) (slurm_node_reason_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 1000",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1044,7 +1044,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "max by (instance) (slurm_node_reason_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}) * 1000",
+     "expr": "max by (instance, problem) ((label_replace(label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"timeout\"}, \"instance\", \"$1\", \"node\", \"(.*)\"), \"problem\", \"no answer over ssh: down, hung or off the network\", \"\", \"\") or on (instance) label_replace(label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"ssh_denied\"}, \"instance\", \"$1\", \"node\", \"(.*)\"), \"problem\", \"up but refuses ssh keys: /home likely not mounted (reboot)\", \"\", \"\") or on (instance) label_replace(label_join(label_replace(node_health_check_failure_seconds{job=\"gpu_processes\", node=~\"$node\", node!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance) slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\", state=~\".*drain.*\"}, \"problem\", \": \", \"check\", \"detail\"), \"problem\", \"$1: $2 blocked > $3 s (at $4)\", \"problem\", \"(\\\\w+): task (\\\\S+) blocked for more than (\\\\d+) seconds\\\\. \\\\(at (.*):\\\\d+\\\\)\") or on (instance) label_replace(slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\", state=~\"down.*|.*[*]\"} or on (instance) slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\", state=~\".*drain.*\"}, \"problem\", \"Slurm: $1\", \"reason\", \"(.+)\") or on (instance) label_replace(label_replace(node_mount_ok{job=\"gpu_processes\", node=~\"$node\", node!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"instance\", \"$1\", \"node\", \"(.*)\") == 0, \"problem\", \"/tier1 not mounted: jobs that use it fail\", \"\", \"\")) and on (instance) max by (instance) (slurm_node_state{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}))",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1055,18 +1055,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "max by (instance, cause_job, cause_user, cause_name, cause_state) (slurm_node_cause_job_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"})",
-     "legendFormat": "",
-     "instant": true,
-     "format": "table"
-    },
-    {
-     "refId": "F",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
-     },
-     "expr": "max by (instance, check, detail) (label_replace(node_health_check_failure_seconds{job=\"gpu_processes\", node=~\"$node\", node!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"instance\", \"$1\", \"node\", \"(.*)\"))",
+     "expr": "(max by (instance, lastjob) (label_replace(label_join(max by (instance, job_id, user, job_name) (slurm_job_cpu{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}), \"lastjob\", \" \u00b7 \", \"job_id\", \"user\", \"job_name\"), \"lastjob\", \"SLURM $1\", \"lastjob\", \"(.*)\")) or max by (instance, lastjob) (label_replace(label_join(max by (instance, user, workload) (label_replace(gpu_process_memory_bytes{job=\"gpu_processes\", slurm_job=\"\"}, \"instance\", \"$1\", \"node\", \"(.*)\")), \"lastjob\", \" \u00b7 \", \"user\", \"workload\"), \"lastjob\", \"MANUAL $1\", \"lastjob\", \"(.*)\"))) or on (instance) max by (instance, lastjob) (label_replace(label_join(slurm_node_cause_job_seconds{job=\"slurm_jobs\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}, \"lastjob\", \" \u00b7 \", \"cause_job\", \"cause_user\", \"cause_name\"), \"lastjob\", \"SLURM $1\", \"lastjob\", \"(.*)\"))",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1074,53 +1063,72 @@
    ],
    "transformations": [
     {
-     "id": "merge",
-     "options": {}
+     "id": "groupBy",
+     "filter": {
+      "id": "byRefId",
+      "options": "E"
+     },
+     "options": {
+      "fields": {
+       "instance": {
+        "operation": "groupby",
+        "aggregations": []
+       },
+       "lastjob": {
+        "operation": "aggregate",
+        "aggregations": [
+         "uniqueValues"
+        ]
+       }
+      }
+     }
+    },
+    {
+     "id": "convertFieldType",
+     "options": {
+      "conversions": [
+       {
+        "targetField": "lastjob (uniqueValues)",
+        "destinationType": "string",
+        "joinWith": "\n"
+       }
+      ]
+     }
+    },
+    {
+     "id": "joinByField",
+     "options": {
+      "byField": "instance",
+      "mode": "outer"
+     }
     },
     {
      "id": "organize",
      "options": {
       "excludeByName": {
        "Time": true,
-       "Value #A": true,
-       "Value #E": true,
-       "Value #F": true
+       "Time 1": true,
+       "Time 2": true,
+       "Time 3": true,
+       "Time 4": true,
+       "Value #B": true,
+       "Value #D": true
       },
       "renameByName": {
        "instance": "Node",
-       "state": "State",
-       "reason": "Reason",
-       "Value #D": "Since",
-       "check": "Failed check",
-       "detail": "Finding",
-       "cause_job": "Tripped by job",
-       "cause_user": "Tripped by user",
-       "cause_name": "Tripped by name",
-       "cause_state": "Its state",
-       "job_id": "Last job",
-       "user": "User",
-       "job_name": "Name",
-       "job_state": "Job state",
-       "Value #B": "Started",
-       "Value #C": "Ended"
+       "Value #A": "Status",
+       "slurm": "Slurm",
+       "Value #C": "Since",
+       "problem": "Problem",
+       "lastjob (uniqueValues)": "Last run job"
       },
       "indexByName": {
        "instance": 0,
-       "state": 1,
-       "reason": 2,
-       "Value #D": 3,
-       "check": 4,
-       "detail": 5,
-       "cause_job": 6,
-       "cause_user": 7,
-       "cause_name": 8,
-       "cause_state": 9,
-       "job_id": 10,
-       "user": 11,
-       "job_name": 12,
-       "job_state": 13,
-       "Value #B": 14,
-       "Value #C": 15
+       "Value #A": 1,
+       "slurm": 2,
+       "Value #C": 3,
+       "problem": 4,
+       "lastjob (uniqueValues)": 5
       }
      }
     },
@@ -1129,28 +1137,137 @@
      "options": {
       "sort": [
        {
-        "field": "Node"
+        "field": "Node",
+        "desc": false
        }
       ]
      }
     }
    ],
    "fieldConfig": {
-    "defaults": {},
+    "defaults": {
+     "custom": {
+      "align": "left"
+     }
+    },
     "overrides": [
      {
       "matcher": {
-       "id": "byRegexp",
-       "options": "Started|Ended|Since"
+       "id": "byName",
+       "options": "Status"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background",
+         "mode": "basic"
+        }
+       },
+       {
+        "id": "custom.width",
+        "value": 120
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "6": {
+            "text": "DOWN",
+            "color": "red",
+            "index": 0
+           },
+           "5": {
+            "text": "NO SSH",
+            "color": "red",
+            "index": 1
+           },
+           "4": {
+            "text": "DRAINED",
+            "color": "red",
+            "index": 2
+           },
+           "3": {
+            "text": "NO /tier1",
+            "color": "red",
+            "index": 3
+           },
+           "2": {
+            "text": "SLURM JOB",
+            "color": "blue",
+            "index": 4
+           },
+           "1": {
+            "text": "MANUAL JOB",
+            "color": "purple",
+            "index": 5
+           },
+           "0": {
+            "text": "IDLE",
+            "color": "green",
+            "index": 6
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Problem"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       },
+       {
+        "id": "custom.width",
+        "value": 400
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Last run job"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "auto",
+         "wrapText": true
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Since"
       },
       "properties": [
        {
         "id": "unit",
-        "value": "dateTimeAsLocal"
+        "value": "time:MM-DD HH:mm"
        },
        {
         "id": "custom.width",
-        "value": 170
+        "value": 105
        }
       ]
      },
@@ -1169,212 +1286,12 @@
      {
       "matcher": {
        "id": "byName",
-       "options": "State"
+       "options": "Slurm"
       },
       "properties": [
        {
         "id": "custom.width",
-        "value": 85
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Reason"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 120
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Failed check"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 95
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Finding"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 470
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Tripped by job"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 105
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Its state"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 95
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Last job"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 75
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Job state"
-      },
-      "properties": [
-       {
-        "id": "custom.width",
-        "value": 100
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byRegexp",
-       "options": "Failed check|Finding"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "red"
-        }
-       },
-       {
-        "id": "custom.cellOptions",
-        "value": {
-         "type": "color-text"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "State"
-      },
-      "properties": [
-       {
-        "id": "custom.cellOptions",
-        "value": {
-         "type": "color-text"
-        }
-       },
-       {
-        "id": "mappings",
-        "value": [
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^(down|drain|fail|maint|inval|not_resp|unk).*|.*\\*$",
-           "result": {
-            "color": "red",
-            "index": 0
-           }
-          }
-         },
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^idle.*",
-           "result": {
-            "color": "green",
-            "index": 1
-           }
-          }
-         }
-        ]
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Job state"
-      },
-      "properties": [
-       {
-        "id": "custom.cellOptions",
-        "value": {
-         "type": "color-text"
-        }
-       },
-       {
-        "id": "mappings",
-        "value": [
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^(FAILED|NODE_FAIL|TIMEOUT|OUT_OF_MEMORY|BOOT_FAIL).*",
-           "result": {
-            "color": "red",
-            "index": 0
-           }
-          }
-         },
-         {
-          "type": "regex",
-          "options": {
-           "pattern": "^RUNNING.*",
-           "result": {
-            "color": "blue",
-            "index": 1
-           }
-          }
-         }
-        ]
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byRegexp",
-       "options": "Last job|Tripped by job"
-      },
-      "properties": [
-       {
-        "id": "links",
-        "value": [
-         {
-          "title": "Open job ${__value.raw}",
-          "url": "/grafana/d/gpu-job/slurm-job?var-job=${__value.raw}&${__url_time_range}"
-         }
-        ]
+        "value": 175
        }
       ]
      }
@@ -1397,7 +1314,7 @@
     "h": 23,
     "w": 10,
     "x": 0,
-    "y": 44
+    "y": 52
    },
    "description": "Each GPU's utilisation averaged over 15 min. Grey: under 5%, effectively unused.",
    "targets": [
@@ -1407,7 +1324,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[15m]) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}",
+     "expr": "((max_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[1d])) * 0 + -1 and on (instance) label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"timeout\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) or on (instance, gpu) ((max_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[1d])) * 0 + -2 and on (instance) label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"ssh_denied\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) or on (instance, gpu) (avg_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[15m]) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"})",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1476,6 +1393,23 @@
        }
       ]
      },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "-1": {
+         "text": "\u00a0",
+         "color": "red",
+         "index": 0
+        },
+        "-2": {
+         "text": "\u00a0",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
      "custom": {
       "cellOptions": {
        "type": "color-background",
@@ -1522,7 +1456,7 @@
     "h": 23,
     "w": 14,
     "x": 10,
-    "y": 44
+    "y": 52
    },
    "description": "The user and workload (container, Slurm job's script, or command) holding the most memory on each GPU; on nodes the collector can't reach, the Slurm job holding it (user and job name), else 'not visible'; free: no process and no Slurm job.",
    "targets": [
@@ -1532,7 +1466,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "(topk by (instance, gpu) (1, label_join((label_replace(gpu_process_memory_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"workload\")) or on (instance, gpu) label_join((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"job_name\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}, \"who\", \"free\", \"\", \"\")) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}",
+     "expr": "label_replace((max_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[1d])) and on (instance) label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"timeout\"}, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) label_replace((max_over_time(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}[1d])) and on (instance) label_replace(gpu_processes_node_status{job=\"gpu_processes\", status=\"ssh_denied\"}, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) (topk by (instance, gpu) (1, label_join((label_replace(gpu_process_memory_bytes{job=\"gpu_processes\"}, \"instance\", \"$1\", \"node\", \"(.*)\") and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"workload\")) or on (instance, gpu) label_join((slurm_job_gpu{job=\"slurm_jobs\"} and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}), \"who\", \" \u00b7 \", \"user\", \"job_name\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"} unless on (instance) label_replace(gpu_processes_node_up{job=\"gpu_processes\"} == 1, \"instance\", \"$1\", \"node\", \"(.*)\"), \"who\", \"not visible\", \"\", \"\") or on (instance, gpu) label_replace(DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\"}, \"who\", \"free\", \"\", \"\")) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"}",
      "legendFormat": "",
      "instant": true,
      "format": "table"
@@ -1610,7 +1544,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 67
+    "y": 75
    }
   },
   {
@@ -1626,7 +1560,7 @@
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 68
+    "y": 76
    },
    "targets": [
     {
@@ -1681,7 +1615,7 @@
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 68
+    "y": 76
    },
    "targets": [
     {
@@ -1736,7 +1670,7 @@
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 68
+    "y": 76
    },
    "targets": [
     {
@@ -1791,7 +1725,7 @@
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 77
+    "y": 85
    },
    "targets": [
     {
@@ -1843,7 +1777,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 86
+    "y": 94
    }
   },
   {
@@ -1858,7 +1792,7 @@
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 87
+    "y": 95
    },
    "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. GPUs, Nodes, GPU util and memory are now (empty: it ended); GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
    "targets": [
@@ -2086,7 +2020,7 @@
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 98
+    "y": 106
    },
    "description": "Running Slurm jobs the job pusher's account sees (slurm-exporter): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -2304,7 +2238,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 108
+    "y": 116
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -2385,7 +2319,7 @@
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 108
+    "y": 116
    },
    "targets": [
     {
@@ -2433,7 +2367,7 @@
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 108
+    "y": 116
    },
    "targets": [
     {
