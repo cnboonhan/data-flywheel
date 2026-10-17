@@ -20,6 +20,7 @@
 #   nvidia/Qwen3.8-Flash-Next-NVFP4         model    *                           Qwen3.8-Flash-Next-NVFP4 (133 GB, NVIDIA Open Model License; Dynamo, vLLM 0.31)
 #   Qwen/Qwen3-VL-8B-Instruct               model    *                           Qwen3-VL-8B-Instruct   (18 GB, Apache-2.0; Dynamo)
 #   Qwen/Qwen3-VL-30B-A3B-Instruct          model    *                           Qwen3-VL-30B-A3B-Instruct (62 GB, Apache-2.0; Dynamo)
+#   zai-org/GLM-5.3-Flash                   model    *                           GLM-5.3-Flash          (328 GB FP8, MIT; Dynamo, images)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:

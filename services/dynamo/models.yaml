@@ -15,9 +15,11 @@ host_numa_nodes: "0,1"
 
 # The share of each GPU's memory that single-node models may take together (render.py checks the aliased ones), on the
 # nodes they're placed on. DYNAMO_NODE: GPU 2 also holds Triton's image models and policies (~103 GiB, 0.37; TRITON_GPU);
-# GPUs 1 and 3 are Dynamo's. 0.92: vLLM's activations and CUDA graphs need some room past the shares; untuned.
+# GPUs 1 and 3 are Dynamo's. DYNAMO_HEAD: a one-tray model, when no tray model holds the alias (render.py refuses both).
+# 0.92: vLLM's activations and CUDA graphs need some room past the shares; untuned.
 gpus:
   $DYNAMO_NODE: {1: 0.92, 2: 0.58, 3: 0.92}
+  $DYNAMO_HEAD: {0: 0.92, 1: 0.92, 2: 0.92, 3: 0.92}
 
 common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp,
               --scheduling-policy, priority, --enable-prefix-caching, --disable-custom-all-reduce]
@@ -39,7 +41,7 @@ models:
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1   # carries the K3 patch set and Dynamo's K3 parsers
     ports: {frontend: 8191, system: 9311, rendezvous: 29511}
     # Dynamo's chat processor: vLLM's (in Dynamo 1.6's vLLM 0.31 image) builds K3's config without prefix caching and
-    # refuses it (`--mamba-block-size can only be set with --enable-prefix-caching`), and Dynamo 1.6 has no K3 parsers
+    # refuses it (`--mamba-block-size can only be set with --enable-prefix-caching`)
     frontend_args: [--dyn-chat-processor, dynamo]
     args: [--max-model-len, "262144", --gpu-memory-utilization, "0.85", --max-num-seqs, "64", --enable-multimodal,
            --limit-mm-per-prompt, '{"image": 4}', --enable-expert-parallel,
@@ -68,6 +70,24 @@ models:
     # (README) failed the check. Dynamo's worker takes the tool parser as
     # --dyn-tool-call-parser (vLLM's own --tool-call-parser, --enable-auto-tool-choice go to the frontend); glm45 is
     # Dynamo's GLM reasoning parser (its GLM-5.2 recipe)
+    env: {}
+
+  - name: glm-5.3-flash
+    licence: "MIT"
+    about: "Zhipu's multimodal MoE, 18B active: reasoning, coding, agents, images"
+    registered: GLM-5.3-Flash
+    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.6.0-deepseek-v4.1-flash-dev.2   # vLLM 0.31 (Glm5Next), FlashInfer 0.7
+    # one tray, TP4, as vLLM's recipe: ~77 GiB of FP8 weights per GPU; share 0.80 (221 GiB) leaves room for file cache
+    # on a GPU's memory, which failed GLM-5.3's start at 0.85 (README); untuned
+    placement: {node: $DYNAMO_HEAD, gpus: [0, 1, 2, 3], share: 0.80}
+    ports: {frontend: 8298, system: 9328}
+    # Dynamo's chat processor: vLLM's refuses hybrid linear-attention configs like K3's and this one's (kimi-k3 above)
+    frontend_args: [--dyn-chat-processor, dynamo]
+    args: [--max-model-len, "262144", --max-num-seqs, "64", --kv-cache-dtype, fp8, --enable-multimodal,
+           --limit-mm-per-prompt, '{"image": 4}', --speculative-config, '{"method":"mtp","num_speculative_tokens":5}',
+           --reasoning-parser, glm47, --dyn-tool-call-parser, glm47, --dyn-reasoning-parser, glm45]
+    # flags from vLLM's recipe (fp8 KV cache, MTP with 5 draft tokens, glm47 parsers); max-model-len 262144: a quarter of
+    # its 1M, as kimi-k3; max-num-seqs 64 and 4 images per request: untuned
     env: {}
 
   - name: inkling

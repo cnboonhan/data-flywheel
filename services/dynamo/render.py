@@ -178,6 +178,10 @@ for m in cfg["models"]:
     served[n] = {"node": node, "system": p["system"], "tray": pl == "trays"}
 if len(trays) > 1:
     raise SystemExit(f"the alias `dynamo` is on {', '.join(trays)}: set it on one of the tray models (each takes all 8 GPUs)")
+on_trays = [n for n, sv in served.items() if not sv["tray"] and sv["node"] in (HEAD, WORKER)]
+if trays and on_trays:
+    raise SystemExit(f"the alias `dynamo` is on {trays[0]}, which takes both trays, and on {', '.join(on_trays)}, placed on a "
+                     "tray: set it on one or the other")
 budget = {(os.path.expandvars(nd), str(g)): b for nd, gs in cfg.get("gpus", {}).items() for g, b in gs.items()}
 for (node, g), s in share.items():
     if s > budget.get((node, g), 0) + 1e-9:
