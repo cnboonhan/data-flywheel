@@ -12,6 +12,11 @@ PUSHGATEWAY_TOKEN), replacing the last push, so finished processes disappear:
     gpu_process_count{node, gpu, user, workload, slurm_job}
     node_cpu_memory_total_bytes{node}, node_cpu_memory_available_bytes{node}   (available: free + file cache + reclaimable slab)
     gpu_processes_node_up{node}                                      1 when the node answered (0: unknown, e.g. ssh not allowed)
+    gpu_processes_node_status{node, status} 1                        why: ok, timeout (no answer: down, no route), ssh_denied
+                                                                     (it answers but refuses the key, e.g. /home not mounted
+                                                                     after a reboot), error (anything else)
+    node_mount_ok{node, path}                                        1 when the shared file system is mounted there (0: jobs
+                                                                     that read or write it fail)
     node_health_check_failure_seconds{node, job_id, check, detail}   the node's latest failed pre-job health check (Bright's
                                                                      prolog, which drains the node as "Prolog error") within
                                                                      HEALTH_DAYS, and when: the job whose start it failed,
@@ -33,6 +38,7 @@ here = os.path.dirname(os.path.abspath(__file__))
 SSH_TIMEOUT_S = 40   # per node: a hung node mustn't hold up the minute's push; untuned
 HEALTH_DAYS = 7      # older failed health checks aren't reported: by then the node was resumed or is long known; untuned
 HEALTH_DIR = "/cm/local/apps/slurm/var/pre-post-job-logs/failed-pre-jobs"   # Bright's per-job output of a failed check
+MOUNTS = ["/tier1"]   # shared file systems jobs need (data, checkouts, envs); missing on a node, its jobs fail at once
 
 # Runs on each node: GPUs, processes (pid, bus, MiB), per process its user, cgroup and command line, Docker names,
 # and the CPU NUMA nodes' meminfo. One line per record, tab-separated, tagged by its first field.
@@ -49,10 +55,11 @@ ps -eo user:64=,args= 2>/dev/null | awk '$2 == "docker" && ($3 == "run" || ($3 =
 f=$(find {HEALTH_DIR} -name 'job.*.log' -mtime -{HEALTH_DAYS} -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2)
 [ -n "$f" ] && printf 'H\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c %Y "$f")" "$(grep -m1 ' is FAIL' "$f")" \
   "$(grep -m1 -oE '\[[0-9.]+\] .*' "$f")" "$(date +%s)" "$(cut -d' ' -f1 /proc/uptime)"
+for m in {MOUNTS}; do mountpoint -q "$m" && printf 'T\t%s\t1\n' "$m" || printf 'T\t%s\t0\n' "$m"; done
 for d in /sys/devices/system/node/node[0-9]*; do
   [ -n "$(cat $d/cpulist)" ] && awk -v n="${d##*node}" '/MemTotal|MemFree|Active\(file\)|Inactive\(file\)|SReclaimable/ {printf "M\t%s\t%s\t%s\n", n, $3, $4}' $d/meminfo
 done
-'''.replace("{HEALTH_DIR}", HEALTH_DIR).replace("{HEALTH_DAYS}", str(HEALTH_DAYS))   # not format(): Docker's {{.ID}}
+'''.replace("{HEALTH_DIR}", HEALTH_DIR).replace("{HEALTH_DAYS}", str(HEALTH_DAYS)).replace("{MOUNTS}", " ".join(MOUNTS))   # not format(): Docker's {{.ID}}
 
 
 def health(f):
@@ -101,11 +108,15 @@ def collect(node, ip):
         r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", ip, "bash", "-s"], input=REMOTE,
                            capture_output=True, text=True, timeout=SSH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
-        return node, None
-    if r.returncode == 255 or not any(l.startswith("M\t") for l in r.stdout.splitlines()):   # ssh refused or failed
-        return node, None
+        return node, "timeout"
+    if r.returncode == 255:   # ssh itself failed: say why
+        err = r.stderr.lower()
+        return node, ("ssh_denied" if "permission denied" in err or "authentication" in err else
+                      "timeout" if any(w in err for w in ("timed out", "no route", "unreachable", "refused")) else "error")
+    if not any(l.startswith("M\t") for l in r.stdout.splitlines()):
+        return node, "error"
     out = r.stdout
-    gpus, procs, docker, mem, runs, hc = {}, [], {}, {}, [], None
+    gpus, procs, docker, mem, runs, hc, mounts = {}, [], {}, {}, [], None, {}
     for line in out.splitlines():
         f = line.split("\t")
         if f[0] == "G" and len(f) >= 3:
@@ -116,6 +127,8 @@ def collect(node, ip):
             docker[f[1]] = (f[2], f[3])
         elif f[0] == "R" and len(f) >= 3:
             runs.append((f[1], f[2]))
+        elif f[0] == "T" and len(f) >= 3:
+            mounts[f[1]] = int(f[2])
         elif f[0] == "H" and len(f) >= 4:
             hc = (*health(f), float(f[2]))
         elif f[0] == "M" and len(f) >= 4:
@@ -128,7 +141,7 @@ def collect(node, ip):
         key = (gpu, user, wl, job)
         b, c = rows.get(key, (0, 0))
         rows[key] = (b + float(mib or 0) * 2**20, c + 1)
-    return node, {"rows": rows, "mem": mem, "health": hc}
+    return node, {"rows": rows, "mem": mem, "health": hc, "mounts": mounts}
 
 
 def esc(v):
@@ -139,15 +152,18 @@ def main():
     nodes = [(t["labels"]["node"], t["targets"][0]) for t in json.load(open(os.path.join(here, "nodes.json")))]
     lines = ["# TYPE gpu_process_memory_bytes gauge", "# TYPE gpu_process_count gauge",
              "# TYPE node_cpu_memory_total_bytes gauge", "# TYPE node_cpu_memory_available_bytes gauge",
-             "# TYPE gpu_processes_node_up gauge", "# TYPE node_health_check_failure_seconds gauge"]
+             "# TYPE gpu_processes_node_up gauge", "# TYPE gpu_processes_node_status gauge", "# TYPE node_mount_ok gauge", "# TYPE node_health_check_failure_seconds gauge"]
     with concurrent.futures.ThreadPoolExecutor(16) as pool:   # 16 nodes at a time; untuned
         for node, r in pool.map(lambda n: collect(*n), nodes):
-            lines.append(f'gpu_processes_node_up{{node="{node}"}} {int(r is not None)}')
-            if r is None:
+            ok = isinstance(r, dict)
+            lines += [f'gpu_processes_node_up{{node="{node}"}} {int(ok)}',
+                      f'gpu_processes_node_status{{node="{node}",status="{"ok" if ok else r}"}} 1']
+            if not ok:
                 continue
             for (gpu, user, wl, job), (b, c) in r["rows"].items():
                 lab = f'node="{node}",gpu="{gpu}",user="{esc(user)}",workload="{esc(wl)}",slurm_job="{job}"'
                 lines += [f"gpu_process_memory_bytes{{{lab}}} {b:.0f}", f"gpu_process_count{{{lab}}} {c}"]
+            lines += [f'node_mount_ok{{node="{node}",path="{esc(m)}"}} {v}' for m, v in r["mounts"].items()]
             if r["health"]:
                 job, check, detail, when = r["health"]
                 lines.append(f'node_health_check_failure_seconds{{node="{node}",job_id="{esc(job)}",check="{esc(check)}",'
