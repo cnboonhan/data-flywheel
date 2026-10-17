@@ -45,7 +45,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase(llm_gateway_requests_total[$__range]))",
+     "expr": "(sum by (model) (increase(llm_gateway_requests_total[$__range]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "requests",
      "instant": true,
      "format": "table"
@@ -56,7 +56,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase(llm_gateway_requests_total{class=\"critical\"}[$__range]))",
+     "expr": "(sum by (model) (increase(llm_gateway_requests_total{class=\"critical\"}[$__range]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "critical",
      "instant": true,
      "format": "table"
@@ -67,7 +67,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase({__name__=\"vllm:prompt_tokens_total\", job=\"dynamo\"}[$__range]))",
+     "expr": "(sum by (model) (increase({__name__=\"vllm:prompt_tokens_total\", job=\"dynamo\"}[$__range]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "prompt tokens",
      "instant": true,
      "format": "table"
@@ -78,7 +78,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase({__name__=\"vllm:generation_tokens_total\", job=\"dynamo\"}[$__range]))",
+     "expr": "(sum by (model) (increase({__name__=\"vllm:generation_tokens_total\", job=\"dynamo\"}[$__range]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "generated tokens",
      "instant": true,
      "format": "table"
@@ -88,7 +88,7 @@
     "defaults": {},
     "overrides": []
    },
-   "description": "Requests the gateway forwarded, and the tokens the engines processed, per model over the dashboard's time range.",
+   "description": "Requests the gateway forwarded, and the tokens the engines processed, per model over the dashboard's time range. Only the models deployed now.",
    "transformations": [
     {
      "id": "merge"
@@ -227,7 +227,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model, class) (rate(llm_gateway_requests_total[5m]))",
+     "expr": "(sum by (model, class) (rate(llm_gateway_requests_total[5m]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} {{class}}"
     }
    ],
@@ -273,7 +273,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (rate({__name__=\"vllm:prompt_tokens_total\", job=\"dynamo\"}[5m]))",
+     "expr": "(sum by (model) (rate({__name__=\"vllm:prompt_tokens_total\", job=\"dynamo\"}[5m]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} prompt"
     },
     {
@@ -282,7 +282,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (rate({__name__=\"vllm:generation_tokens_total\", job=\"dynamo\"}[5m]))",
+     "expr": "(sum by (model) (rate({__name__=\"vllm:generation_tokens_total\", job=\"dynamo\"}[5m]))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} generated"
     }
    ],
@@ -326,7 +326,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "histogram_quantile(0.5, sum by (le, model) (rate({__name__=\"vllm:time_to_first_token_seconds_bucket\", job=\"dynamo\"}[5m])))",
+     "expr": "(histogram_quantile(0.5, sum by (le, model) (rate({__name__=\"vllm:time_to_first_token_seconds_bucket\", job=\"dynamo\"}[5m])))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} p50"
     },
     {
@@ -335,7 +335,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "histogram_quantile(0.95, sum by (le, model) (rate({__name__=\"vllm:time_to_first_token_seconds_bucket\", job=\"dynamo\"}[5m])))",
+     "expr": "(histogram_quantile(0.95, sum by (le, model) (rate({__name__=\"vllm:time_to_first_token_seconds_bucket\", job=\"dynamo\"}[5m])))) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} p95"
     }
    ],
@@ -381,7 +381,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) ({__name__=\"vllm:num_requests_running\", job=\"dynamo\"})",
+     "expr": "(sum by (model) ({__name__=\"vllm:num_requests_running\", job=\"dynamo\"})) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} running"
     },
     {
@@ -390,7 +390,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) ({__name__=\"vllm:num_requests_waiting\", job=\"dynamo\"})",
+     "expr": "(sum by (model) ({__name__=\"vllm:num_requests_waiting\", job=\"dynamo\"})) and on (model) max by (model) (llm_gateway_served @ end() == 1)",
      "legendFormat": "{{model}} waiting"
     },
     {
@@ -421,87 +421,6 @@
      "sort": "desc"
     }
    }
-  },
-  {
-   "type": "state-timeline",
-   "title": "Awake model",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "prometheus"
-   },
-   "id": 9,
-   "gridPos": {
-    "h": 5,
-    "w": 18,
-    "x": 0,
-    "y": 26
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
-     },
-     "expr": "llm_gateway_awake",
-     "legendFormat": "{{model}}"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "mappings": [
-      {
-       "type": "value",
-       "options": {
-        "0": {
-         "text": "asleep",
-         "color": "transparent"
-        },
-        "1": {
-         "text": "awake",
-         "color": "green"
-        }
-       }
-      }
-     ]
-    },
-    "overrides": []
-   },
-   "options": {
-    "showValue": "never",
-    "mergeValues": true
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Switches",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "prometheus"
-   },
-   "id": 10,
-   "gridPos": {
-    "h": 5,
-    "w": 6,
-    "x": 18,
-    "y": 26
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
-     },
-     "expr": "increase(llm_gateway_switches_total[$__range])",
-     "legendFormat": "switches"
-    }
-   ],
-   "fieldConfig": {
-    "defaults": {},
-    "overrides": []
-   },
-   "description": "Model switches in the time range: each costs minutes (the woken model reloads its weights)."
   },
   {
    "type": "row",
@@ -741,7 +660,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase({__name__=\"vllm:time_to_first_token_seconds_sum\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:time_to_first_token_seconds_count\", job=~\"dynamo|triton\"}[$__range]))",
+     "expr": "(sum by (model) (increase({__name__=\"vllm:time_to_first_token_seconds_sum\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:time_to_first_token_seconds_count\", job=~\"dynamo|triton\"}[$__range]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "ttft",
      "instant": true,
      "format": "table"
@@ -752,7 +671,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase({__name__=\"vllm:request_time_per_output_token_seconds_count\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:request_time_per_output_token_seconds_sum\", job=~\"dynamo|triton\"}[$__range]))",
+     "expr": "(sum by (model) (increase({__name__=\"vllm:request_time_per_output_token_seconds_count\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:request_time_per_output_token_seconds_sum\", job=~\"dynamo|triton\"}[$__range]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "tok/s",
      "instant": true,
      "format": "table"
@@ -763,7 +682,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_sum\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[$__range]))",
+     "expr": "(sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_sum\", job=~\"dynamo|triton\"}[$__range])) / sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[$__range]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "response",
      "instant": true,
      "format": "table"
@@ -774,7 +693,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[$__range]))",
+     "expr": "(sum by (model) (increase({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[$__range]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "requests",
      "instant": true,
      "format": "table"
@@ -828,7 +747,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (rate({__name__=\"vllm:request_time_per_output_token_seconds_count\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:request_time_per_output_token_seconds_sum\", job=~\"dynamo|triton\"}[5m]))",
+     "expr": "(sum by (model) (rate({__name__=\"vllm:request_time_per_output_token_seconds_count\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:request_time_per_output_token_seconds_sum\", job=~\"dynamo|triton\"}[5m]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "{{model}}"
     }
    ],
@@ -875,7 +794,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (rate({__name__=\"vllm:time_to_first_token_seconds_sum\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:time_to_first_token_seconds_count\", job=~\"dynamo|triton\"}[5m]))",
+     "expr": "(sum by (model) (rate({__name__=\"vllm:time_to_first_token_seconds_sum\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:time_to_first_token_seconds_count\", job=~\"dynamo|triton\"}[5m]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "{{model}}"
     }
    ],
@@ -922,7 +841,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (model) (rate({__name__=\"vllm:e2e_request_latency_seconds_sum\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[5m]))",
+     "expr": "(sum by (model) (rate({__name__=\"vllm:e2e_request_latency_seconds_sum\", job=~\"dynamo|triton\"}[5m])) / sum by (model) (rate({__name__=\"vllm:e2e_request_latency_seconds_count\", job=~\"dynamo|triton\"}[5m]))) and on (model) (max by (model) (llm_gateway_served @ end() == 1) or max by (model) (nv_inference_request_success{job=\"triton\"} @ end()))",
      "legendFormat": "{{model}}"
     }
    ],
