@@ -818,17 +818,190 @@
   },
   {
    "type": "table",
-   "title": "Slurm nodes: state and last job",
+   "title": "Slurm queue: pending jobs",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "id": 20,
    "gridPos": {
-    "h": 23,
+    "h": 10,
     "w": 24,
     "x": 0,
     "y": 11
+   },
+   "description": "Every pending Slurm job the job pusher sees (slurm-exporter, scontrol), longest-waiting first: why it waits (Resources: no free nodes fit it; Priority: others go first; launch_failed_requeued_held: its start failed, often a Prolog error draining the node, and it is held until released), what it asks for, and its priority (0: held).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (job_id, user, job_name, partition, reason) (slurm_job_pending_seconds{job=\"slurm_jobs\", partition=~\"$partition\"})",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (job_id, user, job_name, partition, reason) (slurm_job_pending_gpus{job=\"slurm_jobs\", partition=~\"$partition\"})",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (job_id, user, job_name, partition, reason) (slurm_job_pending_nodes{job=\"slurm_jobs\", partition=~\"$partition\"})",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (job_id, user, job_name, partition, reason) (slurm_job_pending_priority{job=\"slurm_jobs\", partition=~\"$partition\"})",
+     "legendFormat": "",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "job_id": "Job",
+       "user": "User",
+       "job_name": "Name",
+       "partition": "Partition",
+       "reason": "Waiting because",
+       "Value #A": "Waiting",
+       "Value #B": "GPUs",
+       "Value #C": "Nodes",
+       "Value #D": "Priority"
+      },
+      "indexByName": {
+       "job_id": 0,
+       "user": 1,
+       "job_name": 2,
+       "partition": 3,
+       "reason": 4,
+       "Value #A": 5,
+       "Value #B": 6,
+       "Value #C": 7,
+       "Value #D": 8
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Waiting",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Waiting"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "dtdurations"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Waiting because"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "regex",
+          "options": {
+           "pattern": ".*(held|fail|Held|Fail).*",
+           "result": {
+            "color": "red",
+            "index": 0
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Job"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 80
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Slurm nodes: state and last job",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 21,
+   "gridPos": {
+    "h": 23,
+    "w": 24,
+    "x": 0,
+    "y": 21
    },
    "description": "Each node's Slurm state (sinfo: idle, mixed, allocated, drained, draining, down; a trailing * means the node isn't responding) with its reason, and since when. Failed check and Finding: why a Prolog error drained it, from the node's pre-job health check (gpu_processes.py reads Bright's failed-check output on the node): e.g. dmesg finding a process blocked for minutes, dated; the culprit is a job running then, not the one it tripped on. Tripped by: the job Slurm requeued (Prolog error) or failed (NODE_FAIL: the node stopped responding) on it at that time, else the one running then. Then the latest job started on it (sacct, last 30 days; running ones have no end). Slurm columns from the Slurm job pusher (slurm-exporter).",
    "targets": [
@@ -1219,12 +1392,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 21,
+   "id": 22,
    "gridPos": {
     "h": 23,
     "w": 10,
     "x": 0,
-    "y": 34
+    "y": 44
    },
    "description": "Each GPU's utilisation averaged over 15 min. Grey: under 5%, effectively unused.",
    "targets": [
@@ -1344,12 +1517,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 22,
+   "id": 23,
    "gridPos": {
     "h": 23,
     "w": 14,
     "x": 10,
-    "y": 34
+    "y": 44
    },
    "description": "The user and workload (container, Slurm job's script, or command) holding the most memory on each GPU; on nodes the collector can't reach, the Slurm job holding it (user and job name), else 'not visible'; free: no process and no Slurm job.",
    "targets": [
@@ -1431,13 +1604,13 @@
   {
    "type": "row",
    "title": "Over time",
-   "id": 23,
+   "id": 24,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 57
+    "y": 67
    }
   },
   {
@@ -1448,12 +1621,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 24,
+   "id": 25,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 58
+    "y": 68
    },
    "targets": [
     {
@@ -1503,12 +1676,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 25,
+   "id": 26,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 58
+    "y": 68
    },
    "targets": [
     {
@@ -1558,12 +1731,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 26,
+   "id": 27,
    "gridPos": {
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 58
+    "y": 68
    },
    "targets": [
     {
@@ -1613,12 +1786,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 27,
+   "id": 28,
    "gridPos": {
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 67
+    "y": 77
    },
    "targets": [
     {
@@ -1664,13 +1837,13 @@
   {
    "type": "row",
    "title": "Who is using them",
-   "id": 28,
+   "id": 29,
    "collapsed": false,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 76
+    "y": 86
    }
   },
   {
@@ -1680,12 +1853,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 29,
+   "id": 30,
    "gridPos": {
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 77
+    "y": 87
    },
    "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. GPUs, Nodes, GPU util and memory are now (empty: it ended); GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
    "targets": [
@@ -1908,12 +2081,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 30,
+   "id": 31,
    "gridPos": {
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 88
+    "y": 98
    },
    "description": "Running Slurm jobs the job pusher's account sees (slurm-exporter): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -2126,12 +2299,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 31,
+   "id": 32,
    "gridPos": {
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 98
+    "y": 108
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -2207,12 +2380,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 32,
+   "id": 33,
    "gridPos": {
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 98
+    "y": 108
    },
    "targets": [
     {
@@ -2255,12 +2428,12 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "id": 33,
+   "id": 34,
    "gridPos": {
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 98
+    "y": 108
    },
    "targets": [
     {

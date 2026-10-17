@@ -8,6 +8,7 @@
 | `slurm_job_cpu{instance, cpu, <job>}` | each CPU core the job is pinned to | node_exporter's `node_cpu_seconds_total`, `on (instance, cpu)` |
 | `slurm_job_cpus{<job>}`, `slurm_job_memory_bytes{<job>}` | CPUs and memory allocated (0 bytes: none requested) | |
 | `slurm_job_rss_bytes{<job>}` | memory in use, summed over its running steps (`sstat`) | |
+| `slurm_job_pending_seconds{<job>, reason}`, `slurm_job_pending_gpus`, `_nodes`, `_priority` | the queue: each pending job, how long it has waited, why (`scontrol`'s reason), what it asks for, its priority (0: held) | |
 | `slurm_node_state{instance, state, reason, partition}` | each node's state (`sinfo`: idle, mixed, allocated, drained, down, ...; a trailing `*`: not responding) and why | node metrics, `on (instance)` |
 | `slurm_node_last_job_start_seconds{instance, <job>, job_state}`, `..._end_seconds` | the latest job started on the node (`sacct`, last 30 days) and when it started and ended (0 while it runs) | |
 | `slurm_node_reason_seconds{instance}` | when Slurm set a down or drained node's reason (`sinfo %H`) | |

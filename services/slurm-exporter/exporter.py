@@ -5,6 +5,9 @@
                                                                   node_cpu_seconds_total on instance, cpu)
     slurm_job_cpus{<job>}, slurm_job_memory_bytes{<job>}         what it was allocated
     slurm_job_rss_bytes{<job>}                                   memory in use, summed over its running steps (sstat)
+    slurm_job_pending_seconds{<job>, reason}                     the queue: each pending job, how long it has waited
+    slurm_job_pending_gpus{<job>, reason}, slurm_job_pending_nodes{...}, slurm_job_pending_priority{...}   what it asks
+                                                                  for, and its priority (0: held)
     slurm_node_state{instance, state, reason, partition} 1       each node's state (sinfo: idle, mixed, allocated, drained,
                                                                   down, ...; a trailing * means not responding)
     slurm_node_last_job_start_seconds{instance, <job>, job_state}   the latest job started on the node (sacct), and when
@@ -173,7 +176,7 @@ def node_metrics():
 
 
 def metrics():
-    gpus, cpus, alloc = [], [], []
+    gpus, cpus, alloc, pending = [], [], [], []
     ok = 1
     try:
         text = run("scontrol", "show", "job", "-d", "--oneliner")
@@ -181,10 +184,14 @@ def metrics():
         text, ok = "", 0
     for job in text.splitlines():
         f = dict(re.findall(r"(\w+)=(\S*)", job))
-        if f.get("JobState") != "RUNNING":
-            continue
         jl = ",".join(f'{k}="{esc(v)}"' for k, v in dict(job_id=f.get("JobId", ""), user=f.get("UserId", "").split("(")[0],
                       job_name=f.get("JobName", ""), partition=f.get("Partition", "")).items())
+        if f.get("JobState") == "PENDING":
+            gres = re.search(r"gres/gpu(?::[^=,]+)?=(\d+)", f.get("ReqTRES", "") or f.get("TRES", ""))
+            pending.append((f'{jl},reason="{esc(f.get("Reason", ""))}"', seconds(f.get("SubmitTime", "")),
+                            int(gres.group(1)) if gres else 0, int(f.get("NumNodes", "1").split("-")[0] or 1), int(f.get("Priority", "0") or 0)))
+        if f.get("JobState") != "RUNNING":
+            continue
         nodes = int(f.get("NumNodes", "1").split("-")[0] or 1)
         ncpu = int(f.get("NumCPUs", "0") or 0)
         mem = size(f["MinMemoryNode"]) * nodes if "MinMemoryNode" in f else size(f.get("MinMemoryCPU", "")) * ncpu
@@ -196,7 +203,7 @@ def metrics():
                 cpus += [f'slurm_job_cpu{{instance="{node}",cpu="{c}",{jl}}} 1' for c in indices(cpu_ids)]
                 if idx:
                     gpus += [f'slurm_job_gpu{{instance="{node}",gpu="{g}",{jl}}} 1' for g in indices(idx.group(1))]
-    used = rss([j for j, *_ in alloc])
+    used, now = rss([j for j, *_ in alloc]), time.time()
     lines = ["# HELP slurm_job_gpu 1 for each GPU a running Slurm job holds.", "# TYPE slurm_job_gpu gauge", *gpus,
              "# HELP slurm_job_cpu 1 for each CPU core a running Slurm job is pinned to.", "# TYPE slurm_job_cpu gauge", *cpus,
              "# HELP slurm_job_cpus CPUs allocated to the job.", "# TYPE slurm_job_cpus gauge",
@@ -205,7 +212,15 @@ def metrics():
              *[f"slurm_job_memory_bytes{{{jl}}} {m:.0f}" for _, jl, _, m in alloc],
              "# HELP slurm_job_rss_bytes Memory in use by the job's running steps (sstat).", "# TYPE slurm_job_rss_bytes gauge",
              *[f"slurm_job_rss_bytes{{{jl}}} {used[j]:.0f}" for j, jl, _, _ in alloc if j in used],
-             "# HELP slurm_job_gpu_up 1 if scontrol answered.", "# TYPE slurm_job_gpu_up gauge", f"slurm_job_gpu_up {ok}"]
+             "# HELP slurm_job_gpu_up 1 if scontrol answered.", "# TYPE slurm_job_gpu_up gauge", f"slurm_job_gpu_up {ok}",
+             "# HELP slurm_job_pending_seconds How long a pending job has waited since it was submitted.", "# TYPE slurm_job_pending_seconds gauge",
+             *[f"slurm_job_pending_seconds{{{pl}}} {max(0, now - sub):.0f}" for pl, sub, *_ in pending if sub],
+             "# HELP slurm_job_pending_gpus GPUs a pending job asks for.", "# TYPE slurm_job_pending_gpus gauge",
+             *[f"slurm_job_pending_gpus{{{pl}}} {g}" for pl, _, g, _, _ in pending],
+             "# HELP slurm_job_pending_nodes Nodes a pending job asks for.", "# TYPE slurm_job_pending_nodes gauge",
+             *[f"slurm_job_pending_nodes{{{pl}}} {n}" for pl, _, _, n, _ in pending],
+             "# HELP slurm_job_pending_priority A pending job's priority (0: held).", "# TYPE slurm_job_pending_priority gauge",
+             *[f"slurm_job_pending_priority{{{pl}}} {pr}" for pl, *_, pr in pending]]
     nodes = node_metrics()
     lines += ["# HELP slurm_node_state 1 for each node's Slurm state (sinfo).", "# TYPE slurm_node_state gauge",
               *[n for n in nodes if n.startswith("slurm_node_state")],
