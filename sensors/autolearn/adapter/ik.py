@@ -19,8 +19,10 @@ from cap_harness.errors import ApiError, ErrorCode
 from cap_harness.geometry import quaternion_wxyz_to_matrix
 
 REST_WEIGHT = 100.0        # on pinned joints; the commanded arm's joints get 0.001 (a tiny regulariser)
-POSITION_TOLERANCE_M = 0.01
-ORIENTATION_TOLERANCE_RAD = 0.05
+# a solve further off than this is reported unreachable and nothing moves; 1.5 cm lets a grasp at the edge of the
+# G2's reach (residuals of 1.1 cm seen there) go ahead and the caller's own pose tolerance judge it
+POSITION_TOLERANCE_M = 0.015
+ORIENTATION_TOLERANCE_RAD = 0.08
 
 
 class UrdfIkProvider:

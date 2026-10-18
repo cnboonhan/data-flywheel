@@ -70,7 +70,8 @@ for episode in range(args.episodes):
               "error": None if result.error is None else result.error.message, "result": result.result,
               "calls": len(result.calls), "steps": adapter._steps, "wall_s": round(time.time() - t0, 1),
               "success": progress["success"], "progress": progress["subtasks"], "stdout": result.stdout[-4000:]}
-    (out / f"episode{ctx.task_id:02d}.json").write_text(json.dumps(record, indent=1, default=str))
+    # the benchmark restarts its episode count, so the runner's own count leads the name
+    (out / f"episode{episode:02d}_task{ctx.task_id:02d}.json").write_text(json.dumps(record, indent=1, default=str))
     print(f"episode {ctx.task_id}: program_ok={result.ok} success={progress['success']} steps={adapter._steps} "
           f"calls={len(result.calls)} {'' if result.error is None else result.error.message}", flush=True)
 adapter.close()

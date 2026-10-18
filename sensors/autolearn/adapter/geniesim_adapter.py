@@ -56,7 +56,10 @@ WAIST_JOINTS = tuple(f"idx0{i}_body_joint{i}" for i in range(1, 6))
 GRIPPER_JOINTS = {"primary": "idx41_gripper_l_outer_joint1", "secondary": "idx81_gripper_r_outer_joint1"}
 EE_LINKS = {"primary": "gripper_l_center_link", "secondary": "gripper_r_center_link"}
 GRIPPER_OPEN = -0.785             # the benchmark's gripper value when open (it reports the omnipicker at -0.78 open, 0 closed)
-GRIPPER_STEPS = 30                # ticks a gripper command is held for: the omnipicker needs ~30 to finish moving
+GRIPPER_STEPS = 20                # ticks a gripper command is first held for; then it is held in GRIPPER_POLL-tick
+GRIPPER_POLL = 5                  # chunks until the reading stops changing (the fingers take 30-60 ticks, more when
+GRIPPER_SETTLED = 0.003           # they press on something), up to GRIPPER_MAX_STEPS in all: a lift that starts
+GRIPPER_MAX_STEPS = 90            # while the fingers are still closing leaves the object behind
 CONTROL_FREQUENCY_HZ = 30.0       # one chunk entry per benchmark step, replayed at its 30 fps render rate
 # Payload camera -> (public name, USD camera prim, URDF link the prim hangs from); from robot_cfg/G2_omnipicker.json.
 CAMERAS = {
@@ -127,8 +130,11 @@ class G2Model:
 
     def camera(self, prim: str, link: str, joints: Mapping[str, float], width: int, height: int):
         p = self.cameras[prim]
+        # Isaac fits the horizontal aperture to the image and derives the vertical one from the image's aspect, so
+        # the pixels are square whatever the prim's vertical aperture says (the wrist cameras' 3.76 x 2.13 mm
+        # would give fy 45% too large for their 1280 x 1056 images; the head's 3.896 x 2.453 happen to match 640 x 400)
         fx = width * p["focal_mm"] / p["h_aperture_mm"]
-        fy = height * p["focal_mm"] / p["v_aperture_mm"]
+        fy = fx
         intrinsics = np.array([[fx, 0.0, width / 2], [0.0, fy, height / 2], [0.0, 0.0, 1.0]])
         base_from_camera = self.fk(joints, link) @ p["link_from_camera"] @ OPENGL_TO_IMAGE
         return intrinsics, base_from_camera
@@ -397,6 +403,9 @@ class GenieSimAdapter:
                  "need_depth": True}
         if waist:
             reply["waist"] = {"kind": "JOINT_ABS", "values": [waist] * steps}
+        # The benchmark never reports the head joints, and the head camera's pose comes from FK with them at zero:
+        # hold them there so the model and the robot agree (block estimates from the head were ~4 cm high)
+        reply["head"] = {"kind": "JOINT_ABS", "values": [[0.0, 0.0, 0.0]] * steps}
         return reply
 
     def _hold(self):
@@ -463,9 +472,22 @@ class GenieSimAdapter:
             return ExecutionResult(ok=False, steps_executed=0, status=ExecutionStatus.TERMINATED, terminated=True,
                                    error=ApiError(ErrorCode.TERMINATED, "episode is over"))
         if self.debug_dir is not None:
+            # the benchmark's images are rendered before the chunk they come back with: a one-tick hold makes the
+            # snapshot show the pose the arm has now
+            self._exchange(self._chunk(1))
             self.debug_frame(Path(self.debug_dir) / f"episode{int(self._raw.get('episode_idx', 0)):02d}_grip{self._snapshots:02d}_{'close' if min(positions.values()) < 0.5 else 'open'}.jpg")
             self._snapshots += 1
-        steps = self._exchange(self._chunk(GRIPPER_STEPS, None, dict(positions)))   # the fingers need a few ticks
+        steps = self._exchange(self._chunk(GRIPPER_STEPS, None, dict(positions)))
+        last = np.asarray(self._raw["states"].get("gripper_states", [0, 0]), dtype=float)
+        while steps < GRIPPER_MAX_STEPS and not self._terminated:
+            steps += self._exchange(self._chunk(GRIPPER_POLL, None, dict(positions)))
+            now = np.asarray(self._raw["states"].get("gripper_states", [0, 0]), dtype=float)
+            if np.all(np.abs(now - last) < GRIPPER_SETTLED):
+                break
+            last = now
+        if self.debug_dir is not None:    # and the fingers once they have stopped
+            self._exchange(self._chunk(1))
+            self.debug_frame(Path(self.debug_dir) / f"episode{int(self._raw.get('episode_idx', 0)):02d}_grip{self._snapshots - 1:02d}_after.jpg")
         return ExecutionResult(ok=True, steps_executed=steps, status=ExecutionStatus.SUCCESS,
                                final_observation=self.get_observation(), terminated=self._terminated)
 
@@ -490,17 +512,29 @@ class GenieSimAdapter:
         obs = self.get_observation()
         if "head" not in obs.cameras:
             return
+        seen = {}
         for name, cam in obs.cameras.items():
             img = np.ascontiguousarray(cam.rgb[:, :, ::-1])
             cam_from_base = np.linalg.inv(np.r_[np.c_[quaternion_wxyz_to_matrix(cam.camera_pose.quaternion_wxyz), cam.camera_pose.position], [[0, 0, 0, 1]]])
-            for arm, pose in obs.robot_state.end_effector_poses.items():
-                p = cam_from_base @ np.r_[pose.position, 1.0]
+            joints = self._joints()
+            points = {arm: pose.position for arm, pose in obs.robot_state.end_effector_poses.items()}
+            points.update({f"{arm}_base": self.model.fk(joints, link)[:3, 3] for arm, link in (("primary", "gripper_l_base_link"), ("secondary", "gripper_r_base_link"))})
+            for arm, position in points.items():
+                p = cam_from_base @ np.r_[position, 1.0]
                 if p[2] > 0:
                     uv = cam.intrinsics @ (p[:3] / p[2])
-                    cv2.circle(img, (int(uv[0]), int(uv[1])), 8, (0, 0, 255) if arm == "primary" else (255, 0, 0), 2)
+                    cv2.circle(img, (int(uv[0]), int(uv[1])), 8 if "base" not in arm else 4, (0, 0, 255) if arm.startswith("primary") else (255, 0, 0), 2)
+                    u, v = int(uv[0]), int(uv[1])
+                    if cam.depth_m is not None and 0 <= v < cam.depth_m.shape[0] and 0 <= u < cam.depth_m.shape[1]:
+                        # the depth the camera sees at the projected point vs the point's depth: the gripper base is
+                        # solid and well above any block, so equal depths there mean the arm is where FK puts it,
+                        # and the table's depth means it isn't
+                        win = cam.depth_m[max(0, v - 12):v + 13, max(0, u - 12):u + 13]
+                        seen[f"{name}/{arm}"] = {"pixel": [u, v], "fk_depth": round(float(p[2]), 4), "seen_depth": round(float(cam.depth_m[v, u]), 4),
+                                                 "min_depth_25px": round(float(np.min(win[win > 0.05])) if np.any(win > 0.05) else -1.0, 4)}
             cv2.imwrite(str(path if name == "head" else path.with_name(path.stem + f"_{name}.jpg")), img)
         cam = obs.cameras["head"]
-        json.dump({"intrinsics": cam.intrinsics.tolist(), "camera_pose": cam.camera_pose.position.tolist(),
+        json.dump({"intrinsics": cam.intrinsics.tolist(), "camera_pose": cam.camera_pose.position.tolist(), "depth_at_centre": seen,
                    "ee": {a: p.position.tolist() for a, p in obs.robot_state.end_effector_poses.items()},
                    "ee_fk": {a: self.model.fk(self._joints(), EE_LINKS[a])[:3, 3].tolist() for a in ARMS},
                    "ee_fk_no_waist": {a: self.model.fk({n: v for n, v in self._joints().items() if n not in WAIST_JOINTS}, EE_LINKS[a])[:3, 3].tolist() for a in ARMS},
