@@ -15,38 +15,36 @@ flowchart LR
 
 ## Layout
 
-Code lives here in git; everything it produces or caches lives in the flywheel, under `$STATE_DIR/autolearn/` (`/tier1/mistral/flywheel/autolearn/`) or in the S3 buckets, never in this checkout. The two upstream submodules stay as published: anything they need changed is wrapped beside them.
+Code lives here in git; everything it downloads or produces lives in this folder too, in the gitignored state directories below (on the cluster, under `$STATE_DIR/autolearn/` and the buckets instead). The two upstream submodules stay as published: anything they need changed is wrapped beside them.
 
-| In git (`sensors/autolearn/`) | Contents |
+| In git | Contents |
 |---|---|
+| `setup.sh` | the whole setup, one subcommand per part: `geniesim`, `aspire`, `behavior`, `services`, `benchmark` (below) |
 | `aspire/` | [ASPIRE](https://github.com/NVlabs/ASPIRE) (upstream submodule, untouched): coding agents write and debug robot programs; LIBERO-Pro, Robosuite, BEHAVIOR-1K |
 | `genie_sim/` | [Genie Sim 3.0](https://github.com/AgibotTech/genie_sim) (upstream submodule, untouched, MPL-2.0): Isaac Sim 5.1 scenes from a panorama, task generation, benchmark, data collection |
-| `gb300/` | what runs Genie Sim on the GB300 nodes: `render_bench.py` + `render_bench.sbatch` (rendering speed); planned: `build.sh` (upstream's `Dockerfile.5.1` built for arm64 without the x86 `ik_solver` wheel), `up.sh` (the container on a Slurm GPU, caches on `/tier1`, ROS on domain 42), `ik_shim/` (a drop-in `ik_solver` package that calls `ik_server/` over RPC, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)) |
-| `cap-harness-sandboxed.sh` | ASPIRE's `cap-harness` inside bubblewrap with the user's credentials hidden; what the agent loops run programs through |
-| `hooks/sitecustomize.py` | turns Isaac Sim's crash reporter off for Genie Sim's engine, which starts `SimulationApp` with no settings: copied into the container and put on `PYTHONPATH` |
-| `adapter/` | Genie Sim as an ASPIRE environment (plan stage 2): `geniesim_adapter.py` answers the benchmark's policy socket from ASPIRE's harness, `run_geniesim.py` runs a program per episode, `programs/` test programs, `probe_server.py` a hold-still policy; planned: the corobot bridge for XPolicyLab's policy server (stage 5) |
-| planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (stage 1), `geniesim_to_xpolicylab` (stage 3), `autolearn-cycle` (stage 6), beside the other stages' workflows |
+| `adapter/` | Genie Sim and BEHAVIOR-1K as ASPIRE environments: `geniesim_adapter.py` (the benchmark's policy socket as ASPIRE's EnvironmentAdapter), `ik.py` (PyRoki IK for any URDF), `run_geniesim.py` and `run_behavior.py` (a program per episode), `programs/` (hand-written test programs: `wave.py`, `pick_block.py`, the probes), `probe_server.py` (a hold-still policy) |
+| `hooks/sitecustomize.py` | turns Isaac Sim's crash reporter off for Genie Sim, which starts `SimulationApp` with no settings: copied into the container and put on `PYTHONPATH` |
+| `cap-harness-sandboxed.sh` | ASPIRE's `cap-harness` inside bubblewrap with the user's credentials hidden; what the LIBERO agent loops run programs through |
+| `gb300/` | Genie Sim's rendering benchmark on the GB300 nodes (`render_bench.py` + `.sbatch`); planned: the arm64 image build and container launcher |
+| planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (plan stage 1), `geniesim_to_xpolicylab` (stage 3), `autolearn-cycle` (stage 6) |
 
-| On the cluster (not in git) | Contents |
+| Gitignored state | Contents |
 |---|---|
-| `$STATE_DIR/autolearn/isaac-cache/` | Isaac Sim's kit, shader and Omniverse caches (the first run compiles shaders for minutes; later runs reuse them) |
-| `$STATE_DIR/autolearn/logs/`, `results/` | Slurm job logs and the benchmarks' JSON |
-| `$STATE_DIR/autolearn/venv-geniesim/` | the Genie Sim CLI venv (`geniesim docker5.1 ...`) |
-| `$STATE_DIR/autolearn/campaigns/<campaign>/` | ASPIRE's outputs (`--output-root`): programs, runs, verified skills; scores go to MLflow |
-| `$STATE_DIR/hf-home/` | Hugging Face cache shared with the stack (SAM3 weights, ...) |
-| `s3://raw/open_datasets/GenieSimAssets/` | Genie Sim's asset pack (29 GB, a pip package), fetched by `download-datasets-hf`; mounted into the container as its assets |
-| `s3://raw/internal_datasets/scenes/<site>/` | panoramas of real sites (stage 1) |
-| `s3://processed/xpolicylab/geniesim/<task>/` | collected demonstrations after `geniesim_to_xpolicylab` (stage 3), where [`train.sbatch`](../../services/slurm/README.md) reads them |
-| MLflow | campaign scores (experiments), VLA checkpoints (registry), evaluation results |
+| `.venv-geniesim/`, `isaac-cache/` | the Genie Sim CLI venv; Isaac Sim's kit, shader and Omniverse caches (the first launch compiles shaders for minutes) |
+| `GenieSimAssets/` | Genie Sim's asset pack (29 GB), installed as its `geniesim_assets` package and mounted into the container |
+| `hf-cache/` | the Hugging Face cache ASPIRE's services use (SAM3 weights) |
+| `cuda-12.8/`, `behavior-data/` | the CUDA toolkit cuRobo compiles against; BEHAVIOR-1K's datasets (~40 GB) |
+| `aspire/.venv-*`, `aspire/outputs/` | ASPIRE's venvs and every run's artifacts (campaigns under `outputs/runs/`, the adapters' episodes under `outputs/geniesim/` and `outputs/behavior/`), where its scripts put them |
+| `genie_sim/devel*`, `genie_sim/output/` | the RT Engine's ROS 2 workspace build; the benchmark's evaluation files |
 
-On this laptop (x86_64, no `/tier1`), everything ASPIRE or Genie Sim produces stays inside `sensors/autolearn/`: `isaac-cache/`, `.venv-geniesim/` and the asset pack `GenieSimAssets/` (`.gitignore`d here), ASPIRE's venvs and campaigns where its scripts put them (`aspire/.venv-*`, `aspire/outputs/`, ignored by its git), the ROS 2 workspace build in `genie_sim/devel*`; the Hugging Face cache is the user's `~/.cache/huggingface`.
+On the cluster the same state sits under `/tier1/mistral/flywheel/autolearn/` (`isaac-cache/`, `venv-geniesim/`, `campaigns/`, `logs/`, `results/`), the asset pack in `s3://raw/open_datasets/GenieSimAssets/` (`download-datasets-hf`), the Hugging Face cache in `$STATE_DIR/hf-home/`, panoramas in `s3://raw/internal_datasets/scenes/<site>/`, demonstrations in `s3://processed/xpolicylab/geniesim/<task>/`, and scores, checkpoints and evaluations in MLflow.
 
 ## Plan
 
 | Stage | Exists | To build |
 |---|---|---|
 | 1. Real site → scene: panorama into `raw/internal_datasets/scenes/<site>/`; `geniesim_world` (PanoRecon) builds the 3D scene, `geniesim_generator` places objects and writes task variants with success checks | S3, FiftyOne sync; LLM gateway for the generator (`LLM_URL`) | a Gitea workflow on an RTX node; embeddings for the generator's asset search |
-| 2. Learn: ASPIRE fix loop per task, in parallel on the GB300; scores to MLflow | ASPIRE on LIBERO (below) | **a Genie Sim adapter for ASPIRE** (`reset`, `step`, observations, success over ROS 2 or the benchmark's inference socket, via `run_program_with_api`): the piece everything else waits on |
+| 2. Learn: ASPIRE fix loop per task, in parallel on the GB300; scores to MLflow | ASPIRE on LIBERO; **the Genie Sim adapter** (`adapter/`, below) runs programs on the benchmark's tasks | a first program that passes `pick_block_color`, then campaigns through ASPIRE's `iterative-debugging` skill on it |
 | 3. Collect: run verified programs on many seeds, keep successes; `geniesim dataset convert agibot-to-lerobot`; LeRobot → XPolicyLab | [`galaxeaOpenWorldDataset_to_xpolicylab`](../../services/gitea/adapter/README.md) reads LeRobot v2.1 | a `geniesim_to_xpolicylab` adapter workflow (a copy) |
 | 4. Train: `train.sbatch <vla> <embodiment> geniesim/<task>` | [slurm](../../services/slurm/README.md) for ACT, DP, MLP | a `models/<vla>/` recipe (XPolicyLab ships `Pi_05`, `GR00T_N17`, `OpenVLA_OFT`, `GalaxeaVLA`) and an embodiment YAML |
 | 5. Evaluate: `geniesim benchmark batch` against the served VLA; XPolicyLab real-robot eval; both to MLflow | MLflow, `evaluate.sbatch` | a bridge from XPolicyLab's policy server to Genie Sim's corobot WebSocket (`{"method": "infer"}` → `left_arm`, `right_arm`, `waist`, `head`) |
@@ -63,93 +61,108 @@ Models, and where they run:
 | SAM3 (gated), Contact-GraspNet, PyRoki, cuRobo | ASPIRE's programs (ports 8114–8116, ASPIRE's own HTTP protocol) | ASPIRE's service stack per node; Triton only with new backends and a client shim |
 | The VLA | collection-time eval, deployment | served from MLflow by a Slurm job, behind the corobot bridge |
 
-Decisions to take first: the embodiment (Genie Sim ships the AgiBot G2, Franka, UR5, ARX and Agilex; a Galaxea R1 Pro must be added with Genie Sim's `add-robot` skill), and the licences of SAM3, Contact-GraspNet's PyTorch port, ASPIRE and Genie Sim's assets for derived data.
+Decisions to take first: the embodiment (Genie Sim ships the AgiBot G2, Franka, UR5, ARX and Agilex; BEHAVIOR-1K has the Galaxea R1 Pro; a Galaxea R1 Pro in Genie Sim means its `add-robot` skill), and the licences of SAM3, Contact-GraspNet's PyTorch port, ASPIRE and Genie Sim's assets for derived data.
 
 ## Where things run
 
-A GB300 GPU renders fast enough for Genie Sim (`gb300/render_bench.sbatch`, Isaac Sim 6.1 from pip, Genie Sim's real-time path tracer without DLSS or the DL denoiser, which need NGX the GB300 lacks): expect ~40 steps/s with one 640x480 camera and ~16 steps/s with three 1280x720 cameras, frames fetched each step, on Isaac's full warehouse; the offline path tracer (16 spp, OptiX-denoised) is the slow one (~150 steps in 3 min). So scene building, data collection and benchmarks can run on the GB300 too, beside ASPIRE's agent loops, its perception services, LIBERO (MuJoCo), the LLMs, VLA training and serving; a Genie Sim scene's materials and the grain without the DL denoiser are still to check. `scene_reconstruction` (CUDA 11.8, Ada only) doesn't run on the GB300 at all.
+A GB300 GPU renders fast enough for Genie Sim (`gb300/render_bench.sbatch`, Isaac Sim 6.1 from pip, Genie Sim's real-time path tracer without DLSS or the DL denoiser, which need NGX the GB300 lacks): expect ~40 steps/s with one 640x480 camera and ~16 steps/s with three 1280x720 cameras, frames fetched each step, on Isaac's full warehouse; the offline path tracer (16 spp, OptiX-denoised) is the slow one at ~1 step/s. ASPIRE's agent loops, its perception services, LIBERO (MuJoCo), the LLMs, VLA training and serving run on the GB300 too. `scene_reconstruction` (CUDA 11.8, Ada only) doesn't run on the GB300 at all.
 
-## Genie Sim
-
-`A` is the state directory (`/tier1/mistral/flywheel/autolearn` on the cluster, `sensors/autolearn` here) and `ASSETS` the asset pack (`raw/open_datasets/GenieSimAssets` from `download-datasets-hf` there, `$A/GenieSimAssets` from `uvx hf download agibot-world/GenieSimAssets --repo-type dataset --local-dir $A/GenieSimAssets` here). The pack is [CC BY-NC-SA 4.0](https://huggingface.co/datasets/agibot-world/GenieSimAssets): scenes, demonstrations and models derived from it are non-commercial and share-alike; use your own assets for anything else.
-
-1. Install the CLI with the asset pack as its `geniesim_assets` package.
-   ```bash
-   uv venv --python 3.12 $A/.venv-geniesim && VIRTUAL_ENV=$A/.venv-geniesim uv pip install pip -e sensors/autolearn/genie_sim/source/geniesim_cli -e $ASSETS
-   ```
-2. Build the image (Isaac Sim 5.1 base; ~25 min, 26 GB) and start it headless. The container runs with host networking and `--privileged`; its entrypoint keeps ROS 2 on localhost, and the launch below adds domain 42. Isaac's caches go to `$A/isaac-cache`.
-   ```bash
-   cd sensors/autolearn/genie_sim && GENIESIM_WIP_ACK=1 $A/.venv-geniesim/bin/geniesim docker5.1 build
-   GENIESIM_CACHE_ROOT=$A/isaac-cache $A/.venv-geniesim/bin/geniesim docker5.1 up --headless
-   ```
-3. Build the RT Engine's ROS 2 workspace (~3 min, into `genie_sim/devel`) and install the crash-reporter hook.
-   ```bash
-   docker exec -u $(id -u):$(id -g) geniesim3 bash -lc 'cd /workspace && geniesim ros build dev'
-   docker exec geniesim3 mkdir -p /home/isaac-sim/.local/hooks && docker cp ../hooks/sitecustomize.py geniesim3:/home/isaac-sim/.local/hooks/
-   ```
-4. Launch a scene headless (the G2 pick-and-place on PhysX) and measure its camera rate.
-   ```bash
-   docker exec -u $(id -u):$(id -g) -e ROS_DOMAIN_ID=42 -e PYTHONPATH=/home/isaac-sim/.local/hooks -e ISAACSIM_HEADLESS=1 geniesim3 bash -lc \
-     'source /opt/ros/jazzy/setup.bash && source /workspace/devel/setup.bash && cd /workspace && ros2 launch genie_sim_bringup app.launch.py scene:=scene_pnp_g2_op launcher_config:=launcher_ovrtx_isaac_physx headless:=true'
-   docker exec -u $(id -u):$(id -g) -e ROS_DOMAIN_ID=42 geniesim3 bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 topic hz /genie_sim/head_front_camera_rgb/image_raw --window 30'
-   ```
-
-On this laptop: `Isaac Sim physics engine ready` after ~6 min cold (shader compile; tens of seconds warm), physics at 100 Hz, the render node at its 30 fps target with two cameras (`Render Stats` in the log: ~27 ms a frame, no drops), the head camera topic at ~26 Hz, 5.6 GB of GPU memory. Stop a scene with `docker exec geniesim3 pkill -INT -f "ros2 launch"`; `geniesim docker5.1 down` removes the container (the caches and the workspace build stay).
-
-### On the GB300
-
-Isaac Sim's 5.1.0 image is published for arm64, so the build is possible. Rendering speed is measured without Genie Sim's image (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)): `gb300/render_bench.sbatch` runs `gb300/render_bench.py` on a Slurm-allocated GPU with Genie Sim's renderer settings and prints steps per second for 1 and 3 cameras; caches, logs and results go to `$A`. Run it with a pip Isaac Sim 6.x (IsaacLab-Arena's venv): in NVIDIA's `isaac-sim:5.1.0` arm64 image the RTX renderer never starts (`Failed to acquire exclusive lock to data store`, then `Failed to initialize rtx::shaderdb::ContextManager`, with caches on `/tier1`, on local disk or with host IPC alike), which Genie Sim's image inherits for its `omni_python`.
 ```bash
 ISAAC_VENV=$PWD/eval/system2/IsaacLab-Arena/.venv sbatch --export=ALL -w <GB300 node> sensors/autolearn/gb300/render_bench.sbatch
 ```
 
-Decide by steps per second: under about 5 the RTX nodes keep the rendering; above that the GB300 can take data collection too, and the steps above apply with `A=/tier1/mistral/flywheel/autolearn` (expect to patch `genie_sim/docker/Dockerfile.5.1` for the arm64 Isaac Sim wheels, and start the container from a Slurm GPU job with `GENIESIM_ASSETS_SRC` pointing at the bucket's pack). A render failing with `NGX CreateFeature failed` needs the no-DLSS renderer (FXAA, no DL denoiser, OptiX path tracing), as IsaacLab-Arena needed there (`git show main:sim/isaaclab_arena/hooks/sitecustomize.py`).
+Isaac Sim's 5.1.0 image is published for arm64, so Genie Sim's image can be built there once `docker/Dockerfile.5.1` is patched for the arm64 Isaac Sim wheels (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)); a render failing with `NGX CreateFeature failed` needs the no-DLSS renderer (FXAA, no DL denoiser, OptiX path tracing), as IsaacLab-Arena needed there (`git show main:sim/isaaclab_arena/hooks/sitecustomize.py`).
 
-Notes:
-- Scenes and launchers are YAMLs in `genie_sim/source/geniesim_ros/src/ros_ws/src/genie_sim_bringup/config/` (`scene_flat_fr3` is a Franka; `scene_wbc_g2_sp` whole-body control on the Newton solver). `geniesim benchmark run` needs a policy server (corobot WebSocket); `geniesim autocollect` (scripted collection) runs its own container from `source/data_collection/`.
+## Set up
 
-## ASPIRE on Genie Sim
+Needs uv, Docker with the NVIDIA container toolkit, a Hugging Face login with access to the gated [SAM3](https://huggingface.co/facebook/sam3) weights (`uvx hf auth login`) and, for BEHAVIOR-1K, the CUDA 12.8 runfile (`CUDA_RUNFILE`, default `/tmp/cuda_12.8.1_linux.run`). Each subcommand skips what's already there.
 
-The benchmark drives the loop and ASPIRE's program answers as its policy: each episode, `adapter/run_geniesim.py` runs the program through ASPIRE's harness (`run_program_with_api`) with SAM3 and Contact-GraspNet from ASPIRE's services, IK on PyRoki with the G2 URDF and the interpolation planner, and reads success from the benchmark's subtask scores.
+```bash
+cd sensors/autolearn
+./setup.sh geniesim    # CLI venv, asset pack (29 GB), image (~25 min), container, RT Engine workspace (~3 min), hook
+./setup.sh aspire      # LIBERO venv; SAM3, Contact-GraspNet, PyRoki venvs; the adapter's packages
+./setup.sh behavior    # CUDA toolkit, Isaac Sim 5.1 venv, BEHAVIOR datasets (~40 GB; accepts their non-commercial terms)
+```
 
-1. Have the Genie Sim container up (Genie Sim steps 1–3) and ASPIRE's services running (ASPIRE step 3). The runner lives in ASPIRE's PyRoki venv, which also needs `VIRTUAL_ENV=aspire/.venv-pyroki uv pip install msgpack opencv-python-headless` once.
-2. Start the runner with a program, then the benchmark pointed at it; `--debug` saves each episode's head image with the gripper centres projected (a calibration check: the circles sit on the fingertips).
-   ```bash
-   aspire/.venv-pyroki/bin/python adapter/run_geniesim.py adapter/programs/wave.py --episodes 1 --debug --no-providers
-   docker exec -u $(id -u):$(id -g) -e PYTHONPATH=/home/isaac-sim/.local/hooks geniesim3 bash -lc \
-     'cd /workspace && geniesim benchmark run g2op_if_pick_block_color --infer-host=127.0.0.1:8999 --app.headless=true --benchmark.num_episode=1'
-   ```
-3. Read `aspire/outputs/geniesim/<stamp>/episodeNN.json`: `program_ok`, `success`, the subtask scores, steps, the program's `result`. `wave.py` (lift the right gripper 8 cm, close, open; no perception) ends with `move_ok` true and `rise_m` ≈ 0.08 in ~35 s.
+The asset pack's licence is [CC BY-NC-SA 4.0](https://huggingface.co/datasets/agibot-world/GenieSimAssets): scenes, demonstrations and models derived from it are non-commercial and share-alike; use your own assets for anything else.
 
-Notes:
-- The robot is the G2 omnipicker: arms `primary` (left) and `secondary` (right), 7 joints each, grippers 0 (closed) to 1 (open), poses in `base_link`. ASPIRE's embodiment labels are a closed set, so the adapter uses `robosuite` (7-joint arms). Kinematics come from the cuRobo URDF in the asset pack (`GenieSimAssets/robot/curobo_robot/assets/robot/G2/G2_omnipicker_fixed_dual.urdf`); the benchmark's own `robot_cfg/G2_omnipicker/G2_omnipicker.urdf` has a different torso chain and doesn't match the simulated robot. Camera intrinsics and offsets are read from the robot USD.
-- The benchmark scores every 30 steps (`Follow`: gripper in the target's box; `PickUpOnGripper`), and runs one episode per saved instance; the runner's `--episodes` takes them in turn.
-- The runner runs the program in-process on the host (no bubblewrap yet): hand-written programs only until it's wrapped like `cap-harness-sandboxed.sh`.
+## Run
 
-## ASPIRE on LIBERO
+### Genie Sim alone
 
-1. Initialise the submodule and set the paths (every step below assumes them).
-   ```bash
-   git submodule update --init sensors/autolearn/aspire
-   A=$PWD/sensors/autolearn && cd $A/aspire
-   export LIBERO_CONFIG_PATH=$PWD/.libero TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 MUJOCO_GL=egl PYOPENGL_PLATFORM=egl EGL_PLATFORM=device
-   ```
-2. Log in to Hugging Face with access to the gated [SAM3](https://huggingface.co/facebook/sam3) weights: `uvx hf auth login`.
-3. Install LIBERO and the model services (SAM3, Contact-GraspNet, PyRoki), then start the services on ports 8114–8116.
-   ```bash
-   scripts/bootstrap_libero.sh
-   scripts/bootstrap_providers.sh --providers sam3,contact_graspnet,pyroki --profile rtx5090
-   scripts/supervise_services.sh --profile rtx5090 --providers sam3,contact_graspnet,pyroki &
-   ```
-4. Smoke test: the example program for "pick up the alphabet soup and place it in the basket"; expect `task_success=True`.
-   ```bash
-   ../cap-harness-sandboxed.sh run --benchmark libero-pro --suite libero_object_swap --task-id 0 --seed 1 --init-mode seeded \
-     --program examples/libero/object_swap_seed1.py --output-root outputs/examples --max-steps 2000
-   ```
-5. Run a campaign: ASPIRE's `iterative-debugging` skill (`aspire/.claude/skills/iterative-debugging/SKILL.md`) with a coding agent as coordinator, `CAP_HARNESS=$A/cap-harness-sandboxed.sh`, and ASPIRE's helper scripts run with `.venv-libero/bin/python`. Expect a task to take about 15 min of Stage 1 (5 dev seeds), 15 min of held-out seeds and 5 min of skill verification on this laptop; `libero_goal_swap` task 0 (open the middle drawer) reached 10/10 held-out.
+Launch a scene in the RT Engine headless (the G2 pick-and-place on PhysX) and measure its camera rate.
 
-Notes:
-- Pass `--init-mode seeded`: ASPIRE v1.0 crashes resetting LIBERO in the default `saved` mode (`adapter.py` tests a NumPy array with `not`), which also fails `cap-harness doctor --reset` and `validate --plan libero-smoke`.
-- Verified skills belong in `aspire/.claude/skills/iterative-debugging/skills/`, a tracked file of the submodule: promote them on a fork, or keep them in the campaign's `outputs/runs/<campaign>/`.
-- ASPIRE runs model-generated Python with full access to the machine; the wrapper hides credentials from the programs, not from the agent. Run agent loops on a host without credentials.
-- BEHAVIOR-1K (Galaxea R1 Pro) pickups can't run on RTX 50-series GPUs: OmniGibson 3.9.2 drops the cuRobo R1 Pro embodiment ASPIRE plans with.
+```bash
+docker exec -u $(id -u):$(id -g) -e ROS_DOMAIN_ID=42 -e PYTHONPATH=/home/isaac-sim/.local/hooks -e ISAACSIM_HEADLESS=1 geniesim3 bash -lc \
+  'source /opt/ros/jazzy/setup.bash && source /workspace/devel/setup.bash && cd /workspace && ros2 launch genie_sim_bringup app.launch.py scene:=scene_pnp_g2_op launcher_config:=launcher_ovrtx_isaac_physx headless:=true'
+docker exec -u $(id -u):$(id -g) -e ROS_DOMAIN_ID=42 geniesim3 bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 topic hz /genie_sim/head_front_camera_rgb/image_raw --window 30'
+```
+
+Expect on this laptop (RTX 5090, 24 GB) `Isaac Sim physics engine ready` after ~6 min cold (shader compile; tens of seconds warm), physics at 100 Hz, the render node at its 30 fps target with two cameras (`Render Stats` in the log: ~27 ms a frame, no drops), the head camera topic at ~26 Hz, 5.6 GB of GPU memory. Stop it with `docker exec geniesim3 pkill -INT -f "ros2 launch"`; `geniesim docker5.1 down` removes the container (caches and the workspace build stay). Scenes and launchers are YAMLs in `genie_sim/source/geniesim_ros/src/ros_ws/src/genie_sim_bringup/config/` (`scene_flat_fr3` is a Franka).
+
+### ASPIRE on Genie Sim
+
+The benchmark drives the loop and ASPIRE's program answers as its policy: each episode, `adapter/run_geniesim.py` runs the program through ASPIRE's harness (`run_program_with_api`) with SAM3 and Contact-GraspNet from ASPIRE's services, IK on PyRoki with the G2 URDF and the interpolation planner, and reads success from the benchmark's subtask scores. One Isaac Sim at a time: stop the RT Engine scene first.
+
+```bash
+./setup.sh services                                                                    # SAM3 and Contact-GraspNet
+aspire/.venv-pyroki/bin/python adapter/run_geniesim.py adapter/programs/pick_block.py --episodes 3 --debug &
+./setup.sh benchmark g2op_if_pick_block_color                                           # the benchmark, against port 8999
+```
+
+Read `aspire/outputs/geniesim/<stamp>/episodeNN.json`: `program_ok`, `success`, the subtask scores, steps, the program's `result`; `--debug` adds each episode's head image with the gripper centres projected (a calibration check: the circles sit on the fingertips) and the cameras at every gripper command. `wave.py` (lift the right gripper 8 cm, close, open; no perception, `--no-providers`) ends with `move_ok` true and `rise_m` ≈ 0.08 in ~35 s. `pick_block.py` is the pick in progress (notes below).
+
+### ASPIRE on BEHAVIOR-1K (Galaxea R1 Pro)
+
+The same construction on ASPIRE's own `BehaviorAdapter` (OmniGibson on Isaac Sim 5.1), with `adapter/ik.py` in place of OmniGibson's cuRobo, which drops the R1 Pro embodiment on RTX 50-series GPUs. Base moves use the adapter's `servo` planner.
+
+```bash
+./setup.sh services
+OMNIGIBSON_GPU_ID=0 aspire/.venv-behavior/bin/python adapter/run_behavior.py adapter/programs/wave.py --task turning_on_radio --seed 1
+```
+
+Outcomes in `aspire/outputs/behavior/<stamp>/`. The first launch compiles shaders for several minutes; a cold scene load is ~3 min, warm ~35 s.
+
+### ASPIRE on LIBERO
+
+ASPIRE's own path, for comparison and for its skill library. After `./setup.sh aspire`:
+
+```bash
+cd aspire && export LIBERO_CONFIG_PATH=$PWD/.libero TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 MUJOCO_GL=egl PYOPENGL_PLATFORM=egl EGL_PLATFORM=device
+../cap-harness-sandboxed.sh run --benchmark libero-pro --suite libero_object_swap --task-id 0 --seed 1 --init-mode seeded \
+  --program examples/libero/object_swap_seed1.py --output-root outputs/examples --max-steps 2000      # expect task_success=True
+```
+
+A campaign is ASPIRE's `iterative-debugging` skill (`aspire/.claude/skills/iterative-debugging/SKILL.md`) with a coding agent as coordinator, `CAP_HARNESS=$A/cap-harness-sandboxed.sh`, and ASPIRE's helper scripts run with `.venv-libero/bin/python`. Expect a task to take about 15 min of Stage 1 (5 dev seeds), 15 min of held-out seeds and 5 min of skill verification on this laptop; `libero_goal_swap` task 0 (open the middle drawer) reached 10/10 held-out.
+
+## Conventions
+
+The adapter translates between ASPIRE and Genie Sim; programs see only ASPIRE's side.
+
+| Convention | ASPIRE | Genie Sim benchmark | Adapter |
+|---|---|---|---|
+| Who drives the loop | the program calls `step()` and gets the next observation | the sim sends an observation and waits for an action chunk | a WebSocket bridge: `step()` answers the pending request with a 1-step chunk and blocks until the next observation |
+| Episodes and success | `reset(task, seed)`, a success predicate | episodes from its saved instances, ~330 steps each; `task_progress` scores every 30 steps (`Follow`: the gripper-centre link inside the object's box, `PickUpOnGripper`), `episode_done` | `reset()` waits for the next episode's first observation; success = every subtask score ≥ 1 |
+| Actions | joint positions per tick at `dt = 1/30 s` | absolute joint chunks of length H, one row per sim step, the arm settled at the chunk's end | `step()` = H 1; `execute_trajectory()` = one chunk per trajectory (≤ 300 rows); gripper commands held 12 ticks |
+| Arms | `primary`, `secondary`, 7 joints each | `left_arm`, `right_arm`, 14 joints concatenated left first | primary = left, secondary = right |
+| Embodiment | a closed label set (`behavior`, `libero`, `robosuite`, `yam_real`) | G2 omnipicker | labelled `robosuite` (7-joint arms, several arms allowed) |
+| Gripper | 0 closed … 1 open | joint value, about −0.785 open and 0 closed | `g × −0.785` out, `clip(v / −0.785)` in |
+| Quaternions | `wxyz` | `xyzw` in `end_pose`; `wxyz` in the USD | reordered where the benchmark's values are read |
+| Depth | metres, float, the RGB's size | uint16 millimetres, Z-depth (`distance_to_image_plane`) | ÷ 1000, resized if needed |
+| Camera frame | x right, y down, z forward | USD camera: −Z forward, +Y up | × `diag(1, −1, −1)` |
+| Camera calibration | intrinsics and pose with every observation | not sent | focal length and apertures from the robot USD; pose by FK to the prim's parent link plus the prim's offset |
+| End-effector pose | one frame for planning and measurement | `end_pose` from its own FK SDK: the gripper base (flange), 13 cm behind the gripper centre | own FK on `gripper_{l,r}_center_link`, the IK target link |
+| Robot model | whatever the adapter declares | `robot_cfg/G2_omnipicker/G2_omnipicker.urdf`, whose torso chain doesn't match the simulated robot | the cuRobo URDF in the asset pack (`GenieSimAssets/robot/curobo_robot/assets/robot/G2/G2_omnipicker_fixed_dual.urdf`) |
+| IK | the PyRoki service, fixed to the Panda | — | `adapter/ik.py`: PyRoki in-process on the robot's URDF, every joint but the commanded arm's pinned (the waist is on each arm's chain), seeded from the full joint reading |
+| Base frame | the adapter's choice | `base_link` (also `arm_base_link`) | `base_link` |
+
+## Notes
+
+- **Pick in progress.** `pick_block.py` localizes the named block with SAM3 on the head camera, descends with a 20–25° tilt (straight down is just out of reach), closes and lifts. It passes `Follow` but the fingers close on air (gripper ≈ 0.05) at every depth tried, from the block's middle to table level: the pinch point is offset from the centre link, or the head-camera estimate is a few cm off. `programs/pinch_probe.py` measures the closed fingers against the centre link; `grip_sweep.py` scans ±3 cm around the estimate. Keep programs within ~300 steps: a gripper command is 12 ticks, a move 5–40.
+- **Calibration checks that hold.** FK of the gripper base matches the benchmark's own end-effector report to 1.3 cm at the grasp pose; the head camera projects the fingertips onto the fingertips; depth is fully valid (no zeros). The wrist cameras' extrinsics from the USD are wrong (their own finger links project outside the image): don't localize from them until that's fixed.
+- **Genie Sim's benchmark runs one episode per saved instance** and keeps serving episodes across runner restarts (it retries the policy socket 30 times with growing backoff), so a runner can be fixed and relaunched without restarting Isaac Sim. The LLM-task family budgets 200 steps per subtask (`StepOut`).
+- **ASPIRE's PyRoki service and client are Panda-only** (`panda_description`, an 8-value seed, the `libero`/`robosuite` embodiments), and its embodiment labels are a closed set; hence `adapter/ik.py` and the `robosuite` label. BEHAVIOR's arm planning is OmniGibson's cuRobo, dropped for the R1 Pro on sm_120 GPUs; the same provider replaces it there.
+- **ASPIRE v1.0 on LIBERO:** pass `--init-mode seeded` (the default `saved` mode crashes on reset: `adapter.py` tests a NumPy array with `not`), which also fails `cap-harness doctor --reset` and `validate --plan libero-smoke`. Verified skills belong in `aspire/.claude/skills/iterative-debugging/skills/`, a tracked file of the submodule: promote them on a fork, or keep them in the campaign's `outputs/runs/<campaign>/`.
+- **ASPIRE's BEHAVIOR bootstrap** leaves `pyarrow` unpinned and its import check then fails on NumPy 1.x; `setup.sh behavior` pins `pyarrow<23` and reruns it. Its Isaac Sim exit after `validate_behavior.sh` can segfault after the summary is written.
+- **Security.** ASPIRE runs model-generated Python with full access to the machine. `cap-harness-sandboxed.sh` hides credentials from LIBERO programs; the Genie Sim and BEHAVIOR runners run programs in-process without a sandbox yet, so hand-written programs only until they're wrapped the same way. The crash-reporter hook covers both of Genie Sim's Isaac interpreters (the pip `isaacsim` and `/isaac-sim`'s `omni_python`); the benchmark's launcher replaces `extra_args`, so the flag doesn't show in its Kit command line, but the plugin isn't loaded.
+- **Robot asset facts worth keeping:** the omnipicker's gripper centre link is 13 cm beyond the gripper base along +Z (the approach axis; fingers along ±X); Genie Sim's head camera is 1.93 mm focal on a 3.896 × 2.453 mm aperture (fx ≈ 317 px at 640 wide); the G2's waist joints at rest read about `[-0.83, 1.22, 0.1, 0, 0]`, outside the `robot_cfg` URDF's limits, which is how that URDF was found not to match.

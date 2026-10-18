@@ -56,7 +56,7 @@ WAIST_JOINTS = tuple(f"idx0{i}_body_joint{i}" for i in range(1, 6))
 GRIPPER_JOINTS = {"primary": "idx41_gripper_l_outer_joint1", "secondary": "idx81_gripper_r_outer_joint1"}
 EE_LINKS = {"primary": "gripper_l_center_link", "secondary": "gripper_r_center_link"}
 GRIPPER_OPEN = -0.785             # the benchmark's gripper value when open (it reports the omnipicker at -0.78 open, 0 closed)
-GRIPPER_STEPS = 10                # ticks a gripper command is held for, so the fingers finish moving
+GRIPPER_STEPS = 12                # ticks a gripper command is held for, so the fingers finish moving (episodes are ~330 steps)
 CONTROL_FREQUENCY_HZ = 30.0       # one chunk entry per benchmark step, replayed at its 30 fps render rate
 # Payload camera -> (public name, USD camera prim, URDF link the prim hangs from); from robot_cfg/G2_omnipicker.json.
 CAMERAS = {
@@ -258,6 +258,8 @@ class GenieSimAdapter:
         self._terminated = False
         self._steps = 0
         self._t0 = time.time()
+        self.debug_dir = None       # when set, every gripper command saves the cameras with the grippers projected
+        self._snapshots = 0
 
     # -- episode lifecycle -------------------------------------------------------------------------------------------
     def reset(self, task_ref: object = None, seed: int = 0) -> Observation:
@@ -460,6 +462,9 @@ class GenieSimAdapter:
         if self._terminated:
             return ExecutionResult(ok=False, steps_executed=0, status=ExecutionStatus.TERMINATED, terminated=True,
                                    error=ApiError(ErrorCode.TERMINATED, "episode is over"))
+        if self.debug_dir is not None:
+            self.debug_frame(Path(self.debug_dir) / f"episode{int(self._raw.get('episode_idx', 0)):02d}_grip{self._snapshots:02d}_{'close' if min(positions.values()) < 0.5 else 'open'}.jpg")
+            self._snapshots += 1
         steps = self._exchange(self._chunk(GRIPPER_STEPS, None, dict(positions)))   # the fingers need a few ticks
         return ExecutionResult(ok=True, steps_executed=steps, status=ExecutionStatus.SUCCESS,
                                final_observation=self.get_observation(), terminated=self._terminated)
@@ -483,17 +488,18 @@ class GenieSimAdapter:
     def debug_frame(self, path: Path):
         """The head image with both gripper centres projected: a check of the camera calibration."""
         obs = self.get_observation()
-        cam = obs.cameras.get("head")
-        if cam is None:
+        if "head" not in obs.cameras:
             return
-        img = np.ascontiguousarray(cam.rgb[:, :, ::-1])
-        cam_from_base = np.linalg.inv(np.r_[np.c_[quaternion_wxyz_to_matrix(cam.camera_pose.quaternion_wxyz), cam.camera_pose.position], [[0, 0, 0, 1]]])
-        for arm, pose in obs.robot_state.end_effector_poses.items():
-            p = cam_from_base @ np.r_[pose.position, 1.0]
-            if p[2] > 0:
-                uv = cam.intrinsics @ (p[:3] / p[2])
-                cv2.circle(img, (int(uv[0]), int(uv[1])), 8, (0, 0, 255) if arm == "primary" else (255, 0, 0), 2)
-        cv2.imwrite(str(path), img)
+        for name, cam in obs.cameras.items():
+            img = np.ascontiguousarray(cam.rgb[:, :, ::-1])
+            cam_from_base = np.linalg.inv(np.r_[np.c_[quaternion_wxyz_to_matrix(cam.camera_pose.quaternion_wxyz), cam.camera_pose.position], [[0, 0, 0, 1]]])
+            for arm, pose in obs.robot_state.end_effector_poses.items():
+                p = cam_from_base @ np.r_[pose.position, 1.0]
+                if p[2] > 0:
+                    uv = cam.intrinsics @ (p[:3] / p[2])
+                    cv2.circle(img, (int(uv[0]), int(uv[1])), 8, (0, 0, 255) if arm == "primary" else (255, 0, 0), 2)
+            cv2.imwrite(str(path if name == "head" else path.with_name(path.stem + f"_{name}.jpg")), img)
+        cam = obs.cameras["head"]
         json.dump({"intrinsics": cam.intrinsics.tolist(), "camera_pose": cam.camera_pose.position.tolist(),
                    "ee": {a: p.position.tolist() for a, p in obs.robot_state.end_effector_poses.items()},
                    "ee_fk": {a: self.model.fk(self._joints(), EE_LINKS[a])[:3, 3].tolist() for a in ARMS},
