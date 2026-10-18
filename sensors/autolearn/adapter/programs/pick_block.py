@@ -167,11 +167,11 @@ else:
         q, xg, axis = approach_frame(tilt, yaw)
         mid = (cx, cy, top - 0.025)
         grasp = tuple(mid[i] + (PAD_OFFSET + 0.01) * axis[i] + LATERAL * xg[i] for i in range(3))
-        return q, axis, grasp, tuple(grasp[i] - 0.25 * axis[i] for i in range(3)), tuple(grasp[i] - 0.12 * axis[i] for i in range(3))
+        return q, axis, grasp, tuple(grasp[i] - 0.20 * axis[i] for i in range(3)), tuple(grasp[i] - 0.10 * axis[i] for i in range(3))
     # The planner interpolates in joint space and knows nothing about the table: from the home pose the gripper
     # can sweep low across it and knock blocks about. So: straight up first, then over the block at height, then down.
     home = get_robot_state().end_effector_poses[arm]
-    up = move_to_pose({"position": (float(home.position[0]), float(home.position[1]), float(home.position[2]) + 0.15),
+    up = move_to_pose({"position": (float(home.position[0]), float(home.position[1]), float(home.position[2]) + 0.10),
                        "quaternion_wxyz": [float(v) for v in home.quaternion_wxyz], "frame": base},
                       tolerance=0.03, max_steps=200, arm=arm)
     report["lift_from_home"] = bool(up.ok)
@@ -200,12 +200,17 @@ else:
         v = int(float(K[1][1]) * pc[1] / pc[2] + float(K[1][2]))
         rgb = [int(c) for c in cam.rgb[v][u]]
         report["block_pixel_after_approach"] = (u, v, rgb)
-        # re-localize from the head (no sim steps spent): the block may have been nudged on the way
+        # re-localize from the head (no sim steps spent): the block may have been nudged on the way. With the arm
+        # over the block the head can lose it and the hue check then picks a look-alike elsewhere, so a new
+        # estimate counts only within 5 cm of the old one
         again, unused = localize("head")
         if again is not None:
             report["block_from_high"] = again[:3]
-            est = again
-            q, axis, grasp, high, pregrasp = targets(est, tilt)
+            if max(abs(again[i] - est[i]) for i in range(3)) < 0.05:
+                est = again
+                q, axis, grasp, high, pregrasp = targets(est, tilt)
+            else:
+                report["relocalize_rejected"] = True
         wrist_again, unused = localize(wrist)
         report["block_from_high_wrist"] = None if wrist_again is None else wrist_again[:3]
         pre = move_to_pose({"position": pregrasp, "quaternion_wxyz": q, "frame": base}, tolerance=0.02, max_steps=300, arm=arm)
@@ -234,12 +239,9 @@ else:
         # a held 5 cm cube stops the fingers at 0.29-0.45 of the way (grasp test and episodes); below 0.1 they closed on nothing
         report["held"] = 0.25 < g < 0.7
         report["progress_after_close"] = progress()
-        # a short lift first: the gripper reading after it tells whether the block came along
-        lift = move_to_pose({"position": (grasp[0], grasp[1], grasp[2] + 0.04), "quaternion_wxyz": q, "frame": base},
-                            tolerance=0.015, max_steps=200, arm=arm)
-        report["gripper_after_short_lift"] = float(get_robot_state().gripper_positions[arm])
-        lift = move_to_pose({"position": (grasp[0], grasp[1], grasp[2] + 0.15), "quaternion_wxyz": q, "frame": base},
-                            tolerance=0.02, max_steps=300, arm=arm)
+        # the benchmark scores the lift at its 30-step checks, so the episode's ~330 steps must leave room for one
+        lift = move_to_pose({"position": (grasp[0], grasp[1], grasp[2] + 0.12), "quaternion_wxyz": q, "frame": base},
+                            tolerance=0.02, max_steps=200, arm=arm)
         report["lift"] = (bool(lift.ok), None if lift.error is None else str(lift.error.message))
         report["gripper_after_lift"] = float(get_robot_state().gripper_positions[arm])
         report["progress_after_lift"] = progress()
