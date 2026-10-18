@@ -6,6 +6,7 @@
 #   nvidia/PhysicalAI-Robotics-NuRec        zh_lounge/*  nurec-zh_lounge   (gated)
 #   LightwheelAI/EgoPro (source: bucket)     EgoProStandard*/mcap/Paper Clips into Box/*  EgoPro   (gated; data is in an HF Bucket, the dataset repo holds only the card)
 #   sensenova/SenseNova-SI-800K             *  SenseNova-SI-800K   (~400 GB; images as zip parts, extract_all.sh unpacks them)
+#   agibot-world/GenieSimAssets             *  GenieSimAssets      (29 GB; Genie Sim's asset pack, a pip package: sensors/autolearn)
 # source=bucket reads a Hugging Face Bucket (huggingface.co/buckets/<id>) instead of a dataset repo.
 # Gated repos need the repo secret HF_TOKEN (a Hugging Face token whose account accepted the terms).
 name: download-datasets-hf

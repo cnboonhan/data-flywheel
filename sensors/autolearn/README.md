@@ -69,6 +69,11 @@ Isaac Sim's 5.1.0 image is published for arm64, so the build is possible; what t
    time geniesim autocollect run pick_pen_of_specific_color --standalone
    ```
 
+Or measure rendering alone first, without Genie Sim's image (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)): `gb300/render_bench.sbatch` runs `gb300/render_bench.py` in NVIDIA's Isaac Sim 5.1.0 image on a Slurm-allocated GPU, with Genie Sim's renderer settings, and prints steps per second for 1 and 3 cameras. Caches, logs and results go to `/tier1/mistral/flywheel/autolearn/`; the asset pack is `raw/open_datasets/GenieSimAssets` (`download-datasets-hf`).
+```bash
+sbatch -w <GB300 node> sensors/autolearn/gb300/render_bench.sbatch
+```
+
 Decide by steps per second: under about 5 the RTX nodes keep the rendering; above that the GB300 can take data collection too. A render failing with `NGX CreateFeature failed` needs the no-DLSS renderer (FXAA, no DL denoiser, OptiX path tracing), as IsaacLab-Arena needed there (`git show main:sim/isaaclab_arena/hooks/sitecustomize.py`).
 
 ## Genie Sim on this laptop
