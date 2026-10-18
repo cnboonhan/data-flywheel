@@ -1,0 +1,468 @@
+{
+  "scene_id": "lab_table_with_everyday_objects",
+  "seed": 2408615470,
+  "layout": {
+    "benchmark_table_e76866ec": {
+      "usd": "benchmark_table_019",
+      "xyz": [
+        0.0,
+        0.0,
+        0.265
+      ],
+      "xyzw": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "tags": [
+        "root_scene_55136ada",
+        "lab_table_with_everyday_objects_4be78d63",
+        "workspace_table_d2601ec0",
+        "benchmark_table_e76866ec"
+      ],
+      "keywords": [
+        "workspace_table",
+        "table",
+        "white",
+        "marble_top"
+      ],
+      "description": {
+        "semantic_name": [
+          "table"
+        ],
+        "full_description": [
+          "A white rectangular table with a smooth marble-patterned top and two white C-shaped legs ending in black caps, viewed from multiple angles revealing both dual-leg and single-central-support configurations."
+        ]
+      }
+    },
+    "benchmark_cup_e4d8a022": {
+      "usd": "benchmark_cup_105",
+      "xyz": [
+        -0.08,
+        -0.06,
+        0.779
+      ],
+      "xyzw": [
+        0.0,
+        0.0,
+        0.087156,
+        0.996195
+      ],
+      "tags": [
+        "root_scene_55136ada",
+        "lab_table_with_everyday_objects_4be78d63",
+        "place_on_table_0b52e5d0",
+        "benchmark_cup_e4d8a022"
+      ],
+      "keywords": [
+        "paper cup",
+        "benchmark_cup_105",
+        "on_desk",
+        "right"
+      ],
+      "description": {
+        "semantic_name": [
+          "cup"
+        ],
+        "object_category": [
+          "kitchenware",
+          "drinking vessel"
+        ],
+        "color": "white",
+        "shape": "cylindrical",
+        "materials": [
+          "plastic"
+        ],
+        "dimensions": [
+          0.0634383037686348,
+          0.07829996943473816,
+          0.06343957036733627
+        ],
+        "unit": "m",
+        "descriptive_terms": [
+          "cylindrical",
+          "white",
+          "simple",
+          "printed",
+          "small"
+        ],
+        "full_description": [
+          "A white paper cup with a black line-drawn pattern and yellow accents depicting household items."
+        ]
+      }
+    },
+    "benchmark_bowl_sponge_245d1134": {
+      "usd": "benchmark_bowl_sponge_000",
+      "xyz": [
+        -0.22,
+        0.18,
+        0.755
+      ],
+      "xyzw": [
+        0.0,
+        0.0,
+        -0.130526,
+        0.991445
+      ],
+      "tags": [
+        "root_scene_55136ada",
+        "lab_table_with_everyday_objects_4be78d63",
+        "place_on_table_c1d185af",
+        "benchmark_bowl_sponge_245d1134"
+      ],
+      "keywords": [
+        "sponge",
+        "benchmark_bowl_sponge_000",
+        "on_desk",
+        "left"
+      ],
+      "description": {
+        "semantic_name": [
+          "sponge"
+        ],
+        "object_category": [
+          "kitchen",
+          "cleaning"
+        ],
+        "color": "colorful",
+        "shape": "rectangular",
+        "materials": [
+          "plastic",
+          "foam"
+        ],
+        "dimensions": [
+          0.08157370984554291,
+          0.02987557463347912,
+          0.05640790797770023
+        ],
+        "unit": "m",
+        "descriptive_terms": [
+          "porous",
+          "flexible",
+          "absorbent",
+          "textured",
+          "rectangular"
+        ],
+        "full_description": [
+          "A rectangular sponge with a yellow porous base and a green abrasive top layer."
+        ]
+      }
+    },
+    "benchmark_orange_a1bc2b7a": {
+      "usd": "benchmark_orange_004",
+      "xyz": [
+        0.0,
+        -0.24,
+        0.778
+      ],
+      "xyzw": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "tags": [
+        "root_scene_55136ada",
+        "lab_table_with_everyday_objects_4be78d63",
+        "place_on_table_e66e2917",
+        "benchmark_orange_a1bc2b7a"
+      ],
+      "keywords": [
+        "orange",
+        "benchmark_orange_004",
+        "on_desk",
+        "right"
+      ],
+      "description": {
+        "semantic_name": [
+          "orange"
+        ],
+        "object_category": [
+          "food",
+          "fruit"
+        ],
+        "color": "orange",
+        "shape": "spherical",
+        "materials": [
+          "organic",
+          "fruit flesh",
+          "peel"
+        ],
+        "dimensions": [
+          0.0740404799580574,
+          0.07486499100923538,
+          0.07437027990818024
+        ],
+        "unit": "m",
+        "descriptive_terms": [
+          "round",
+          "smooth",
+          "vibrant",
+          "juicy",
+          "fresh"
+        ],
+        "full_description": [
+          "A round, orange-colored fruit with a textured peel and small dimples visible on its surface."
+        ]
+      }
+    },
+    "benchmark_mouse_3c078e3c": {
+      "usd": "benchmark_mouse_000",
+      "xyz": [
+        -0.22,
+        -0.2,
+        0.754
+      ],
+      "xyzw": [
+        0.0,
+        0.0,
+        0.173648,
+        0.984808
+      ],
+      "tags": [
+        "root_scene_55136ada",
+        "lab_table_with_everyday_objects_4be78d63",
+        "place_on_table_3c9f81dd",
+        "benchmark_mouse_3c078e3c"
+      ],
+      "keywords": [
+        "computer mouse",
+        "benchmark_mouse_000",
+        "on_desk",
+        "right"
+      ],
+      "description": {
+        "semantic_name": [
+          "computer mouse"
+        ],
+        "object_category": [
+          "electronic device",
+          "computer peripheral"
+        ],
+        "color": "gray",
+        "shape": "complex-shaped",
+        "materials": [
+          "plastic",
+          "metal"
+        ],
+        "dimensions": [
+          0.08789288997650146,
+          0.029345117509365082,
+          0.059461820870637894
+        ],
+        "unit": "m",
+        "descriptive_terms": [
+          "rounded",
+          "smooth",
+          "compact",
+          "ergonomic",
+          "modern"
+        ],
+        "full_description": [
+          "A dark gray, ergonomically shaped computer mouse with a textured side grip and visible 'Logitech' branding."
+        ]
+      }
+    },
+    "benchmark_lemon_df5cc701": {
+      "usd": "benchmark_lemon_030",
+      "xyz": [
+        0.02,
+        0.22,
+        0.782
+      ],
+      "xyzw": [
+        0.0,
+        0.0,
+        0.300706,
+        0.953717
+      ],
+      "tags": [
+        "root_scene_55136ada",
+        "lab_table_with_everyday_objects_4be78d63",
+        "place_on_table_3781687d",
+        "benchmark_lemon_df5cc701"
+      ],
+      "keywords": [
+        "lemon",
+        "benchmark_lemon_030",
+        "on_desk",
+        "left"
+      ],
+      "description": {
+        "semantic_name": [
+          "lemon"
+        ],
+        "object_category": [
+          "food",
+          "citrus fruit"
+        ],
+        "color": "yellow",
+        "shape": "irregular",
+        "materials": [
+          "fruit flesh",
+          "peel"
+        ],
+        "dimensions": [
+          0.0652875304222107,
+          0.08429359644651413,
+          0.06925402581691742
+        ],
+        "unit": "m",
+        "descriptive_terms": [
+          "citrus",
+          "yellow",
+          "organic",
+          "fresh",
+          "juicy"
+        ],
+        "full_description": [
+          "A bright yellow, glossy, oval-shaped fruit with a small green stem nub."
+        ]
+      }
+    }
+  },
+  "relations": {
+    "graph": {
+      "directed": true,
+      "multigraph": false,
+      "graph": {
+        "rankdir": "LR"
+      },
+      "nodes": [
+        {
+          "id": "root_scene_55136ada"
+        },
+        {
+          "id": "lab_table_with_everyday_objects_4be78d63"
+        },
+        {
+          "id": "workspace_table_d2601ec0"
+        },
+        {
+          "tags": [
+            "workspace_table",
+            "table",
+            "white",
+            "marble_top"
+          ],
+          "id": "benchmark_table_e76866ec"
+        },
+        {
+          "id": "place_on_table_0b52e5d0"
+        },
+        {
+          "tags": [
+            "paper cup",
+            "benchmark_cup_105",
+            "on_desk",
+            "right"
+          ],
+          "id": "benchmark_cup_e4d8a022"
+        },
+        {
+          "id": "place_on_table_c1d185af"
+        },
+        {
+          "tags": [
+            "sponge",
+            "benchmark_bowl_sponge_000",
+            "on_desk",
+            "left"
+          ],
+          "id": "benchmark_bowl_sponge_245d1134"
+        },
+        {
+          "id": "place_on_table_e66e2917"
+        },
+        {
+          "tags": [
+            "orange",
+            "benchmark_orange_004",
+            "on_desk",
+            "right"
+          ],
+          "id": "benchmark_orange_a1bc2b7a"
+        },
+        {
+          "id": "place_on_table_3c9f81dd"
+        },
+        {
+          "tags": [
+            "computer mouse",
+            "benchmark_mouse_000",
+            "on_desk",
+            "right"
+          ],
+          "id": "benchmark_mouse_3c078e3c"
+        },
+        {
+          "id": "place_on_table_3781687d"
+        },
+        {
+          "tags": [
+            "lemon",
+            "benchmark_lemon_030",
+            "on_desk",
+            "left"
+          ],
+          "id": "benchmark_lemon_df5cc701"
+        }
+      ],
+      "edges": [
+        {
+          "source": "root_scene_55136ada",
+          "target": "lab_table_with_everyday_objects_4be78d63"
+        },
+        {
+          "source": "lab_table_with_everyday_objects_4be78d63",
+          "target": "workspace_table_d2601ec0"
+        },
+        {
+          "source": "lab_table_with_everyday_objects_4be78d63",
+          "target": "place_on_table_0b52e5d0"
+        },
+        {
+          "source": "lab_table_with_everyday_objects_4be78d63",
+          "target": "place_on_table_c1d185af"
+        },
+        {
+          "source": "lab_table_with_everyday_objects_4be78d63",
+          "target": "place_on_table_e66e2917"
+        },
+        {
+          "source": "lab_table_with_everyday_objects_4be78d63",
+          "target": "place_on_table_3c9f81dd"
+        },
+        {
+          "source": "lab_table_with_everyday_objects_4be78d63",
+          "target": "place_on_table_3781687d"
+        },
+        {
+          "source": "workspace_table_d2601ec0",
+          "target": "benchmark_table_e76866ec"
+        },
+        {
+          "source": "place_on_table_0b52e5d0",
+          "target": "benchmark_cup_e4d8a022"
+        },
+        {
+          "source": "place_on_table_c1d185af",
+          "target": "benchmark_bowl_sponge_245d1134"
+        },
+        {
+          "source": "place_on_table_e66e2917",
+          "target": "benchmark_orange_a1bc2b7a"
+        },
+        {
+          "source": "place_on_table_3c9f81dd",
+          "target": "benchmark_mouse_3c078e3c"
+        },
+        {
+          "source": "place_on_table_3781687d",
+          "target": "benchmark_lemon_df5cc701"
+        }
+      ]
+    }
+  }
+}

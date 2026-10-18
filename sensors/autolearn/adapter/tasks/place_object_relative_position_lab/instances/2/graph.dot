@@ -1,0 +1,30 @@
+strict digraph  {
+	graph [rankdir="LR"];
+	"root_scene_5065a3e9";
+	"lab_table_with_everyday_objects_0199d4dc";
+	"workspace_table_96e07205";
+	"benchmark_table_ad18a193" [tags="['workspace_table', 'table', 'white', 'marble_top']"];
+	"place_on_table_9f7cdf1f";
+	"benchmark_bowl_sponge_ef7c9c10" [tags="['sponge', 'benchmark_bowl_sponge_000', 'on_desk', 'left']"];
+	"place_on_table_3b8bdb1e";
+	"benchmark_cup_bf43cdd5" [tags="['paper cup', 'benchmark_cup_105', 'on_desk', 'right']"];
+	"place_on_table_3c28c2d3";
+	"benchmark_mouse_5cd4f0b8" [tags="['computer mouse', 'benchmark_mouse_000', 'on_desk', 'left']"];
+	"place_on_table_1079a9e7";
+	"benchmark_lemon_791ed351" [tags="['lemon', 'benchmark_lemon_030', 'on_desk', 'left']"];
+	"place_on_table_12c1c456";
+	"benchmark_rubik_cube_672e44a9" [tags="['rubik cube', 'benchmark_rubik_cube_001', 'on_desk', 'right']"];
+	"root_scene_5065a3e9" -> "lab_table_with_everyday_objects_0199d4dc";
+	"lab_table_with_everyday_objects_0199d4dc" -> "workspace_table_96e07205";
+	"lab_table_with_everyday_objects_0199d4dc" -> "place_on_table_9f7cdf1f";
+	"lab_table_with_everyday_objects_0199d4dc" -> "place_on_table_3b8bdb1e";
+	"lab_table_with_everyday_objects_0199d4dc" -> "place_on_table_3c28c2d3";
+	"lab_table_with_everyday_objects_0199d4dc" -> "place_on_table_1079a9e7";
+	"lab_table_with_everyday_objects_0199d4dc" -> "place_on_table_12c1c456";
+	"workspace_table_96e07205" -> "benchmark_table_ad18a193";
+	"place_on_table_9f7cdf1f" -> "benchmark_bowl_sponge_ef7c9c10";
+	"place_on_table_3b8bdb1e" -> "benchmark_cup_bf43cdd5";
+	"place_on_table_3c28c2d3" -> "benchmark_mouse_5cd4f0b8";
+	"place_on_table_1079a9e7" -> "benchmark_lemon_791ed351";
+	"place_on_table_12c1c456" -> "benchmark_rubik_cube_672e44a9";
+}

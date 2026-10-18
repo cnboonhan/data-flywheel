@@ -1,0 +1,30 @@
+strict digraph  {
+	graph [rankdir="LR"];
+	"root_scene_bc6866df";
+	"lab_table_with_everyday_objects_8b9a999a";
+	"workspace_table_bbba5452";
+	"benchmark_table_8612e4ad" [tags="['workspace_table', 'table', 'white', 'marble_top']"];
+	"place_on_table_5db6fa03";
+	"benchmark_orange_81832471" [tags="['orange', 'benchmark_orange_004', 'on_desk', 'right']"];
+	"place_on_table_e55772ad";
+	"benchmark_lemon_b535e587" [tags="['lemon', 'benchmark_lemon_030', 'on_desk', 'left']"];
+	"place_on_table_127a4958";
+	"benchmark_bowl_sponge_b767f2cc" [tags="['sponge', 'benchmark_bowl_sponge_000', 'on_desk', 'left']"];
+	"place_on_table_d513554b";
+	"benchmark_medicine_bottle_7150da26" [tags="['medicine bottle', 'benchmark_medicine_bottle_000', 'on_desk', 'right']"];
+	"place_on_table_29164f89";
+	"benchmark_mouse_e7ef199a" [tags="['computer mouse', 'benchmark_mouse_000', 'on_desk', 'right']"];
+	"root_scene_bc6866df" -> "lab_table_with_everyday_objects_8b9a999a";
+	"lab_table_with_everyday_objects_8b9a999a" -> "workspace_table_bbba5452";
+	"lab_table_with_everyday_objects_8b9a999a" -> "place_on_table_5db6fa03";
+	"lab_table_with_everyday_objects_8b9a999a" -> "place_on_table_e55772ad";
+	"lab_table_with_everyday_objects_8b9a999a" -> "place_on_table_127a4958";
+	"lab_table_with_everyday_objects_8b9a999a" -> "place_on_table_d513554b";
+	"lab_table_with_everyday_objects_8b9a999a" -> "place_on_table_29164f89";
+	"workspace_table_bbba5452" -> "benchmark_table_8612e4ad";
+	"place_on_table_5db6fa03" -> "benchmark_orange_81832471";
+	"place_on_table_e55772ad" -> "benchmark_lemon_b535e587";
+	"place_on_table_127a4958" -> "benchmark_bowl_sponge_b767f2cc";
+	"place_on_table_d513554b" -> "benchmark_medicine_bottle_7150da26";
+	"place_on_table_29164f89" -> "benchmark_mouse_e7ef199a";
+}

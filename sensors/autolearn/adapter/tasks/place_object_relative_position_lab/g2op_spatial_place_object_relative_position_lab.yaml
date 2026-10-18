@@ -1,0 +1,13 @@
+# Same as g2op_spatial_place_object_relative_position.yaml except the eval task (lab background) and the
+# instance folder. Installed to <geniesim_benchmark>/config/ by ../install.sh.
+app:
+  enable_rate_limit: true
+  enable_ros: false
+benchmark:
+  task_name: table_task_lab_g2_op
+  platform: g2_op
+  sub_task_name: place_object_relative_position_lab
+  seed: 1
+  model_arc: corobot
+  num_episode: 1
+  record: false
