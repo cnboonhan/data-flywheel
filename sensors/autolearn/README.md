@@ -13,12 +13,32 @@ flowchart LR
   E -.real episodes.-> D
 ```
 
-| Path | Contents |
+## Layout
+
+Code lives here in git; everything it produces or caches lives in the flywheel, under `$STATE_DIR/autolearn/` (`/tier1/mistral/flywheel/autolearn/`) or in the S3 buckets, never in this checkout. The two upstream submodules stay as published: anything they need changed is wrapped beside them.
+
+| In git (`sensors/autolearn/`) | Contents |
 |---|---|
-| `aspire/` | [ASPIRE](https://github.com/NVlabs/ASPIRE) (upstream submodule): coding agents write and debug robot programs; LIBERO-Pro, Robosuite, BEHAVIOR-1K |
-| `genie_sim/` | [Genie Sim 3.0](https://github.com/AgibotTech/genie_sim) (upstream submodule, MPL-2.0): Isaac Sim 5.1 scenes from a panorama, task generation, benchmark, data collection |
+| `aspire/` | [ASPIRE](https://github.com/NVlabs/ASPIRE) (upstream submodule, untouched): coding agents write and debug robot programs; LIBERO-Pro, Robosuite, BEHAVIOR-1K |
+| `genie_sim/` | [Genie Sim 3.0](https://github.com/AgibotTech/genie_sim) (upstream submodule, untouched, MPL-2.0): Isaac Sim 5.1 scenes from a panorama, task generation, benchmark, data collection |
+| `gb300/` | what runs Genie Sim on the GB300 nodes: `render_bench.py` + `render_bench.sbatch` (rendering speed); planned: `build.sh` (upstream's `Dockerfile.5.1` built for arm64 without the x86 `ik_solver` wheel), `up.sh` (the container on a Slurm GPU, caches on `/tier1`, ROS on domain 42), `ik_shim/` (a drop-in `ik_solver` package that calls `ik_server/` over RPC, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)) |
 | `cap-harness-sandboxed.sh` | ASPIRE's `cap-harness` inside bubblewrap with the user's credentials hidden; what the agent loops run programs through |
-| `.venv-geniesim/`, `hf-cache/`, `genie_sim/assets/`, `isaac-cache/` | gitignored: the Genie Sim CLI venv, SAM3 weights, Genie Sim's asset pack (29 GB), Isaac Sim caches |
+| planned: `adapter/` | the Genie Sim adapter for ASPIRE (plan stage 2) and the corobot bridge for XPolicyLab's policy server (stage 5) |
+| planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (stage 1), `geniesim_to_xpolicylab` (stage 3), `autolearn-cycle` (stage 6), beside the other stages' workflows |
+
+| On the cluster (not in git) | Contents |
+|---|---|
+| `$STATE_DIR/autolearn/isaac-cache/` | Isaac Sim's kit, shader and Omniverse caches (the first run compiles shaders for minutes; later runs reuse them) |
+| `$STATE_DIR/autolearn/logs/`, `results/` | Slurm job logs and the benchmarks' JSON |
+| `$STATE_DIR/autolearn/venv-geniesim/` | the Genie Sim CLI venv (`geniesim docker5.1 ...`) |
+| `$STATE_DIR/autolearn/campaigns/<campaign>/` | ASPIRE's outputs (`--output-root`): programs, runs, verified skills; scores go to MLflow |
+| `$STATE_DIR/hf-home/` | Hugging Face cache shared with the stack (SAM3 weights, ...) |
+| `s3://raw/open_datasets/GenieSimAssets/` | Genie Sim's asset pack (29 GB, a pip package), fetched by `download-datasets-hf`; mounted into the container as its assets |
+| `s3://raw/internal_datasets/scenes/<site>/` | panoramas of real sites (stage 1) |
+| `s3://processed/xpolicylab/geniesim/<task>/` | collected demonstrations after `geniesim_to_xpolicylab` (stage 3), where [`train.sbatch`](../../services/slurm/README.md) reads them |
+| MLflow | campaign scores (experiments), VLA checkpoints (registry), evaluation results |
+
+On this laptop (x86_64, no `/tier1`), the same paths sit under `~/.cache/autolearn/` and the `.gitignore`d `hf-cache/`, `.venv-geniesim/`, `isaac-cache/` here.
 
 ## Plan
 
@@ -54,14 +74,14 @@ Isaac Sim's 5.1.0 image is published for arm64, so the build is possible; what t
 
 1. Build the image (Genie Sim pip-installs Isaac Sim wheels during the build; expect to patch `genie_sim/docker/Dockerfile.5.1` for arm64 wheels).
    ```bash
-   cd sensors/autolearn && uv venv --python 3.12 .venv-geniesim && VIRTUAL_ENV=$PWD/.venv-geniesim uv pip install pip -e genie_sim/source/geniesim_cli
-   cd genie_sim && GENIESIM_WIP_ACK=1 ../.venv-geniesim/bin/geniesim docker5.1 build
+   A=/tier1/mistral/flywheel/autolearn && uv venv --python 3.12 $A/venv-geniesim && VIRTUAL_ENV=$A/venv-geniesim uv pip install pip -e sensors/autolearn/genie_sim/source/geniesim_cli
+   cd sensors/autolearn/genie_sim && GENIESIM_WIP_ACK=1 $A/venv-geniesim/bin/geniesim docker5.1 build
    ```
-2. Fetch the assets (29 GB) and start the container headless, with Isaac's caches in this folder and ROS 2 off the robot's domain.
+2. Fetch the assets (29 GB) with the `download-datasets-hf` workflow (repo `agibot-world/GenieSimAssets`, dest `GenieSimAssets`), then start the container headless, with Isaac's caches on `/tier1` and ROS 2 off the robot's domain.
    ```bash
-   HF_HOME=../hf-cache uvx hf download agibot-world/GenieSimAssets --repo-type dataset --local-dir assets
-   GENIESIM_CACHE_ROOT=$PWD/../isaac-cache ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1 ../.venv-geniesim/bin/geniesim docker5.1 up --headless
-   ../.venv-geniesim/bin/geniesim docker5.1 into
+   GENIESIM_ASSETS_SRC=/tier1/mistral/flywheel/versitygw/buckets/raw/open_datasets/GenieSimAssets GENIESIM_CACHE_ROOT=$A/isaac-cache \
+     ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1 $A/venv-geniesim/bin/geniesim docker5.1 up --headless
+   $A/venv-geniesim/bin/geniesim docker5.1 into
    ```
 3. Inside the container, run one scripted collection task (no policy needed) and time it; the first launch also compiles shaders for several minutes.
    ```bash
