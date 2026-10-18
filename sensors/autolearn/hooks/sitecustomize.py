@@ -8,24 +8,31 @@ import importlib.abc
 import importlib.util
 import sys
 
-_MODULE = "isaacsim"   # its __init__ imports SimulationApp (the engine does `from isaacsim import SimulationApp`)
+# The pip install defines SimulationApp in `isaacsim` itself; the /isaac-sim install (a namespace package) in
+# `isaacsim.simulation_app`. Patch whichever of these first carries the class.
+_MODULES = {"isaacsim", "isaacsim.simulation_app", "isaacsim.simulation_app.simulation_app"}
+_FLAG = "--/crashreporter/enabled=false"
 
 
 class _PatchSimulationApp(importlib.abc.MetaPathFinder):
     def find_spec(self, name, path, target=None):
-        if name != _MODULE:
+        if name not in _MODULES:
             return None
         sys.meta_path.remove(self)
-        spec = importlib.util.find_spec(name)
+        try:
+            spec = importlib.util.find_spec(name)
+        finally:
+            sys.meta_path.insert(0, self)
         if spec is None or spec.loader is None:
             return None
         exec_module = spec.loader.exec_module
 
         def patched(module):
             exec_module(module)
-            cfg = module.SimulationApp.DEFAULT_LAUNCHER_CONFIG
-            cfg["enable_crashreporter"] = False
-            cfg["extra_args"] = list(cfg.get("extra_args", [])) + ["--/crashreporter/enabled=false"]
+            cfg = getattr(getattr(module, "SimulationApp", None), "DEFAULT_LAUNCHER_CONFIG", None)
+            if isinstance(cfg, dict) and _FLAG not in cfg.get("extra_args", []):
+                cfg["enable_crashreporter"] = False
+                cfg["extra_args"] = list(cfg.get("extra_args", [])) + [_FLAG]
 
         spec.loader.exec_module = patched
         return spec
