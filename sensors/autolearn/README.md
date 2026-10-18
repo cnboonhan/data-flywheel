@@ -67,7 +67,7 @@ Decisions to take first: the embodiment (Genie Sim ships the AgiBot G2, Franka, 
 
 ## Where things run
 
-Isaac Sim rendering (Genie Sim) needs RT cores: on the GB300 nodes (no RT cores, no NGX) Isaac Sim path-traces at about 150 steps in 3 minutes, so Genie Sim's scene building, data collection and benchmarks belong on the `l3-rtx` nodes or this laptop. ASPIRE's agent loops, its perception services, LIBERO (MuJoCo), the LLMs, VLA training and serving run on the GB300. `scene_reconstruction` (CUDA 11.8, Ada only) doesn't run on the GB300 at all.
+A GB300 GPU renders fast enough for Genie Sim (`gb300/render_bench.sbatch`, Isaac Sim 6.1 from pip, Genie Sim's real-time path tracer without DLSS or the DL denoiser, which need NGX the GB300 lacks): expect ~40 steps/s with one 640x480 camera and ~16 steps/s with three 1280x720 cameras, frames fetched each step, on Isaac's full warehouse; the offline path tracer (16 spp, OptiX-denoised) is the slow one (~150 steps in 3 min). So scene building, data collection and benchmarks can run on the GB300 too, beside ASPIRE's agent loops, its perception services, LIBERO (MuJoCo), the LLMs, VLA training and serving; a Genie Sim scene's materials and the grain without the DL denoiser are still to check. `scene_reconstruction` (CUDA 11.8, Ada only) doesn't run on the GB300 at all.
 
 ## Genie Sim
 
@@ -98,9 +98,9 @@ On this laptop: `Isaac Sim physics engine ready` after ~6 min cold (shader compi
 
 ### On the GB300
 
-Isaac Sim's 5.1.0 image is published for arm64, so the build is possible; what to measure is rendering speed. Measure it first without Genie Sim's image (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)): `gb300/render_bench.sbatch` runs `gb300/render_bench.py` in NVIDIA's Isaac Sim 5.1.0 image on a Slurm-allocated GPU, with Genie Sim's renderer settings, and prints steps per second for 1 and 3 cameras. Caches, logs and results go to `/tier1/mistral/flywheel/autolearn/`.
+Isaac Sim's 5.1.0 image is published for arm64, so the build is possible. Rendering speed is measured without Genie Sim's image (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)): `gb300/render_bench.sbatch` runs `gb300/render_bench.py` on a Slurm-allocated GPU with Genie Sim's renderer settings and prints steps per second for 1 and 3 cameras; caches, logs and results go to `$A`. Run it with a pip Isaac Sim 6.x (IsaacLab-Arena's venv): in NVIDIA's `isaac-sim:5.1.0` arm64 image the RTX renderer never starts (`Failed to acquire exclusive lock to data store`, then `Failed to initialize rtx::shaderdb::ContextManager`, with caches on `/tier1`, on local disk or with host IPC alike), which Genie Sim's image inherits for its `omni_python`.
 ```bash
-sbatch -w <GB300 node> sensors/autolearn/gb300/render_bench.sbatch
+ISAAC_VENV=$PWD/eval/system2/IsaacLab-Arena/.venv sbatch --export=ALL -w <GB300 node> sensors/autolearn/gb300/render_bench.sbatch
 ```
 
 Decide by steps per second: under about 5 the RTX nodes keep the rendering; above that the GB300 can take data collection too, and the steps above apply with `A=/tier1/mistral/flywheel/autolearn` (expect to patch `genie_sim/docker/Dockerfile.5.1` for the arm64 Isaac Sim wheels, and start the container from a Slurm GPU job with `GENIESIM_ASSETS_SRC` pointing at the bucket's pack). A render failing with `NGX CreateFeature failed` needs the no-DLSS renderer (FXAA, no DL denoiser, OptiX path tracing), as IsaacLab-Arena needed there (`git show main:sim/isaaclab_arena/hooks/sitecustomize.py`).

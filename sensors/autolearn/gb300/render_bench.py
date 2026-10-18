@@ -32,6 +32,8 @@ app = SimulationApp({
     "extra_args": [
         "--/persistent/rtx/modes/rt2/enabled=true",   # Genie Sim's data collector
         "--/rtx/post/dlss/execMode=0", "--/rtx-transient/dlssg/enabled=false",   # geniesim.exp.kit: no DLSS (no NGX on GB300 either)
+        # no NGX at all on data-centre GPUs: FXAA and no DL denoiser, else every frame fails (IsaacLab-Arena's GB300 hook)
+        "--/rtx/post/aa/op=2", "--/rtx-transient/post/aa/limitedOps=false", "--/rtx-transient/dldenoiser/enabled=false",
         "--/renderer/gpuEnumeration/glInterop/enabled=false",
         "--/crashreporter/enabled=false",
     ],
