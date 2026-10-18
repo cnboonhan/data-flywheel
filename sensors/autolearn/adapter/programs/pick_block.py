@@ -47,14 +47,59 @@ def approach_quat(tilt_deg):
     return quat_from_columns(x, y, z)
 
 
+HUES = {"red": 0.0, "orange": 30.0, "yellow": 55.0, "green": 120.0, "blue": 215.0, "purple": 265.0, "pink": 330.0}
+
+
+def hue_of(rgb):
+    r, g, b = [float(c) / 255.0 for c in rgb]
+    mx, mn = max(r, g, b), min(r, g, b)
+    if mx - mn < 0.08:
+        return None
+    if mx == r:
+        h = 60.0 * (((g - b) / (mx - mn)) % 6)
+    elif mx == g:
+        h = 60.0 * ((b - r) / (mx - mn) + 2)
+    else:
+        h = 60.0 * ((r - g) / (mx - mn) + 4)
+    return h
+
+
+def hue_distance(h, target):
+    d = abs(h - target) % 360.0
+    return min(d, 360.0 - d)
+
+
 opened = open_gripper(arm=arm)
-target = localize_object(color + " block", camera_name="head", target_frame=base)
-report["localized"] = bool(target.ok)
-if not target.ok:
-    report["localize_error"] = None if target.error is None else str(target.error.message)
+# SAM3 confuses colour names (it handed us the blue block for "purple"): take every candidate it offers and keep the
+# one whose pixels actually have the colour's hue
+obs0 = get_observation()
+rgb_img = obs0.cameras["head"].rgb
+seg = segment_text("head", color + " block")
+chosen = None
+candidates = []
+if seg.ok:
+    for s in seg.segmentations:
+        m = s.mask
+        ys = [i for i in range(len(m)) if any(m[i])]
+        if not ys:
+            continue
+        xs = [j for i in ys[:: max(1, len(ys) // 8)] for j in range(len(m[i])) if m[i][j]]
+        cy_px, cx_px = sum(ys) / len(ys), sum(xs) / len(xs)
+        pix = rgb_img[int(cy_px)][int(cx_px)]
+        h = hue_of(pix)
+        dist = 999.0 if h is None else hue_distance(h, HUES.get(color, 0.0))
+        candidates.append((round(float(s.score), 3), int(cx_px), int(cy_px), [int(c) for c in pix], None if h is None else round(h), round(dist)))
+        if dist < 40.0 and (chosen is None or dist < chosen[0]):
+            chosen = (dist, s)
+report["candidates"] = candidates
+if chosen is None:
+    report["localized"] = False
+    report["localize_error"] = "no candidate with the right hue"
     result = report
 else:
-    points = [p for p in target.point_cloud.points if 0.3 < float(p[2]) < 1.5 and float(p[0]) == float(p[0])]   # finite, on the table
+    cloud = mask_to_point_cloud(chosen[1].mask, "head", target_frame=base)
+    report["localized"] = True
+    points = [p for p in cloud.points if 0.3 < float(p[2]) < 1.5 and float(p[0]) == float(p[0])]   # finite, on the table
     zs = sorted([float(p[2]) for p in points])
     n = len(points)
     top = zs[9 * n // 10]
@@ -63,48 +108,71 @@ else:
     cx = sum(float(p[0]) for p in face) / len(face)
     cy = sum(float(p[1]) for p in face) / len(face)
     report["block"] = (cx, cy, top, n, len(face))
+    # The omnipicker's centre link floats ~2.7 cm beyond the open fingertips (probed: it descends below the table
+    # top without stalling), and the pads sit behind the tips; so to put the pads at the block's middle the centre
+    # link goes PAD_OFFSET beyond the middle along the approach axis, about 1 cm below the table for a 5 cm block.
+    PAD_OFFSET = 0.035
+    mid = (cx, cy, top - 0.025)
+    # The planner interpolates in joint space and knows nothing about the table: from the home pose the gripper
+    # can sweep low across it and knock blocks about. So: straight up first, then over the block at height, then down.
+    home = get_robot_state().end_effector_poses[arm]
+    up = move_to_pose({"position": (float(home.position[0]), float(home.position[1]), float(home.position[2]) + 0.15),
+                       "quaternion_wxyz": [float(v) for v in home.quaternion_wxyz], "frame": base},
+                      tolerance=0.03, max_steps=200, arm=arm)
+    report["lift_from_home"] = bool(up.ok)
     done = False
     q = None
-    for tilt in (0.0, 25.0, 45.0):
+    for tilt in (0.0, 20.0, 35.0):
         q = approach_quat(tilt)
-        pre = move_to_pose({"position": (cx, cy, top + 0.13), "quaternion_wxyz": q, "frame": base},
-                           tolerance=0.02, max_steps=300, arm=arm)
-        report["pregrasp_tilt_%d" % int(tilt)] = (bool(pre.ok), None if pre.error is None else str(pre.error.message))
+        t = math.radians(tilt)
+        axis = (math.sin(t), 0.0, -math.cos(t))
+        grasp = tuple(mid[i] + PAD_OFFSET * axis[i] for i in range(3))
+        high = tuple(grasp[i] - 0.25 * axis[i] for i in range(3))
+        pregrasp = tuple(grasp[i] - 0.12 * axis[i] for i in range(3))
+        pre = move_to_pose({"position": high, "quaternion_wxyz": q, "frame": base}, tolerance=0.03, max_steps=300, arm=arm)
+        report["high_tilt_%d" % int(tilt)] = (bool(pre.ok), None if pre.error is None else str(pre.error.message))
         if pre.ok:
             break
         q = None
     if q is not None:
-        # re-localize from the wrist camera, 13 cm above the block: a head-camera estimate at 0.7 m is a few cm off
-        wrist = "left_wrist" if arm == "primary" else "right_wrist"
-        near = localize_object(color + " block", camera_name=wrist, target_frame=base)
-        report["wrist_localized"] = bool(near.ok)
-        if near.ok:
-            pts = near.point_cloud.points
-            nz = sorted([float(p[2]) for p in pts])
-            ntop = nz[9 * len(nz) // 10]
-            nface = [p for p in pts if float(p[2]) > ntop - 0.012]
-            ncx = sum(float(p[0]) for p in nface) / len(nface)
-            ncy = sum(float(p[1]) for p in nface) / len(nface)
-            report["block_from_wrist"] = (ncx, ncy, ntop, len(pts), len(nface))
-            report["head_vs_wrist_cm"] = ((ncx - cx) * 100, (ncy - cy) * 100, (ntop - top) * 100)
-            cx, cy, top = ncx, ncy, ntop
-        # descend in stages: the gripper-centre link sits beyond the finger pads, so the pads only reach the block
-        # when the centre is lower than the block's middle; stop at the first depth where the fingers close on it
-        attempts = []
-        for depth in (0.02, 0.035, 0.05):
-            open_gripper(arm=arm)
-            down = move_to_pose({"position": (cx, cy, top - depth), "quaternion_wxyz": q, "frame": base},
-                                tolerance=0.012, max_steps=300, arm=arm)
-            closed = close_gripper(arm=arm)
-            g = float(get_robot_state().gripper_positions[arm])
-            attempts.append((depth, bool(down.ok), None if down.error is None else str(down.error.message)[:60], g))
-            if down.ok and g > 0.12:
-                break
-        report["attempts"] = attempts
-        lift = move_to_pose({"position": (cx, cy, top + 0.15), "quaternion_wxyz": q, "frame": base},
+        # the block should still be where it was: the head pixel of the estimate must show its colour
+        obs = get_observation()
+        cam = obs.cameras["head"]
+        K = cam.intrinsics
+        cw, cxq, cyq, czq = [float(v) for v in cam.camera_pose.quaternion_wxyz]
+        Rm = ((1 - 2 * (cyq * cyq + czq * czq), 2 * (cxq * cyq - cw * czq), 2 * (cxq * czq + cw * cyq)),
+              (2 * (cxq * cyq + cw * czq), 1 - 2 * (cxq * cxq + czq * czq), 2 * (cyq * czq - cw * cxq)),
+              (2 * (cxq * czq - cw * cyq), 2 * (cyq * czq + cw * cxq), 1 - 2 * (cxq * cxq + cyq * cyq)))
+        ct = [float(v) for v in cam.camera_pose.position]
+        dv = [mid[i] - ct[i] for i in range(3)]
+        pc = [sum(Rm[r][k] * dv[r] for r in range(3)) for k in range(3)]
+        u = int(float(K[0][0]) * pc[0] / pc[2] + float(K[0][2]))
+        v = int(float(K[1][1]) * pc[1] / pc[2] + float(K[1][2]))
+        rgb = [int(c) for c in cam.rgb[v][u]]
+        report["block_pixel_after_approach"] = (u, v, rgb)
+        pre = move_to_pose({"position": pregrasp, "quaternion_wxyz": q, "frame": base}, tolerance=0.02, max_steps=300, arm=arm)
+        report["pregrasp"] = (bool(pre.ok), None if pre.error is None else str(pre.error.message)[:60])
+        report["grasp_target"] = grasp
+        # the finger pads sit ~2.5 cm behind the gripper-centre link (URDF), so the centre goes 4.5 cm below the
+        # block's top for the pads to meet its middle; one attempt, the episode is only ~330 steps
+        def progress():
+            try:
+                return [(p["name"], p["score"]) for p in get_observation().task_context.metadata["progress"]["subtasks"]]
+            except Exception:
+                return None
+        down = move_to_pose({"position": grasp, "quaternion_wxyz": q, "frame": base},
+                            tolerance=0.012, max_steps=300, arm=arm)
+        report["grasp_move"] = (bool(down.ok), None if down.error is None else str(down.error.message)[:60])
+        report["ee_at_grasp"] = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
+        closed = close_gripper(arm=arm)
+        g = float(get_robot_state().gripper_positions[arm])
+        report["gripper_after_close"] = g
+        report["progress_after_close"] = progress()
+        lift = move_to_pose({"position": (grasp[0], grasp[1], grasp[2] + 0.15), "quaternion_wxyz": q, "frame": base},
                             tolerance=0.02, max_steps=300, arm=arm)
         report["lift"] = (bool(lift.ok), None if lift.error is None else str(lift.error.message))
         report["gripper_after_lift"] = float(get_robot_state().gripper_positions[arm])
+        report["progress_after_lift"] = progress()
         done = True
     report["done"] = done
     result = report

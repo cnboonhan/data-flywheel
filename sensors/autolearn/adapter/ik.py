@@ -25,7 +25,9 @@ ORIENTATION_TOLERANCE_RAD = 0.05
 
 class UrdfIkProvider:
     def __init__(self, urdf: yourdfpy.URDF | str, context_source: Callable[[], RobotPlanningContext],
-                 joints_source: Callable[[], Mapping[str, float]] | None = None):
+                 joints_source: Callable[[], Mapping[str, float]] | None = None,
+                 link_map: Mapping[str, str] | None = None):
+        """`link_map` renames the context's end-effector links to the URDF's (a simulator's meta link vs the URDF)."""
         import jax
         import jax.numpy as jnp
         import jaxlie
@@ -38,6 +40,7 @@ class UrdfIkProvider:
         self.names = list(self.robot.joints.actuated_names)
         self.context_source = context_source
         self.joints_source = joints_source
+        self.link_map = dict(link_map or {})
         self._lock = threading.Lock()
         self._weights: dict[tuple[str, ...], object] = {}
 
@@ -74,7 +77,7 @@ class UrdfIkProvider:
             return IKResult(ok=False, arm=arm, embodiment=emb,
                             error=ApiError(ErrorCode.INVALID_REQUEST, f"target frame must be {robot_state.base_frame!r}"))
         arm_joints = tuple(ctx.joint_names[arm])
-        link = ctx.end_effector_links[arm]
+        link = self.link_map.get(ctx.end_effector_links[arm], ctx.end_effector_links[arm])
         if link not in self.robot.links.names or any(n not in self.names for n in arm_joints):
             return IKResult(ok=False, arm=arm, embodiment=emb,
                             error=ApiError(ErrorCode.UNSUPPORTED, f"URDF lacks {link!r} or the joints of {arm!r}"))

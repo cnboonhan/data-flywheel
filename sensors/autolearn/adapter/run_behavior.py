@@ -64,8 +64,17 @@ def all_joints():
 
 ik = UrdfIkProvider(args.urdf, context_source=adapter.get_planning_context, joints_source=all_joints)
 ctx = adapter.get_planning_context()
+print(f"OmniGibson's R1 Pro: joints {dict(ctx.joint_names)}, end effectors {dict(ctx.end_effector_links)}", flush=True)
 missing = [n for names in ctx.joint_names.values() for n in names if n not in ik.names]
-missing += [l for l in ctx.end_effector_links.values() if l not in ik.robot.links.names]
+for arm, link in ctx.end_effector_links.items():
+    if link not in ik.robot.links.names:      # OmniGibson's eef meta link isn't in the URDF: use the gripper link
+        side = "left" if arm == "primary" else "right"
+        fallback = f"{side}_gripper_link"
+        if fallback in ik.robot.links.names:
+            ik.link_map[link] = fallback
+            print(f"end effector {link!r} not in the URDF; IK targets {fallback!r} instead", flush=True)
+        else:
+            missing.append(link)
 if missing:
     sys.exit(f"the URDF {args.urdf} lacks {missing}: pick the one OmniGibson's R1 Pro names match")
 providers = {}

@@ -56,7 +56,7 @@ WAIST_JOINTS = tuple(f"idx0{i}_body_joint{i}" for i in range(1, 6))
 GRIPPER_JOINTS = {"primary": "idx41_gripper_l_outer_joint1", "secondary": "idx81_gripper_r_outer_joint1"}
 EE_LINKS = {"primary": "gripper_l_center_link", "secondary": "gripper_r_center_link"}
 GRIPPER_OPEN = -0.785             # the benchmark's gripper value when open (it reports the omnipicker at -0.78 open, 0 closed)
-GRIPPER_STEPS = 12                # ticks a gripper command is held for, so the fingers finish moving (episodes are ~330 steps)
+GRIPPER_STEPS = 30                # ticks a gripper command is held for: the omnipicker needs ~30 to finish moving
 CONTROL_FREQUENCY_HZ = 30.0       # one chunk entry per benchmark step, replayed at its 30 fps render rate
 # Payload camera -> (public name, USD camera prim, URDF link the prim hangs from); from robot_cfg/G2_omnipicker.json.
 CAMERAS = {
