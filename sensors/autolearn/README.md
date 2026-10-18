@@ -23,6 +23,7 @@ Code lives here in git; everything it produces or caches lives in the flywheel, 
 | `genie_sim/` | [Genie Sim 3.0](https://github.com/AgibotTech/genie_sim) (upstream submodule, untouched, MPL-2.0): Isaac Sim 5.1 scenes from a panorama, task generation, benchmark, data collection |
 | `gb300/` | what runs Genie Sim on the GB300 nodes: `render_bench.py` + `render_bench.sbatch` (rendering speed); planned: `build.sh` (upstream's `Dockerfile.5.1` built for arm64 without the x86 `ik_solver` wheel), `up.sh` (the container on a Slurm GPU, caches on `/tier1`, ROS on domain 42), `ik_shim/` (a drop-in `ik_solver` package that calls `ik_server/` over RPC, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)) |
 | `cap-harness-sandboxed.sh` | ASPIRE's `cap-harness` inside bubblewrap with the user's credentials hidden; what the agent loops run programs through |
+| `hooks/sitecustomize.py` | turns Isaac Sim's crash reporter off for Genie Sim's engine, which starts `SimulationApp` with no settings: copied into the container and put on `PYTHONPATH` |
 | planned: `adapter/` | the Genie Sim adapter for ASPIRE (plan stage 2) and the corobot bridge for XPolicyLab's policy server (stage 5) |
 | planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (stage 1), `geniesim_to_xpolicylab` (stage 3), `autolearn-cycle` (stage 6), beside the other stages' workflows |
 
@@ -38,7 +39,7 @@ Code lives here in git; everything it produces or caches lives in the flywheel, 
 | `s3://processed/xpolicylab/geniesim/<task>/` | collected demonstrations after `geniesim_to_xpolicylab` (stage 3), where [`train.sbatch`](../../services/slurm/README.md) reads them |
 | MLflow | campaign scores (experiments), VLA checkpoints (registry), evaluation results |
 
-On this laptop (x86_64, no `/tier1`), the same paths sit under `~/.cache/autolearn/` and the `.gitignore`d `hf-cache/`, `.venv-geniesim/`, `isaac-cache/` here.
+On this laptop (x86_64, no `/tier1`), everything ASPIRE or Genie Sim produces stays inside `sensors/autolearn/`: `isaac-cache/`, `.venv-geniesim/` and the asset pack `GenieSimAssets/` (`.gitignore`d here), ASPIRE's venvs and campaigns where its scripts put them (`aspire/.venv-*`, `aspire/outputs/`, ignored by its git), the ROS 2 workspace build in `genie_sim/devel*`; the Hugging Face cache is the user's `~/.cache/huggingface`.
 
 ## Plan
 
@@ -68,37 +69,44 @@ Decisions to take first: the embodiment (Genie Sim ships the AgiBot G2, Franka, 
 
 Isaac Sim rendering (Genie Sim) needs RT cores: on the GB300 nodes (no RT cores, no NGX) Isaac Sim path-traces at about 150 steps in 3 minutes, so Genie Sim's scene building, data collection and benchmarks belong on the `l3-rtx` nodes or this laptop. ASPIRE's agent loops, its perception services, LIBERO (MuJoCo), the LLMs, VLA training and serving run on the GB300. `scene_reconstruction` (CUDA 11.8, Ada only) doesn't run on the GB300 at all.
 
-### Test Genie Sim on the GB300
+## Genie Sim
 
-Isaac Sim's 5.1.0 image is published for arm64, so the build is possible; what to measure is rendering speed. On a GB300 node with Docker and the NVIDIA container toolkit:
+`A` is the state directory (`/tier1/mistral/flywheel/autolearn` on the cluster, `sensors/autolearn` here) and `ASSETS` the asset pack (`raw/open_datasets/GenieSimAssets` from `download-datasets-hf` there, `$A/GenieSimAssets` from `uvx hf download agibot-world/GenieSimAssets --repo-type dataset --local-dir $A/GenieSimAssets` here). The pack is [CC BY-NC-SA 4.0](https://huggingface.co/datasets/agibot-world/GenieSimAssets): scenes, demonstrations and models derived from it are non-commercial and share-alike; use your own assets for anything else.
 
-1. Build the image (Genie Sim pip-installs Isaac Sim wheels during the build; expect to patch `genie_sim/docker/Dockerfile.5.1` for arm64 wheels).
+1. Install the CLI with the asset pack as its `geniesim_assets` package.
    ```bash
-   A=/tier1/mistral/flywheel/autolearn && uv venv --python 3.12 $A/venv-geniesim && VIRTUAL_ENV=$A/venv-geniesim uv pip install pip -e sensors/autolearn/genie_sim/source/geniesim_cli
-   cd sensors/autolearn/genie_sim && GENIESIM_WIP_ACK=1 $A/venv-geniesim/bin/geniesim docker5.1 build
+   uv venv --python 3.12 $A/.venv-geniesim && VIRTUAL_ENV=$A/.venv-geniesim uv pip install pip -e sensors/autolearn/genie_sim/source/geniesim_cli -e $ASSETS
    ```
-2. Fetch the assets (29 GB) with the `download-datasets-hf` workflow (repo `agibot-world/GenieSimAssets`, dest `GenieSimAssets`), then start the container headless, with Isaac's caches on `/tier1` and ROS 2 off the robot's domain.
+2. Build the image (Isaac Sim 5.1 base; ~25 min, 26 GB) and start it headless. The container runs with host networking and `--privileged`; its entrypoint keeps ROS 2 on localhost, and the launch below adds domain 42. Isaac's caches go to `$A/isaac-cache`.
    ```bash
-   GENIESIM_ASSETS_SRC=/tier1/mistral/flywheel/versitygw/buckets/raw/open_datasets/GenieSimAssets GENIESIM_CACHE_ROOT=$A/isaac-cache \
-     ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1 $A/venv-geniesim/bin/geniesim docker5.1 up --headless
-   $A/venv-geniesim/bin/geniesim docker5.1 into
+   cd sensors/autolearn/genie_sim && GENIESIM_WIP_ACK=1 $A/.venv-geniesim/bin/geniesim docker5.1 build
+   GENIESIM_CACHE_ROOT=$A/isaac-cache $A/.venv-geniesim/bin/geniesim docker5.1 up --headless
    ```
-3. Inside the container, run one scripted collection task (no policy needed) and time it; the first launch also compiles shaders for several minutes.
+3. Build the RT Engine's ROS 2 workspace (~3 min, into `genie_sim/devel`) and install the crash-reporter hook.
    ```bash
-   geniesim bootstrap && geniesim status
-   time geniesim autocollect run pick_pen_of_specific_color --standalone
+   docker exec -u $(id -u):$(id -g) geniesim3 bash -lc 'cd /workspace && geniesim ros build dev'
+   docker exec geniesim3 mkdir -p /home/isaac-sim/.local/hooks && docker cp ../hooks/sitecustomize.py geniesim3:/home/isaac-sim/.local/hooks/
+   ```
+4. Launch a scene headless (the G2 pick-and-place on PhysX) and measure its camera rate.
+   ```bash
+   docker exec -u $(id -u):$(id -g) -e ROS_DOMAIN_ID=42 -e PYTHONPATH=/home/isaac-sim/.local/hooks -e ISAACSIM_HEADLESS=1 geniesim3 bash -lc \
+     'source /opt/ros/jazzy/setup.bash && source /workspace/devel/setup.bash && cd /workspace && ros2 launch genie_sim_bringup app.launch.py scene:=scene_pnp_g2_op launcher_config:=launcher_ovrtx_isaac_physx headless:=true'
+   docker exec -u $(id -u):$(id -g) -e ROS_DOMAIN_ID=42 geniesim3 bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 topic hz /genie_sim/head_front_camera_rgb/image_raw --window 30'
    ```
 
-Or measure rendering alone first, without Genie Sim's image (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)): `gb300/render_bench.sbatch` runs `gb300/render_bench.py` in NVIDIA's Isaac Sim 5.1.0 image on a Slurm-allocated GPU, with Genie Sim's renderer settings, and prints steps per second for 1 and 3 cameras. Caches, logs and results go to `/tier1/mistral/flywheel/autolearn/`; the asset pack is `raw/open_datasets/GenieSimAssets` (`download-datasets-hf`).
+On this laptop: `Isaac Sim physics engine ready` after ~6 min cold (shader compile; tens of seconds warm), physics at 100 Hz, the render node at its 30 fps target with two cameras (`Render Stats` in the log: ~27 ms a frame, no drops), the head camera topic at ~26 Hz, 5.6 GB of GPU memory. Stop a scene with `docker exec geniesim3 pkill -INT -f "ros2 launch"`; `geniesim docker5.1 down` removes the container (the caches and the workspace build stay).
+
+### On the GB300
+
+Isaac Sim's 5.1.0 image is published for arm64, so the build is possible; what to measure is rendering speed. Measure it first without Genie Sim's image (its `ik_solver` wheel is x86-only, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)): `gb300/render_bench.sbatch` runs `gb300/render_bench.py` in NVIDIA's Isaac Sim 5.1.0 image on a Slurm-allocated GPU, with Genie Sim's renderer settings, and prints steps per second for 1 and 3 cameras. Caches, logs and results go to `/tier1/mistral/flywheel/autolearn/`.
 ```bash
 sbatch -w <GB300 node> sensors/autolearn/gb300/render_bench.sbatch
 ```
 
-Decide by steps per second: under about 5 the RTX nodes keep the rendering; above that the GB300 can take data collection too. A render failing with `NGX CreateFeature failed` needs the no-DLSS renderer (FXAA, no DL denoiser, OptiX path tracing), as IsaacLab-Arena needed there (`git show main:sim/isaaclab_arena/hooks/sitecustomize.py`).
+Decide by steps per second: under about 5 the RTX nodes keep the rendering; above that the GB300 can take data collection too, and the steps above apply with `A=/tier1/mistral/flywheel/autolearn` (expect to patch `genie_sim/docker/Dockerfile.5.1` for the arm64 Isaac Sim wheels, and start the container from a Slurm GPU job with `GENIESIM_ASSETS_SRC` pointing at the bucket's pack). A render failing with `NGX CreateFeature failed` needs the no-DLSS renderer (FXAA, no DL denoiser, OptiX path tracing), as IsaacLab-Arena needed there (`git show main:sim/isaaclab_arena/hooks/sitecustomize.py`).
 
-## Genie Sim on this laptop
-
-Set up as in the test above (steps 1–2 work unchanged on x86_64; the container runs with host networking and `--privileged`, so keep `ROS_DOMAIN_ID=42` and `ROS_LOCALHOST_ONLY=1`). Pass `--/crashreporter/enabled=false` to any Isaac Sim run you start by hand.
+Notes:
+- Scenes and launchers are YAMLs in `genie_sim/source/geniesim_ros/src/ros_ws/src/genie_sim_bringup/config/` (`scene_flat_fr3` is a Franka; `scene_wbc_g2_sp` whole-body control on the Newton solver). `geniesim benchmark run` needs a policy server (corobot WebSocket); `geniesim autocollect` (scripted collection) runs its own container from `source/data_collection/`.
 
 ## ASPIRE on LIBERO
 
@@ -106,7 +114,6 @@ Set up as in the test above (steps 1–2 work unchanged on x86_64; the container
    ```bash
    git submodule update --init sensors/autolearn/aspire
    A=$PWD/sensors/autolearn && cd $A/aspire
-   export HF_HOME=$A/hf-cache HF_TOKEN_PATH=~/.cache/huggingface/token
    export LIBERO_CONFIG_PATH=$PWD/.libero TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 MUJOCO_GL=egl PYOPENGL_PLATFORM=egl EGL_PLATFORM=device
    ```
 2. Log in to Hugging Face with access to the gated [SAM3](https://huggingface.co/facebook/sam3) weights: `uvx hf auth login`.
