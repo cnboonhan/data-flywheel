@@ -23,13 +23,20 @@ REST_WEIGHT = 100.0        # on pinned joints; the commanded arm's joints get 0.
 # G2's reach (residuals of 1.1 cm seen there) go ahead and the caller's own pose tolerance judge it
 POSITION_TOLERANCE_M = 0.015
 ORIENTATION_TOLERANCE_RAD = 0.08
+# extra solves from other seeds when the first misses: a local solver started at the arm's own joints can stop at a
+# limit or a singularity (the R1 Pro's tucked arm hangs straight down and its elbow bends one way, so a lift 8 cm up
+# stalled at 7 cm); each restart pulls the arm halfway to mid-range and jitters it. 6 restarts found the lift on the
+# first; a solve is milliseconds once compiled
+RESTARTS = 6
+RESTART_JITTER_RAD = 0.3
 
 
 class UrdfIkProvider:
     def __init__(self, urdf: yourdfpy.URDF | str, context_source: Callable[[], RobotPlanningContext],
                  joints_source: Callable[[], Mapping[str, float]] | None = None,
-                 link_map: Mapping[str, str] | None = None):
-        """`link_map` renames the context's end-effector links to the URDF's (a simulator's meta link vs the URDF)."""
+                 link_map: Mapping[str, str] | None = None, link_offsets: Mapping[str, np.ndarray] | None = None):
+        """`link_map` renames the context's end-effector links to the URDF's (a simulator's meta link vs the URDF);
+        `link_offsets[context_link]` is the URDF link's pose in that end-effector frame, when the two differ."""
         import jax
         import jax.numpy as jnp
         import jaxlie
@@ -38,11 +45,16 @@ class UrdfIkProvider:
 
         self._jnp = jnp
         self.urdf = urdf if isinstance(urdf, yourdfpy.URDF) else yourdfpy.URDF.load(str(urdf), load_meshes=False)
+        for joint in self.urdf.joint_map.values():
+            # PyRoki refuses a continuous joint without a velocity limit (the R1 Pro's wheels); no cost here uses it
+            if joint.type == "continuous" and (joint.limit is None or joint.limit.velocity is None):
+                joint.limit = yourdfpy.Limit(effort=joint.limit.effort if joint.limit else None, velocity=1.0)
         self.robot = pk.Robot.from_urdf(self.urdf)
         self.names = list(self.robot.joints.actuated_names)
         self.context_source = context_source
         self.joints_source = joints_source
         self.link_map = dict(link_map or {})
+        self.link_offsets = {k: np.asarray(v, dtype=float) for k, v in (link_offsets or {}).items()}
         self._lock = threading.Lock()
         self._weights: dict[tuple[str, ...], object] = {}
 
@@ -90,6 +102,8 @@ class UrdfIkProvider:
         t[:3, :3] = quaternion_wxyz_to_matrix(target_pose.quaternion_wxyz)
         t[:3, 3] = target_pose.position
         t = root_from_base @ t
+        if ctx.end_effector_links[arm] in self.link_offsets:     # the URDF link that stands in for the end effector
+            t = t @ self.link_offsets[ctx.end_effector_links[arm]]
         from cap_harness.geometry import matrix_to_quaternion_wxyz
         target_wxyz, target_xyz = matrix_to_quaternion_wxyz(t[:3, :3]), t[:3, 3]
 
@@ -104,13 +118,27 @@ class UrdfIkProvider:
                         seed[self.names.index(n)] = v
         jnp = self._jnp
         link_index = self.robot.links.names.index(link)
+        idx = [self.names.index(n) for n in arm_joints]
+        lo = np.array([self.urdf.joint_map[n].limit.lower for n in arm_joints], dtype=float)
+        hi = np.array([self.urdf.joint_map[n].limit.upper for n in arm_joints], dtype=float)
+        rng = np.random.default_rng(0)
+        best = None
         with self._lock:
-            sol = np.asarray(self._solve(self.robot, jnp.asarray(link_index), jnp.asarray(target_wxyz),
-                                         jnp.asarray(target_xyz), jnp.asarray(seed), self._rest_weight(arm_joints)))
-            pose = np.asarray(self.robot.forward_kinematics(jnp.asarray(sol))[link_index])
-        joints = np.array([sol[self.names.index(n)] for n in arm_joints], dtype=float)
-        pos_err = float(np.linalg.norm(pose[4:] - target_xyz))
-        ori_err = float(2 * np.arccos(np.clip(abs(np.dot(pose[:4], target_wxyz)), 0, 1)))
+            for attempt in range(1 + RESTARTS):
+                start = seed.copy()
+                if attempt:     # pull the arm toward mid-range and jitter it
+                    start[idx] = np.clip(0.5 * (seed[idx] + 0.5 * (lo + hi)) + rng.normal(0, RESTART_JITTER_RAD, len(idx)), lo, hi)
+                sol = np.asarray(self._solve(self.robot, jnp.asarray(link_index), jnp.asarray(target_wxyz),
+                                             jnp.asarray(target_xyz), jnp.asarray(start), self._rest_weight(arm_joints)))
+                pose = np.asarray(self.robot.forward_kinematics(jnp.asarray(sol))[link_index])
+                pos_err = float(np.linalg.norm(pose[4:] - target_xyz))
+                ori_err = float(2 * np.arccos(np.clip(abs(np.dot(pose[:4], target_wxyz)), 0, 1)))
+                if best is None or pos_err + 0.1 * ori_err < best[0] + 0.1 * best[1]:
+                    best = (pos_err, ori_err, sol)
+                if pos_err <= POSITION_TOLERANCE_M and ori_err <= ORIENTATION_TOLERANCE_RAD:
+                    break
+        pos_err, ori_err, sol = best
+        joints = np.array([sol[i] for i in idx], dtype=float)
         diag = {"position_error_m": pos_err, "orientation_error_rad": ori_err, "provider": "pyroki-urdf"}
         if pos_err > POSITION_TOLERANCE_M or ori_err > ORIENTATION_TOLERANCE_RAD:
             return IKResult(ok=False, arm=arm, embodiment=emb, diagnostics=diag,

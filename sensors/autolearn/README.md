@@ -22,9 +22,10 @@ Code lives here in git; everything it downloads or produces lives in this folder
 | `setup.sh` | the whole setup, one subcommand per part: `geniesim`, `aspire`, `behavior`, `services`, `benchmark` (below) |
 | `aspire/` | [ASPIRE](https://github.com/NVlabs/ASPIRE) (upstream submodule, untouched): coding agents write and debug robot programs; LIBERO-Pro, Robosuite, BEHAVIOR-1K |
 | `genie_sim/` | [Genie Sim 3.0](https://github.com/AgibotTech/genie_sim) (upstream submodule, untouched, MPL-2.0): Isaac Sim 5.1 scenes from a panorama, task generation, benchmark, data collection |
-| `adapter/` | Genie Sim and BEHAVIOR-1K as ASPIRE environments: `geniesim_adapter.py` (the benchmark's policy socket as ASPIRE's EnvironmentAdapter), `ik.py` (PyRoki IK for any URDF), `run_geniesim.py` and `run_behavior.py` (a program per episode), `programs/` (hand-written test programs: `wave.py`, `pick_block.py`, the probes), `probe_server.py` (a hold-still policy), `isaac/` (run inside the container with Isaac's python, benchmark stopped: `finger_probe.py` finger frames at open/half/closed, `grasp_test.py` which cube placements a close holds, `usd_fk_check.py` URDF FK vs the simulator), `joint_probe.py` (one joint at a time against the head camera) |
+| `adapter/` | Genie Sim and BEHAVIOR-1K as ASPIRE environments: `geniesim_adapter.py` (the benchmark's policy socket as ASPIRE's EnvironmentAdapter), `ik.py` (PyRoki IK for any URDF), `run_geniesim.py` (a program per episode) and `run_behavior.py` (`cap-harness` itself with PyRoki in place of cuRobo), `programs/` (hand-written test programs: `wave.py`, `pick_block.py`, the probes), `probe_server.py` (a hold-still policy), `isaac/` (run inside the container with Isaac's python, benchmark stopped: `finger_probe.py` finger frames at open/half/closed, `grasp_test.py` which cube placements a close holds, `usd_fk_check.py` URDF FK vs the simulator), `joint_probe.py` (one joint at a time against the head camera) |
 | `hooks/sitecustomize.py` | turns Isaac Sim's crash reporter off for Genie Sim, which starts `SimulationApp` with no settings: copied into the container and put on `PYTHONPATH` |
 | `cap-harness-sandboxed.sh` | ASPIRE's `cap-harness` inside bubblewrap with the user's credentials hidden; what the LIBERO agent loops run programs through |
+| `cap-harness-behavior.sh` | the same sandbox around `adapter/run_behavior.py`; what the BEHAVIOR-1K agent loop runs programs through |
 | `gb300/` | Genie Sim's rendering benchmark on the GB300 nodes (`render_bench.py` + `.sbatch`); planned: the arm64 image build and container launcher |
 | planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (plan stage 1), `geniesim_to_xpolicylab` (stage 3), `autolearn-cycle` (stage 6) |
 
@@ -114,14 +115,25 @@ Read `aspire/outputs/geniesim/<stamp>/episodeNN.json`: `program_ok`, `success`, 
 
 ### ASPIRE on BEHAVIOR-1K (Galaxea R1 Pro)
 
-The same construction on ASPIRE's own `BehaviorAdapter` (OmniGibson on Isaac Sim 5.1), with `adapter/ik.py` in place of OmniGibson's cuRobo, which drops the R1 Pro embodiment on RTX 50-series GPUs. Base moves use the adapter's `servo` planner.
+ASPIRE's own `cap-harness run` on its `BehaviorAdapter` (OmniGibson on Isaac Sim 5.1), with `adapter/ik.py` in place of OmniGibson's cuRobo, which drops the R1 Pro embodiment on RTX 50-series GPUs: `adapter/run_behavior.py` is the `cap-harness` command line with the motion providers swapped, and `cap-harness-behavior.sh` sandboxes it. Stop the Genie Sim benchmark first (one Isaac Sim at a time).
 
 ```bash
 ./setup.sh services
-OMNIGIBSON_GPU_ID=0 aspire/.venv-behavior/bin/python adapter/run_behavior.py adapter/programs/wave.py --task turning_on_radio --seed 1
+cd aspire && export OMNIGIBSON_HEADLESS=1 OMNIGIBSON_GPU_ID=0 OMNIGIBSON_DATA_PATH=$PWD/../behavior-data OMNIGIBSON_APPDATA_PATH=$PWD/.behavior-appdata && ulimit -c 0
+../cap-harness-behavior.sh run --benchmark behavior --suite turning_on_radio --task-id 0 --seed 36 --program ../adapter/programs/wave.py \
+    --output-root outputs/behavior --max-steps 600 --camera-width 512 --camera-height 512      # expect program_ok=True
 ```
 
-Outcomes in `aspire/outputs/behavior/<stamp>/`. The first launch compiles shaders for several minutes; a cold scene load is ~3 min, warm ~35 s.
+Runs land under `outputs/behavior/` in ASPIRE's [artifact layout](aspire/docs/run-artifacts.md). The first launch compiles shaders for several minutes; a cold scene load is ~3 min, warm ~35 s, and Isaac may segfault on exit after the summary is written.
+
+A campaign is ASPIRE's block-by-block skill (`aspire/.claude/skills/iterative-debugging/behavior/SKILL.md`) with `CAP_HARNESS=../cap-harness-behavior.sh`. Tell its workers what differs from their prompt, which assumes cuRobo:
+
+| Worker prompt says | Here |
+|---|---|
+| `MotionStrategy()` means in-process cuRobo | `pyroki` + ASPIRE's interpolation planner; `ik_solver="curobo"` is refused |
+| `max_steps` caps the planned waypoint count, pass 600–900 | ticks of execution, as on Genie Sim; the default 120 is enough for a reach |
+| `navigate_to_pose(planner="curobo")` plans the base | no base plan: every leg follows the traversability map in servoed hops; `planner="servo"` drives straight |
+| a failed plan costs 6–10 s | IK is milliseconds; reachability is `solve_ik` |
 
 ### ASPIRE on LIBERO
 
@@ -175,5 +187,5 @@ The adapter translates between ASPIRE and Genie Sim; programs see only ASPIRE's 
 - **ASPIRE's PyRoki service and client are Panda-only** (`panda_description`, an 8-value seed, the `libero`/`robosuite` embodiments), and its embodiment labels are a closed set; hence `adapter/ik.py` and the `robosuite` label. BEHAVIOR's arm planning is OmniGibson's cuRobo, dropped for the R1 Pro on sm_120 GPUs; the same provider replaces it there.
 - **ASPIRE v1.0 on LIBERO:** pass `--init-mode seeded` (the default `saved` mode crashes on reset: `adapter.py` tests a NumPy array with `not`), which also fails `cap-harness doctor --reset` and `validate --plan libero-smoke`. Verified skills belong in `aspire/.claude/skills/iterative-debugging/skills/`, a tracked file of the submodule: promote them on a fork, or keep them in the campaign's `outputs/runs/<campaign>/`.
 - **ASPIRE's BEHAVIOR bootstrap** leaves `pyarrow` unpinned and its import check then fails on NumPy 1.x; `setup.sh behavior` pins `pyarrow<23` and reruns it. Its Isaac Sim exit after `validate_behavior.sh` can segfault after the summary is written.
-- **Security.** ASPIRE runs model-generated Python with full access to the machine. `cap-harness-sandboxed.sh` hides credentials from LIBERO programs; the Genie Sim and BEHAVIOR runners run programs in-process without a sandbox yet, so hand-written programs only until they're wrapped the same way. The crash-reporter hook covers both of Genie Sim's Isaac interpreters (the pip `isaacsim` and `/isaac-sim`'s `omni_python`); the benchmark's launcher replaces `extra_args`, so the flag doesn't show in its Kit command line, but the plugin isn't loaded.
+- **Security.** ASPIRE runs model-generated Python with full access to the machine. `cap-harness-sandboxed.sh` hides credentials from LIBERO programs and `cap-harness-behavior.sh` from BEHAVIOR ones; the Genie Sim runner runs programs in-process without a sandbox yet, so hand-written programs only until it's wrapped the same way. The crash-reporter hook covers both of Genie Sim's Isaac interpreters (the pip `isaacsim` and `/isaac-sim`'s `omni_python`); the benchmark's launcher replaces `extra_args`, so the flag doesn't show in its Kit command line, but the plugin isn't loaded.
 - **Robot asset facts worth keeping:** the omnipicker's centre link is its pinch point, 14.3 cm beyond the gripper base along +Z (the approach axis): the fingers swing in a near-horizontal arc from 13.6 cm apart (joint 45°, which the benchmark reports as −0.785) to meeting 1 cm past the centre link, so a grasp puts the centre link 3.5 cm below a 5 cm cube's top with the fingers parallel to its faces (`pick_block.py`'s `PAD_OFFSET`, `face_yaw`); a held cube stops the gripper at 0.4–0.55 of its travel, an empty close goes below 0.1; in this scene the fingers pass through the table, so a descent never stalls. Genie Sim's cameras are 1.93 mm focal; Isaac fits the horizontal aperture to the image and the pixels are square (head: 3.896 mm, fx ≈ 317 px at 640 wide; wrist: 3.76 mm, fx ≈ 657 px at 1280 wide; the wrist prims' vertical aperture would give fy 45% too large). The G2's waist joints at rest read about `[-0.83, 1.22, 0.1, 0, 0]`, outside the benchmark URDF's limits, which is how that URDF was found not to match; the data-collection planner's `G2_omnipicker_fixed_dual.urdf` (also in the asset pack under `curobo_robot/`) does.
