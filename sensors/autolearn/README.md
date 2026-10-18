@@ -24,7 +24,7 @@ Code lives here in git; everything it produces or caches lives in the flywheel, 
 | `gb300/` | what runs Genie Sim on the GB300 nodes: `render_bench.py` + `render_bench.sbatch` (rendering speed); planned: `build.sh` (upstream's `Dockerfile.5.1` built for arm64 without the x86 `ik_solver` wheel), `up.sh` (the container on a Slurm GPU, caches on `/tier1`, ROS on domain 42), `ik_shim/` (a drop-in `ik_solver` package that calls `ik_server/` over RPC, [issue 149](https://github.com/AgibotTech/genie_sim/issues/149)) |
 | `cap-harness-sandboxed.sh` | ASPIRE's `cap-harness` inside bubblewrap with the user's credentials hidden; what the agent loops run programs through |
 | `hooks/sitecustomize.py` | turns Isaac Sim's crash reporter off for Genie Sim's engine, which starts `SimulationApp` with no settings: copied into the container and put on `PYTHONPATH` |
-| planned: `adapter/` | the Genie Sim adapter for ASPIRE (plan stage 2) and the corobot bridge for XPolicyLab's policy server (stage 5) |
+| `adapter/` | Genie Sim as an ASPIRE environment (plan stage 2): `geniesim_adapter.py` answers the benchmark's policy socket from ASPIRE's harness, `run_geniesim.py` runs a program per episode, `programs/` test programs, `probe_server.py` a hold-still policy; planned: the corobot bridge for XPolicyLab's policy server (stage 5) |
 | planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (stage 1), `geniesim_to_xpolicylab` (stage 3), `autolearn-cycle` (stage 6), beside the other stages' workflows |
 
 | On the cluster (not in git) | Contents |
@@ -107,6 +107,24 @@ Decide by steps per second: under about 5 the RTX nodes keep the rendering; abov
 
 Notes:
 - Scenes and launchers are YAMLs in `genie_sim/source/geniesim_ros/src/ros_ws/src/genie_sim_bringup/config/` (`scene_flat_fr3` is a Franka; `scene_wbc_g2_sp` whole-body control on the Newton solver). `geniesim benchmark run` needs a policy server (corobot WebSocket); `geniesim autocollect` (scripted collection) runs its own container from `source/data_collection/`.
+
+## ASPIRE on Genie Sim
+
+The benchmark drives the loop and ASPIRE's program answers as its policy: each episode, `adapter/run_geniesim.py` runs the program through ASPIRE's harness (`run_program_with_api`) with SAM3 and Contact-GraspNet from ASPIRE's services, IK on PyRoki with the G2 URDF and the interpolation planner, and reads success from the benchmark's subtask scores.
+
+1. Have the Genie Sim container up (Genie Sim steps 1–3) and ASPIRE's services running (ASPIRE step 3). The runner lives in ASPIRE's PyRoki venv, which also needs `VIRTUAL_ENV=aspire/.venv-pyroki uv pip install msgpack opencv-python-headless` once.
+2. Start the runner with a program, then the benchmark pointed at it; `--debug` saves each episode's head image with the gripper centres projected (a calibration check: the circles sit on the fingertips).
+   ```bash
+   aspire/.venv-pyroki/bin/python adapter/run_geniesim.py adapter/programs/wave.py --episodes 1 --debug --no-providers
+   docker exec -u $(id -u):$(id -g) -e PYTHONPATH=/home/isaac-sim/.local/hooks geniesim3 bash -lc \
+     'cd /workspace && geniesim benchmark run g2op_if_pick_block_color --infer-host=127.0.0.1:8999 --app.headless=true --benchmark.num_episode=1'
+   ```
+3. Read `aspire/outputs/geniesim/<stamp>/episodeNN.json`: `program_ok`, `success`, the subtask scores, steps, the program's `result`. `wave.py` (lift the right gripper 8 cm, close, open; no perception) ends with `move_ok` true and `rise_m` ≈ 0.08 in ~35 s.
+
+Notes:
+- The robot is the G2 omnipicker: arms `primary` (left) and `secondary` (right), 7 joints each, grippers 0 (closed) to 1 (open), poses in `base_link`. ASPIRE's embodiment labels are a closed set, so the adapter uses `robosuite` (7-joint arms). Kinematics come from the cuRobo URDF in the asset pack (`GenieSimAssets/robot/curobo_robot/assets/robot/G2/G2_omnipicker_fixed_dual.urdf`); the benchmark's own `robot_cfg/G2_omnipicker/G2_omnipicker.urdf` has a different torso chain and doesn't match the simulated robot. Camera intrinsics and offsets are read from the robot USD.
+- The benchmark scores every 30 steps (`Follow`: gripper in the target's box; `PickUpOnGripper`), and runs one episode per saved instance; the runner's `--episodes` takes them in turn.
+- The runner runs the program in-process on the host (no bubblewrap yet): hand-written programs only until it's wrapped like `cap-harness-sandboxed.sh`.
 
 ## ASPIRE on LIBERO
 
