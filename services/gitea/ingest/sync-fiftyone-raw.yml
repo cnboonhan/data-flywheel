@@ -177,7 +177,7 @@ jobs:
 
 
           class Colmap:
-              """COLMAP models (sparse/0 as text or binary) with their photos in images/ beside sparse/, e.g. sensors/real2sim
+              """COLMAP models (sparse/0 as text or binary) with their photos in images/ beside sparse/
               captures. A model folder is one unit; its signature covers the model files, so a re-run reconstruction re-ingests."""
               name = "colmap"
               MODELS = {0: ("SIMPLE_PINHOLE", 3), 1: ("PINHOLE", 4), 2: ("SIMPLE_RADIAL", 4), 3: ("RADIAL", 5), 4: ("OPENCV", 8),

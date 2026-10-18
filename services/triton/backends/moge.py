@@ -8,7 +8,7 @@
              mask         BOOL  [H, W]  where it is valid
 
 A panorama runs MoGe on its 20-view split, merges the views' depths (MoGe's gradient-domain merge, which loses the
-absolute scale) and rescales the result to the views' metric distances, as sim/pano_splat does.
+absolute scale) and rescales the result to the views' metric distances.
 """
 
 import json
@@ -48,7 +48,7 @@ class TritonPythonModel:
         if fov > 0:
             d, m = self.infer([img], [fov])
             return {"distance": d[0].astype(np.float32), "mask": m[0].astype(bool)}
-        # view_size 1024 px, as sim/pano_ideate runs it (sim/pano_arena began at 512); untuned.
+        # view_size 1024 px; untuned.
         d, m = self.panorama(img, int(scalar(req, "view_size", 1024)), int(scalar(req, "merge_width", 0)))
         return {"distance": d.astype(np.float32), "mask": m}
 

@@ -15,11 +15,10 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
 | Folder | Contents |
 |---|---|
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
-| [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) and the real2sim capture robot |
+| [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
 | [`services/`](services/README.md) | Infra stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
-| [`sim/`](sim/README.md) | Simulation tooling: IsaacLab-Arena environment generation, Gaussian splats of real scenes |
 | [`devroles/`](devroles/) | The developer roles that push the flywheel along: [Scientist](devroles/scientist.md), [Engineering](devroles/engineering.md) |
-| `assets/` | The architecture diagram and its role variants, quickstart screenshots, the images and demo GIF the sim READMEs show, and the `bufo` image submodule |
+| `assets/` | The architecture diagram and its role variants, quickstart screenshots, and the `bufo` image submodule |
 | `tools/` | Repo maintenance scripts |
 
 ## Setup
@@ -40,7 +39,7 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
    ```
 4. Bring up the services: [services/](services/README.md#run).
 5. Get access and an account: [Access](services/README.md#access), [Users](services/README.md#users), [S3 client](services/versitygw/README.md#client-setup).
-6. Install the simulation tooling you need: [sim/colmap_splat/](sim/colmap_splat/README.md#install-once), [eval/system2/](eval/system2/README.md#install), [eval/system1/](eval/system1/README.md).
+6. Install the evaluation tooling you need: [eval/system2/](eval/system2/README.md#install), [eval/system1/](eval/system1/README.md).
 7. Set up Slurm jobs: [slurm/](services/slurm/README.md).
 
 ## The flywheel, end to end
@@ -54,7 +53,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 | Off-Robot Data Collection | YUBI glove and gripper rigs: [sensors/](sensors/README.md) (`yubi-hw`, `yubi-sw`) |
 | Robot Teleoperation | Galaxea R1 data (public so far) |
 | Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
-| Virtual Scenes | Arena environment generation ([sim/isaaclab_arena/](sim/isaaclab_arena/README.md)), splats of real scenes ([sim/colmap_splat/](sim/colmap_splat/README.md)) from captures by [sensors/real2sim/](sensors/real2sim/README.md), scenes and assets from one panorama ([sim/pano_ideate/](sim/pano_ideate/README.md), [sim/asset_gen/](sim/asset_gen/README.md)) |
+| Virtual Scenes | not built yet |
 | Physical Scenes | not built yet |
 | Inference Compute | Triton on the service node's GPUs: [triton/](services/triton/README.md) |
 
@@ -108,5 +107,4 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 | LeRobot v3 (HiFi-UMI-2K) | `download-datasets-hf` | episodes with videos and state/action plots | EE-space data; XPolicyLab's joint-space layout doesn't fit yet |
 | xspark HDF5 (RoboDojo) | `setup-envs` | episode groups with preview videos | `robodojo_to_xpolicylab` → `train.sbatch` |
 | ROS 2 mcap (h2rc) | bag directories into `raw` | bags in FiftyOne and Rerun | no recorded actions in the bags; would need derived targets |
-| COLMAP captures (real2sim) | `aws s3 sync` into `raw/internal_datasets/real2sim/` | photos with poses | splats: [sim/colmap_splat/](sim/colmap_splat/README.md) |
 | anything else | into `raw` | add a layout to `sync-fiftyone-raw` | one `<repo>_to_xpolicylab` adapter |

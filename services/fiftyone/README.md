@@ -6,7 +6,7 @@ FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea
 |---|---|
 | LeRobot v3 (`meta/info.json`) | one sample per episode, a media reference into the source videos and parquet |
 | xspark (`*/data/episode_*.hdf5`) | one group per episode, a slice per `preview_video/<episode>_<camera>.mp4` |
-| COLMAP (`images/` beside `sparse/0`, text or binary) | one image sample per photo with its pose (`position`, `quaternion_wxyz`), camera and intrinsics; e.g. `sensors/real2sim` captures |
+| COLMAP (`images/` beside `sparse/0`, text or binary) | one image sample per photo with its pose (`position`, `quaternion_wxyz`), camera and intrinsics |
 | `*.mcap`, `*.bag` | one sample per bag, with rosbag2 `metadata.yaml` fields and `rerun_url`, which opens the bag in [Rerun](../rerun/README.md) |
 | `*.tar`, `*.tar.gz`, `*.zip` | one sample per archive, catalog only |
 

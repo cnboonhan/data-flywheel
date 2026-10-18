@@ -8,9 +8,9 @@
 # backends/triposg.py needs neither.
 # Everything is installed against a constraints file of the image's own torch, numpy, transformers and vLLM, so none of
 # them changes; MoGe and its git dependencies go in without theirs (they would pull numpy 2 and an OpenGL renderer).
-# Pins: mlflow-skinny is the MLflow server's version (services/mlflow/Dockerfile); diffusers>=0.36 is the floor the
-# pano tools ran Qwen-Image-Edit-2511 on (its card asks for the latest). MoGe is the revision the pano tools have used
-# since sim/pano_arena (why that one isn't recorded); utils3d_moge, pipeline and FlexGEMM are that revision's own
+# Pins: mlflow-skinny is the MLflow server's version (services/mlflow/Dockerfile); diffusers>=0.36 is the floor
+# Qwen-Image-Edit-2511 was run on (its card asks for the latest). MoGe is pinned to one revision (why that one isn't
+# recorded); utils3d_moge, pipeline and FlexGEMM are that revision's own
 # pyproject pins. TripoSG is pinned because backends/triposg.py mirrors its internals (prepare_image, the flash
 # decoder's DiffDMC call).
 FROM nvcr.io/nvidia/tritonserver:26.08-py3 AS standard

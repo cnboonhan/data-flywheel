@@ -46,7 +46,7 @@ r = c.infer("Qwen-Image-Edit-2511", [tensor("images", [jpg], "BYTES"), tensor("p
 png = r.as_numpy("image")[0]                                               # the edited image, PNG bytes
 ```
 
-The sim tools ([pano_ideate](../../sim/pano_ideate/README.md), [asset_gen](../../sim/asset_gen/README.md), [colmap_splat](../../sim/colmap_splat/README.md#train)) call models through `triton_endpoint.py`: one `Endpoint(role, default_model)` per model they need, configured by `<ROLE>_ENDPOINT` (a model name on this Triton, or a full `https://<host:port>/v2/models/<model>` on any Triton), and `<ROLE>_CA` (else `AWS_CA_BUNDLE`); no token. Each tool's README lists its roles.
+Clients call models through `triton_endpoint.py`: one `Endpoint(role, default_model)` per model they need, configured by `<ROLE>_ENDPOINT` (a model name on this Triton, or a full `https://<host:port>/v2/models/<model>` on any Triton), and `<ROLE>_CA` (else `AWS_CA_BUNDLE`); no token.
 
 ```python
 from triton_endpoint import Endpoint                  # services/triton on sys.path

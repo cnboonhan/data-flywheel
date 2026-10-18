@@ -7,13 +7,8 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - Data and weights live in the S3 gateway (`services/`), not in the checkout. Gitea workflows fetch from Hugging Face: `services/gitea/ingest/download-datasets-hf.yml` into `raw/open_datasets/`, `download-models-hf.yml` into the MLflow model registry (self-contained workflows; each header lists the known repos).
 - `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
-- `sensors/real2sim/`: Isaac Sim robot (Arena venv, bundled ROS 2 Jazzy, `ROS_DOMAIN_ID=42`) + Nav2 in Docker on a known map; goals via `/goal_pose`. A real robot shares the LAN on domain 0: never publish to `/hdas/*` or `/motion_target/*` from sim.
-- `sim/isaaclab_arena/`: Arena environment generation via a local LLM proxy and scripted demo recording (`envgen.sh`, `record.py`, `hooks/` import hooks: `cliproxy` endpoint, `ridgeback_franka_ik` mobile manipulator, `splat_scene` background from `ARENA_SPLAT_SCENE`).
-- `sim/pano_ideate/`: works out a scene's interactions from one panorama in a browser viewer (`serve.py`: upload, find objects, walk, pick them up or switch their modes) and exports them as a session zip (`session.py`). Every model runs on Triton (`models.py`, endpoints per role); no local GPU. Data in `datasets/pano_ideate/` (gitignored).
-- `sim/asset_gen/`: objects of a session zip as simulation assets (`objects.py`: mesh, USD with physics). Its background becomes a splat via `sim/colmap_splat/from_pano.py`. Data in `datasets/asset_gen/` (gitignored).
-- `services/triton/triton_endpoint.py`: the client the sim tools use for Triton models; each role's endpoint is a `<ROLE>_ENDPOINT` variable.
-- `sim/colmap_splat/`: Gaussian-splat training of real scenes (`refine_poses.py` first for robot-posed captures); `sim/colmap_splat/3dgrut` is the 3DGRUT trainer (uv venv inside it, CUDA 12.8 bundled). Data in `datasets/colmap_splat/` (gitignored).
-- Everything under `eval/`, `sensors/yubi-*` and `sim/colmap_splat/3dgrut` is an **upstream git submodule**.
+- `services/triton/triton_endpoint.py`: the client for Triton models; each role's endpoint is a `<ROLE>_ENDPOINT` variable.
+- Everything under `eval/` and `sensors/yubi-*` is an **upstream git submodule**.
 
 ## Rules
 
@@ -58,7 +53,7 @@ XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_
 
 ## Docs
 
-- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, `sim/colmap_splat/README.md`, ...). Overviews (the top-level README and its flywheel walkthrough, `services/README.md`) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
+- **Reference, don't duplicate.** Each fact lives in one README, the one closest to the code it describes (`services/<service>/README.md`, `services/gitea/<stage>/README.md`, ...). Overviews (the top-level README and its flywheel walkthrough, `services/README.md`) summarise in a line and link to it. When a fact changes, update its home; when adding to an overview, link instead of copying.
 - **Prefer diagrams over text.** Show a pipeline, flow or layout as a Mermaid diagram (GitHub renders it) or an image in `assets/`, and keep the prose to what the diagram can't say. Keep READMEs short: the steps, a table of outputs, the gotchas.
 - **Instructions are an action plus how.** Write each step as "Do X." followed by an executable code block or a link to the README that covers it. Keep explanations to the one clause a reader needs to act (why a step exists, what breaks otherwise); move background into a short notes list after the steps, or drop it. Tables for reference data, not for prose.
 - **Instructive, not a log.** Address the reader ("Run …", "Set …"), not a record of what happened. No dated "verified on" lines, lists of bugs found and fixed, attempts that didn't work, run or job IDs: that is git history. Keep a measurement only as guidance for the reader ("Expect ~25 min and 27 dB held out"), and a gotcha only while it still applies, phrased as what to do.

@@ -38,8 +38,8 @@ class TritonPythonModel:
         from PIL import Image
         img = image(get(req, "image").reshape(-1)[0])
         labels = [b.decode() for b in get(req, "labels").reshape(-1)]
-        # box 0.35 (min box score), text 0.25 (min score for a word to name a box), NMS IoU 0.7: what sim/pano_ideate's
-        # missed-object pass runs on (it sends none), carried over from sim/pano_splat; why these values isn't recorded.
+        # box 0.35 (min box score), text 0.25 (min score for a word to name a box), NMS IoU 0.7, the defaults when a
+        # request sends none; why these values isn't recorded.
         bt, tt, iou = (float(scalar(req, k, d)) for k, d in (("box_threshold", 0.35), ("text_threshold", 0.25), ("nms", 0.7)))
         boxes, scores, names = [], [], []
         for j in range(0, len(labels), 20):
