@@ -59,7 +59,7 @@ for episode in range(args.episodes):
           f"{ {a: round(v, 2) for a, v in obs.robot_state.gripper_positions.items()} } raw {adapter._raw['states'].get('gripper_states')}", flush=True)
     if args.debug:
         adapter.debug_dir = out
-        adapter.debug_frame(out / f"episode{ctx.task_id:02d}_head.jpg")
+        adapter.debug_frame(out / f"episode{episode:02d}_head.jpg")     # the benchmark's own episode index restarts
     api = CapApi(adapter, ik_providers={"pyroki": ik}, default_camera="head",
                  default_motion_strategy=MotionStrategy(ik_solver="pyroki", trajectory_planner="interpolation", pose_planner="composed"),
                  **providers)

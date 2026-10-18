@@ -56,6 +56,9 @@ WAIST_JOINTS = tuple(f"idx0{i}_body_joint{i}" for i in range(1, 6))
 GRIPPER_JOINTS = {"primary": "idx41_gripper_l_outer_joint1", "secondary": "idx81_gripper_r_outer_joint1"}
 EE_LINKS = {"primary": "gripper_l_center_link", "secondary": "gripper_r_center_link"}
 GRIPPER_OPEN = -0.785             # the benchmark's gripper value when open (it reports the omnipicker at -0.78 open, 0 closed)
+SETTLE_TICKS = 15                 # held at reset before the first observation is returned: the head is still swinging to
+                                  # its hold pose in the benchmark's first frame, which put head estimates 6 cm too far
+                                  # and 3-5 cm too high (a learned program had to wait ~50 ticks); 15 ticks settle it
 GRIPPER_STEPS = 20                # ticks a gripper command is first held for; then it is held in GRIPPER_POLL-tick
 GRIPPER_POLL = 5                  # chunks until the reading stops changing (the fingers take 30-60 ticks, more when
 GRIPPER_SETTLED = 0.003           # they press on something), up to GRIPPER_MAX_STEPS in all: a lift that starts
@@ -274,7 +277,10 @@ class GenieSimAdapter:
             self._hold()
         self._raw, self._owed = self.bridge.next_observation(self.timeout), True
         self._terminated, self._steps, self._t0 = bool(self._raw.get("episode_done")), 0, time.time()
+        self._progress = []
         self._decode_images()
+        if not self._terminated:
+            self._exchange(self._chunk(SETTLE_TICKS))
         return self.get_observation()
 
     def finish_episode(self) -> Mapping[str, object]:
@@ -356,10 +362,13 @@ class GenieSimAdapter:
         return self._steps * self.control_period_s
 
     def progress(self) -> Mapping[str, object]:
+        """The benchmark's checks as last reported. `success` is the task's final check scoring: the earlier ones
+        are prerequisites and can be alternatives (`Follow` for either gripper), so "all scored" undercounts; the
+        benchmark's own verdict is `output/benchmark/<task>/<sub_task>/evaluate_ret_NN.json` (`E2E`)."""
         items = [{"name": p.get("name"), "score": p.get("score"), "status": p.get("status")}
-                 for p in self._raw.get("task_progress", [])]
+                 for p in getattr(self, "_progress", None) or self._raw.get("task_progress", [])]
         return {"episode_done": bool(self._raw.get("episode_done")), "subtasks": items,
-                "success": bool(items) and all(float(p["score"] or 0) >= 1 for p in items)}
+                "success": bool(items) and float(items[-1]["score"] or 0) >= 1}
 
     def check_success(self) -> bool:
         return bool(self.progress()["success"])
@@ -419,6 +428,8 @@ class GenieSimAdapter:
         self._raw, self._owed = self.bridge.next_observation(self.timeout), True
         self._steps += steps
         self._decode_images()
+        if self._raw.get("task_progress"):       # the episode-ending frame carries none: keep the last scored one
+            self._progress = list(self._raw["task_progress"])
         if self._raw.get("episode_done"):
             self._terminated = True
         return steps

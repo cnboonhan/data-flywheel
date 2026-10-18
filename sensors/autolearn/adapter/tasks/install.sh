@@ -20,11 +20,13 @@ for task_dir in "$HERE"/*/; do
   task="$(basename "$task_dir")"
   [[ -d "$task_dir/instances" ]] || continue
   yaml="$(ls "$task_dir"/*.yaml)"
-  json="$(ls "$task_dir"/*.json)"
+  json="$(ls "$task_dir"/*.json | grep -v task_info.json)"   # the eval_tasks json
   cp "$yaml" "$B/config/"
   cp "$json" "$B/benchmark/config/eval_tasks/"
   rm -rf "$B/benchmark/config/llm_task/$task"
   cp -r "$task_dir/instances" "$B/benchmark/config/llm_task/$task"
+  # {"like": "<shipped sub_task>"}: hooks/sitecustomize.py copies that task's robot init states and scoring steps
+  [[ -f "$task_dir/task_info.json" ]] && cp "$task_dir/task_info.json" "$B/benchmark/config/llm_task/$task/"
   exclude "$PKG/config/$(basename "$yaml")"
   exclude "$PKG/benchmark/config/eval_tasks/$(basename "$json")"
   exclude "$PKG/benchmark/config/llm_task/$task/"
