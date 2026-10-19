@@ -188,6 +188,19 @@ aspire/.venv-lerobot/bin/python ../../services/gitea/adapter/geniesim/geniesim_t
 
 Seeds are task instances (300 per task; 1–25 are a campaign's evaluation seeds and 36–45 were the general policy's development set, so collect from 46). A per-seed campaign policy navigates on new instances but rarely holds (1 of 20); `pick_radio_r1pro.py`, generalized over instances 36–57, held on 9 of 12 fresh ones, so expect ~135 runs and ~10 h for 100 demonstrations. It misses lying radios and some at the edge of reach. ASPIRE ends a BEHAVIOR episode the tick the witness sees the object 5 mm up, which would cut every demonstration at the start of the lift; the collector sets `CAP_HARNESS_SUCCESS_GRACE_TICKS` so `run_behavior.py` holds that end off, and the policy lifts the radio 15 cm and keeps it. Each run is a fresh Isaac process, ~3 min; outcomes append to `collect.jsonl` and a rerun resumes. The converter takes the successful runs at the video rate (10 fps, every third tick, the three cameras, 7-joint arms, ASPIRE's 0–1 grippers, end-effector poses in `odom`, and the whole body from `run_behavior.py`'s `episode/whole_body.jsonl`: base pose, base velocity, torso joints and targets; runs without that record are skipped unless `--arms-only`); each demonstration is search, drive, approach, grasp and a 15 cm lift.
 
+**Train GalaxeaVLA on it.** GalaxeaVLA (XPolicyLab's `policy/GalaxeaVLA`, Galaxea's G0 models) is built for the R1 Pro and takes its whole body; its weights are under the non-commercial G0 Plus Community License. Convert in its key layout, then fine-tune G0 Tiny with this repo's data and task configs on a GB300 node:
+
+```bash
+aspire/.venv-lerobot/bin/python adapter/behavior_to_lerobot.py aspire/outputs/collect/behavior/turning_on_radio/lift \
+    --format galaxea --out aspire/outputs/datasets/galaxea_turning_on_radio
+cd ../../eval/system1/RoboDojo/XPolicyLab/policy/GalaxeaVLA && bash install.sh
+GALAXEA_DATASET_DIR=<dataset> GALAXEA_PRETRAINED_CKPT=<G0Tiny_260120> GALAXEA_PALIGEMMA_PATH=<SmolVLM2-500M-Video-Instruct> \
+GALAXEA_TASK_CONFIG=r1pro_sim/g0tiny_behavior \
+  bash train.sh behavior radio r1pro joint 0 0 "hydra.searchpath=[file://$PWD/../../../../../../sensors/autolearn/adapter/galaxea]"
+```
+
+The weights come through the `download-models-hf` workflow (`OpenGalaxea/G0-VLA` with include `G0Tiny_260120/*`, and `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`). The galaxea layout: `observation.images.{head,left_wrist,right_wrist}_rgb`, state and action `{left,right}_ee_pose` (base frame, x y z qx qy qz qw; the action is the next frame's pose), `{left,right}_gripper` (0 closed … 100 open), `torso` (joints; targets as action), and `action.chassis.velocities` (vx vy 0 0 0 wz) — [`adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml`](adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml), which differs from upstream's `r1pro/eef_torso` by the chassis, 512×512 cameras, and keeping each episode's drive (`ee_start_moving_thresh: 0`).
+
 ### ASPIRE on LIBERO
 
 ASPIRE's own path, for comparison and for its skill library. After `./setup.sh aspire`:

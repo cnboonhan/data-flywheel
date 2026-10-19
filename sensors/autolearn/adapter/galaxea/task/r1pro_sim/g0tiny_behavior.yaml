@@ -1,0 +1,14 @@
+# @package _global_
+# G0Tiny (250M, SmolVLM2 backbone, pretrained on R1 Pro teleoperation) fine-tuned on R1 Pro episodes recorded in
+# BEHAVIOR-1K. Upstream's real/g0tiny_r1pro_finetune.yaml with this repo's data config (base included). Paths come from
+# XPolicyLab's GalaxeaVLA train.sh (GALAXEA_DATASET_DIR, GALAXEA_PRETRAINED_CKPT, GALAXEA_PALIGEMMA_PATH = the SmolVLM2
+# directory); this directory joins Hydra's search path through `hydra.searchpath`, see sensors/autolearn/README.md.
+
+defaults:
+  - override /data: r1pro_sim/eef_torso_chassis
+  - override /model: vla/g0tiny
+
+data:
+  dataset:
+    lerobot_ds_version: "2.1"   # behavior_to_lerobot.py writes v2.1 (LeRobot 0.3.3); the loader reads both
+    dataset_dirs: null

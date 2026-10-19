@@ -34,6 +34,9 @@ p.add_argument("collect_dir", type=Path, help="a collect_behavior.sh output dir 
 p.add_argument("--out", type=Path, required=True)
 p.add_argument("--all", action="store_true", help="keep failed runs too")
 p.add_argument("--repo-id", default=None)
+p.add_argument("--format", choices=("flywheel", "galaxea"), default="flywheel",
+               help="flywheel: the layout geniesim_to_xpolicylab reads; galaxea: GalaxeaVLA's R1 Pro keys "
+                    "(adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml)")
 p.add_argument("--arms-only", action="store_true",
                help="keep runs recorded before episode/whole_body.jsonl existed (no base or torso features)")
 args = p.parse_args()
@@ -75,10 +78,60 @@ if not args.arms_only:     # the whole body: base pose in odom, base velocity in
     features["action.torso"] = {"dtype": "float32", "shape": (4,), "names": [f"torso_{i}" for i in range(4)]}
     features["action.base_velocity"] = {"dtype": "float32", "shape": (3,), "names": ["vx", "vy", "wz"]}
 
+GALAXEA = args.format == "galaxea"
+if GALAXEA:
+    if args.arms_only:
+        raise SystemExit("--format galaxea needs the whole-body record (base, torso)")
+    vec = lambda n, names: {"dtype": "float32", "shape": (n,), "names": names}
+    pose = ["x", "y", "z", "qx", "qy", "qz", "qw"]
+    features = {f"observation.images.{n}_rgb": features[f"observation.images.{n}"] for n in ("head", "left_wrist", "right_wrist")}
+    for group in ("observation.state", "action"):
+        for side in ARMS.values():
+            features[f"{group}.{side}_ee_pose"] = vec(7, pose)
+            features[f"{group}.{side}_gripper"] = vec(1, [f"{side}_gripper"])
+        features[f"{group}.torso"] = vec(4, [f"torso_{i}" for i in range(4)])
+    features["action.chassis.velocities"] = vec(6, ["vx", "vy", "vz", "wx", "wy", "wz"])
+
 if args.out.exists():
     shutil.rmtree(args.out)
-ds = LeRobotDataset.create(args.repo_id or f"behavior/{args.collect_dir.name}", FPS, root=args.out, robot_type="galaxea_r1pro",
+ds = LeRobotDataset.create(args.repo_id or f"behavior/{args.collect_dir.name}", FPS, root=args.out, robot_type="R1Pro" if GALAXEA else "galaxea_r1pro",
                            features=features, use_videos=True, image_writer_threads=4)
+
+def quat_mul(a, b):   # xyzw
+    ax, ay, az, aw = a; bx, by, bz, bw = b
+    return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz]
+
+
+def in_base(pose_xyzw, base):
+    """An odom pose [x y z qx qy qz qw] in the base frame of the base pose (x, y, yaw)."""
+    x, y, yaw = base
+    dx, dy = pose_xyzw[0] - x, pose_xyzw[1] - y
+    c, s_ = math.cos(yaw), math.sin(yaw)
+    q = quat_mul([0.0, 0.0, -math.sin(yaw / 2), math.cos(yaw / 2)], list(pose_xyzw[3:]))
+    return np.asarray([c * dx + s_ * dy, -s_ * dx + c * dy, pose_xyzw[2]] + q, dtype=np.float32)
+
+
+def galaxea_frame(f, rec, records, k, body):
+    """The flywheel frame recast in GalaxeaVLA's R1 Pro keys: end-effector poses in the base frame (the action is the
+    next frame's pose), grippers 0..100, torso joints and targets, chassis velocity as 6 values."""
+    base = f["observation.state.base_pose"]
+    nxt = f.get("_next_ee") or {}
+    g = {}
+    for name in ("head", "left_wrist", "right_wrist"):
+        g[f"observation.images.{name}_rgb"] = f[f"observation.images.{name}"]
+    for side in ARMS.values():
+        ee = in_base(f[f"observation.state.{side}_ee_pose"], base)
+        g[f"observation.state.{side}_ee_pose"] = ee
+        g[f"action.{side}_ee_pose"] = in_base(nxt[side], base) if side in nxt else ee
+        g[f"observation.state.{side}_gripper"] = f[f"observation.state.{side}_gripper"] * 100.0
+        g[f"action.{side}_gripper"] = f[f"action.{side}_gripper"] * 100.0
+    g["observation.state.torso"] = f["observation.state.torso"]
+    g["action.torso"] = f["action.torso"]
+    vx, vy, wz = f["action.base_velocity"]
+    g["action.chassis.velocities"] = np.asarray([vx, vy, 0.0, 0.0, 0.0, wz], dtype=np.float32)
+    return g
+
 
 for r in kept:
     task = json.loads((r / "episode/reset.json").read_text())["metadata"]["language"]
@@ -111,6 +164,10 @@ for r in kept:
             pose = st["end_effector_poses"][arm]
             wxyz = arr(pose["quaternion_wxyz"])
             frame[f"observation.state.{side}_ee_pose"] = np.concatenate([arr(pose["position"]), wxyz[[1, 2, 3, 0]]]).astype(np.float32)
+            if GALAXEA:     # the next frame's pose, for the action
+                pn = records[min(k + VIDEO_EVERY, len(records) - 1)]["robot_state"]["end_effector_poses"][arm]
+                wn = arr(pn["quaternion_wxyz"])
+                frame.setdefault("_next_ee", {})[side] = np.concatenate([arr(pn["position"]), wn[[1, 2, 3, 0]]]).astype(np.float32)
         if not args.arms_only:
             tick = int(rec.get("step_index", k + 1))
             b = body.get(tick) or body[min(body, key=lambda t: abs(t - tick))]
@@ -126,6 +183,8 @@ for r in kept:
             frame["observation.state.torso"] = np.asarray(b["torso_q"], dtype=np.float32)
             frame["action.torso"] = np.asarray(b["torso_target"], dtype=np.float32)
             frame["action.base_velocity"] = np.asarray([vx, vy, wz], dtype=np.float32)
+        if GALAXEA:
+            frame = galaxea_frame(frame, rec, records, k, body)
         ds.add_frame(frame, task=task)
     ds.save_episode()
     print(f"{r.parent.parent.name}/{r.parent.name}: {n} frames, {task!r}", flush=True)

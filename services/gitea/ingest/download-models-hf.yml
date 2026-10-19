@@ -21,6 +21,8 @@
 #   Qwen/Qwen3-VL-8B-Instruct               model    *                           Qwen3-VL-8B-Instruct   (18 GB, Apache-2.0; Dynamo)
 #   Qwen/Qwen3-VL-30B-A3B-Instruct          model    *                           Qwen3-VL-30B-A3B-Instruct (62 GB, Apache-2.0; Dynamo)
 #   zai-org/GLM-5.3-Flash                   model    *                           GLM-5.3-Flash          (328 GB FP8, MIT; Dynamo, images)
+#   OpenGalaxea/G0-VLA                      model    G0Tiny_260120/*             G0Tiny_260120          (G0 Plus Community License, non-commercial; GalaxeaVLA R1 Pro fine-tunes)
+#   HuggingFaceTB/SmolVLM2-500M-Video-Instruct model *                          SmolVLM2-500M-Video-Instruct (Apache-2.0; G0Tiny's backbone)
 # Gated repos need the repo secret HF_TOKEN. MLflow credentials: secret MLFLOW_TOKEN, variable MLFLOW_USERNAME (set by ctl.sh up).
 name: download-models-hf
 concurrency:
