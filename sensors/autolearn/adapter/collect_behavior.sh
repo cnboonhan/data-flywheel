@@ -3,7 +3,7 @@
 # time, until a number of successful episodes exist. Every run keeps ASPIRE's full artifacts (states and actions per
 # tick, three videos); behavior_to_lerobot.py turns the successful ones into a dataset.
 #
-#   adapter/collect_behavior.sh <policy.py> <first seed> <last seed> [--target N] [--repeats R] [--suite turning_on_radio] [--out DIR]
+#   adapter/collect_behavior.sh <policy.py> <first seed> <last seed> [--target N] [--repeats R] [--suite turning_on_radio] [--out DIR] [--grace TICKS]
 #
 # Seeds are task-instance ids (0-299 exist); a campaign's evaluation seeds (1-25) are left alone by choosing 36 up.
 # Each seed is run up to R times (default 1); the loop stops at N successes (default 100). Outcomes append to
@@ -11,13 +11,14 @@
 set -euo pipefail
 A="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 policy="$(realpath "$1")"; first=$2; last=$3; shift 3
-target=100; repeats=1; suite=turning_on_radio; out=""
+target=100; repeats=1; suite=turning_on_radio; out=""; grace=300
 while [[ $# -gt 0 ]]; do
   case $1 in
     --target) target=$2; shift 2 ;;
     --repeats) repeats=$2; shift 2 ;;
     --suite) suite=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
+    --grace) grace=$2; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -28,6 +29,9 @@ cd "$A/aspire"
 export OMNIGIBSON_HEADLESS=1 OMNIGIBSON_GPU_ID=${OMNIGIBSON_GPU_ID:-0} CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export OMNIGIBSON_DATA_PATH="$A/behavior-data" OMNIGIBSON_APPDATA_PATH="$A/aspire/.behavior-appdata"
 ulimit -c 0
+# ticks the episode runs on after the witness first succeeds, so a demonstration includes the lift (run_behavior.py);
+# 300 (10 s) covers the policy's 3 cm lift steps to 15 cm, and the program usually ends before it
+export CAP_HARNESS_SUCCESS_GRACE_TICKS=$grace
 
 successes() { [[ -f $log ]] && grep -c '"task_success": true' "$log" || true; }   # grep -c prints 0 itself on no match
 done_runs() { [[ -f $log ]] && grep -c "\"seed\": $1, \"repeat\": $2," "$log" || true; }

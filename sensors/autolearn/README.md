@@ -181,12 +181,12 @@ Expect a bootstrap seed to succeed in 10–15 attempts and later seeds, inheriti
 **Collect demonstrations.** Run a learned policy over fresh instances until enough succeeded, then convert:
 
 ```bash
-adapter/collect_behavior.sh adapter/programs/pick_radio_r1pro.py 58 299 --target 100
+adapter/collect_behavior.sh adapter/programs/pick_radio_r1pro.py 58 299 --target 100        # --grace 300 (default): the episode runs on after success
 aspire/.venv-lerobot/bin/python adapter/behavior_to_lerobot.py aspire/outputs/collect/behavior/turning_on_radio/pick_radio_r1pro --out aspire/outputs/datasets/behavior_turning_on_radio
 aspire/.venv-lerobot/bin/python ../../services/gitea/adapter/geniesim/geniesim_to_xpolicylab.py --raw-dir aspire/outputs/datasets --tasks 'behavior_*' --bench behavior --env-cfg galaxea_r1pro --out aspire/outputs/xspark
 ```
 
-Seeds are task instances (300 per task; 1–25 are a campaign's evaluation seeds and 36–45 were the general policy's development set, so collect from 46). A per-seed campaign policy navigates on new instances but rarely holds (1 of 20); `pick_radio_r1pro.py`, generalized over instances 36–57, held on 9 of 12 fresh ones, so expect ~135 runs and ~10 h for 100 demonstrations. It misses lying radios and some at the edge of reach. Each run is a fresh Isaac process, ~3 min; outcomes append to `collect.jsonl` and a rerun resumes. The converter takes the successful runs at the video rate (10 fps, every third tick, the three cameras, 7-joint arms, ASPIRE's 0–1 grippers, end-effector poses in `odom`); the episode ends on the witness's hold, so each demonstration is search, drive, approach and grasp.
+Seeds are task instances (300 per task; 1–25 are a campaign's evaluation seeds and 36–45 were the general policy's development set, so collect from 46). A per-seed campaign policy navigates on new instances but rarely holds (1 of 20); `pick_radio_r1pro.py`, generalized over instances 36–57, held on 9 of 12 fresh ones, so expect ~135 runs and ~10 h for 100 demonstrations. It misses lying radios and some at the edge of reach. ASPIRE ends a BEHAVIOR episode the tick the witness sees the object 5 mm up, which would cut every demonstration at the start of the lift; the collector sets `CAP_HARNESS_SUCCESS_GRACE_TICKS` so `run_behavior.py` holds that end off, and the policy lifts the radio 15 cm and keeps it. Each run is a fresh Isaac process, ~3 min; outcomes append to `collect.jsonl` and a rerun resumes. The converter takes the successful runs at the video rate (10 fps, every third tick, the three cameras, 7-joint arms, ASPIRE's 0–1 grippers, end-effector poses in `odom`); each demonstration is search, drive, approach, grasp and a 15 cm lift.
 
 ### ASPIRE on LIBERO
 

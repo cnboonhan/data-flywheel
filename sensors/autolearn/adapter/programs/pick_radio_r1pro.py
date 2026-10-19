@@ -1189,6 +1189,9 @@ JAW_MIN = 0.015
 # open"): collection seeds 55 and 57 closed to 0.928-0.96 with the fingers squeezing the body at its full width and never
 # tried the lift; the body is about as wide as the open jaw. Untuned.
 JAW_MAX = 0.97
+# LIFT_TOTAL_M 0.15: how far the rung lifts a held radio in 3 cm IK steps (stopping at the reach limit), so a
+# demonstration shows a lift rather than the 5 mm at which the witness latches. Untuned.
+LIFT_TOTAL_M = 0.15
 
 
 def probe(tag, px, py, q_use, zp, zg):
@@ -1223,11 +1226,23 @@ def probe(tag, px, py, q_use, zp, zg):
         r = reach_pose("rung lift", hp2[0], hp2[1], hp2[2] + 0.03, q_use, 0.02, 120)
         if not terminated_by(r):
             r = reach_pose("rung lift 2", hp2[0], hp2[1], hp2[2] + 0.06, q_use, 0.02, 120)
+        # then on to LIFT_TOTAL_M in the same 3 cm steps while the jaw still holds: the episode ends when the witness
+        # latches unless the harness runs on after success (collect_behavior.sh), and these steps are the visible lift
+        k = 3
+        while not terminated_by(r) and 0.03 * k <= LIFT_TOTAL_M + 1e-6 and \
+                JAW_MIN < float(get_robot_state().gripper_positions[arm]) < JAW_MAX:
+            r2 = reach_pose("rung lift " + str(k), hp2[0], hp2[1], hp2[2] + 0.03 * k, q_use, 0.02, 120)
+            if not r2.ok and not terminated_by(r2):
+                break                     # the reach limit: keep the height reached
+            r, k = r2, k + 1
         st3 = get_robot_state()
         out["ik_lift_hand_z"] = round(float(st3.end_effector_poses[arm].position[2]), 3)
+        out["ik_lift_m"] = round(out["ik_lift_hand_z"] - hp2[2], 3)
         out["jaw_after_ik_lift"] = round(float(st3.gripper_positions[arm]), 3)
         out["terminated"] = "ik_lift" if terminated_by(r) else ""
-        if not out["terminated"]:
+        if not out["terminated"] and out["ik_lift_m"] >= 0.04 and JAW_MIN < out["jaw_after_ik_lift"] < JAW_MAX:
+            out["holding"] = True         # lifted and still closed on it: keep it (no un-lean, no release)
+        elif not out["terminated"]:
             tgt_up = list(torso0)
             tgt_up[0] = torso0[0] + lean - 0.2        # a 0.2 rad un-lean lifted the hand ~17 cm (seed 26 attempt 10)
             r = behavior.move_torso(tgt_up, max_steps=150)
@@ -1239,7 +1254,7 @@ def probe(tag, px, py, q_use, zp, zg):
                 tgt_back = list(torso0)
                 tgt_back[0] = torso0[0] + lean
                 r = behavior.move_torso(tgt_back, max_steps=150)
-    if not out["terminated"]:
+    if not out["terminated"] and not out.get("holding"):
         ro = open_gripper(arm=arm)
         r = reach_pose("rung back", px, py, zp, q_use, 0.02, 150)
     print("rung", out)
@@ -1395,7 +1410,7 @@ if report.get("pregrasp_ok") and chosen is not None:
             ox_, oy_ = (cx, cy) if kind == "handle" else (bxc, byc)
             out = probe(kind + " d=" + str(d), ox_ + d * dxv, oy_ + d * dyv, q_use, zp, zd)
             rungs.append(out)
-            if out.get("terminated"):
+            if out.get("terminated") or out.get("holding"):
                 done = out["tag"]
                 break
             # contact (a mid jaw that slipped, or a descent that stopped on the radio) may have moved the radio: re-read
@@ -1407,6 +1422,7 @@ if report.get("pregrasp_ok") and chosen is not None:
                     bxc, byc = wr["bx"], wr["by"]
     report["rungs"] = rungs
     report["ladder_done_at"] = done
+    report["holding_at_end"] = JAW_MIN < float(get_robot_state().gripper_positions[arm]) < JAW_MAX
     report["stage"] = "ladder"
 
 result = report

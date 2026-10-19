@@ -18,6 +18,7 @@ Run it through `cap-harness-behavior.sh`, which sandboxes it like the LIBERO loo
         --max-steps 6000 --camera-width 512 --camera-height 512
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -90,6 +91,42 @@ class NoBasePlan:
     def plan_base(self, x, y, yaw):
         return [], ApiError(ErrorCode.PLANNING_FAILED, "no cuRobo on this GPU; servoing", details={"status": "unavailable"})
 
+
+class GraceEvaluator:
+    """The pickup witness, with the episode's end held off for `grace` ticks after it first succeeds.
+
+    ASPIRE ends a BEHAVIOR episode on the tick the witness latches (the radio 5 mm up), so a demonstration stops at the
+    start of the lift. Through this proxy the adapter sees success only `grace` ticks later, so the program's lift
+    plays out; the witness itself (and protocol.json, written from it) still records the first success.
+    """
+
+    def __init__(self, inner, grace: int):
+        self.inner, self.grace, self.ticks, self.first = inner, grace, 0, None
+
+    def after_step(self, *a, **kw):
+        out = self.inner.after_step(*a, **kw)
+        if self.first is None and bool(getattr(self.inner, "success", False)):
+            self.first = self.ticks
+        self.ticks += 1
+        return out
+
+    @property
+    def success(self):
+        return self.first is not None and self.ticks - self.first >= self.grace
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+# CAP_HARNESS_SUCCESS_GRACE_TICKS: ticks the episode runs on after the witness first succeeds (0: end at once, as
+# upstream); collect_behavior.sh sets it so demonstrations include the lift
+GRACE = int(os.environ.get("CAP_HARNESS_SUCCESS_GRACE_TICKS", "0"))
+if GRACE > 0:
+    _bind = BehaviorAdapter.bind_protocol_evaluator
+    BehaviorAdapter.bind_protocol_evaluator = lambda self, ev: _bind(self, GraceEvaluator(ev, GRACE))
+    _check = BehaviorAdapter.check_success
+    BehaviorAdapter.check_success = lambda self: _check(self) or bool(
+        getattr(getattr(self._protocol_evaluator, "inner", None), "success", False))
 
 cap_run.CapApi = PyRokiCapApi
 BehaviorAdapter.planner = lambda self: NoBasePlan()
