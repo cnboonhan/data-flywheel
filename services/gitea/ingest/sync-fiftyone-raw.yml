@@ -37,13 +37,15 @@ jobs:
           Each dataset is read by the first layout it matches:
 
             lerobot   meta/info.json v3 roots   one sample per episode, a media reference
-                                                into the root's videos and parquet
+                                                into the root's videos and parquet; rerun_url opens it in Rerun
             xspark    */data/episode_*.hdf5     one group per episode, a slice per
                                                 preview_video/<episode>_<camera>.mp4
             colmap    images/ + sparse/0/         one image sample per photo, with its COLMAP pose
                                                 (camera centre, quaternion) and intrinsics
             mcap      *.mcap, *.bag             one sample per bag (FiftyOne's MCAP viewer), rerun_url opens it in Rerun
             archive   *.tar, *.tar.gz, *.zip    one sample per archive (catalog only)
+            images    *.jpg, *.png, *.tif, *.webp   one image sample per file, its folders as a field
+                                                (e.g. scenes/<site>/panoramas/)
 
           Incremental: each sample carries raw_unit (the file or root it came from,
           relative to the dataset) and raw_sig (size and mtime). Units whose signature
@@ -64,6 +66,7 @@ jobs:
 
           ARCHIVES = (".tar", ".tar.gz", ".tgz", ".zip")
           BAGS = (".mcap", ".bag")
+          IMAGES = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp")
 
 
           def sig(*paths):
@@ -261,13 +264,13 @@ jobs:
 
 
           class Files:
-              """One sample per matching file: bags (multimodal) or archives (catalog)."""
+              """One sample per matching file: bags (multimodal), archives (catalog) or images."""
 
               def __init__(self, name, exts):
                   self.name, self.exts = name, exts
 
               def scan(self, top):
-                  return {os.path.relpath(p, top): sig(p) for p in walk(top) if p.endswith(self.exts)}
+                  return {os.path.relpath(p, top): sig(p) for p in walk(top) if p.lower().endswith(self.exts)}
 
               @staticmethod
               def bag_info(path):
@@ -313,6 +316,8 @@ jobs:
                   return Files("mcap", BAGS)
               if any(p.endswith(ARCHIVES) for p in names):
                   return Files("archive", ARCHIVES)
+              if any(p.lower().endswith(IMAGES) for p in names):   # last: plain images, e.g. a site's panoramas
+                  return Files("images", IMAGES)
               return None
 
 
@@ -342,8 +347,8 @@ jobs:
                   return
               if stale or new:
                   ds = apply(ds, name, layout, top, stale, new)
-              if layout.name == "mcap" and ds is not None:
-                  link_rerun(ds, top)
+              if layout.name in ("mcap", "lerobot") and ds is not None:
+                  link_rerun(ds, top, layout.name)
 
 
           def apply(ds, name, layout, top, stale, new):
@@ -354,22 +359,28 @@ jobs:
               if stale:
                   ds.delete_samples(all_samples(ds).match(F("raw_unit").is_in(stale)))
               layout.add(ds, top, new)
-              if layout.name in ("xspark", "colmap"):
+              if layout.name in ("xspark", "colmap", "images"):
                   all_samples(ds).exists("metadata", False).compute_metadata(progress=False)
               return ds
 
 
-          def link_rerun(ds, top):
-              """rerun_url on each bag: Rerun's web viewer fetches the raw file from rerun.<host>/raw/<token>/ and
-              imports it itself. Its fetch sends no login cookie, hence the path token (RERUN_RAW_TOKEN), which Caddy
-              accepts for bags only. Set from raw_unit every run, so a new base or token repoints every link."""
+          def link_rerun(ds, top, layout):
+              """rerun_url on each bag or LeRobot episode. Rerun's web viewer fetches a bag from rerun.<host>/raw/<token>/
+              and imports it itself; a LeRobot episode it fetches from rerun.<host>/lerobot/<token>/, where rerun-lerobot
+              builds the recording. Its fetch sends no login cookie, hence the path token (RERUN_RAW_TOKEN), which Caddy
+              accepts for those two only. Set every run, so a new base or token repoints every link."""
               base = os.environ.get("RERUN_BASE", "").rstrip("/")
               token = os.environ.get("RERUN_RAW_TOKEN", "")
               if not (base and token):
                   return
               rel = os.path.relpath(top, os.path.dirname(os.path.dirname(top)))
               ids, units, urls = ds.values(["id", "raw_unit", "rerun_url"]) if ds.has_field("rerun_url") else (*ds.values(["id", "raw_unit"]), None)
-              want = [f"{base}/?url={base}/raw/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(u)}" for u in units]
+              if layout == "lerobot":
+                  eps = ds.values("episode_index")
+                  want = [f"{base}/?url={base}/lerobot/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(u)}/episode_{e}.rrd"
+                          for u, e in zip(units, eps)]
+              else:
+                  want = [f"{base}/?url={base}/raw/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(u)}" for u in units]
               if urls != want:
                   ds.set_values("rerun_url", dict(zip(ids, want)), key_field="id")
                   print(f"  rerun_url set on {len(ids)} samples", flush=True)

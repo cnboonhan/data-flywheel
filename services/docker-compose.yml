@@ -264,6 +264,21 @@ services:
     environment:
       HOME: /tmp
 
+  # LeRobot episodes as Rerun recordings, built on request from the raw bucket (rerun/lerobot_rrd.py): the viewer opens
+  # files by URL, not LeRobot folders. Caddy routes rerun.<host>/lerobot/<token>/... here.
+  rerun-lerobot:
+    <<: *common
+    build:
+      context: ./rerun
+      dockerfile: Dockerfile.lerobot
+    image: flywheel-rerun-lerobot:0.38.1
+    environment:
+      HOME: /tmp
+      CACHE_GB: "20"   # recordings kept, newest first (~8 MB a HiFi-UMI episode); untuned
+    volumes:
+      - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro
+      - ${STATE_DIR}/rerun-cache:/cache
+
   # Triton runs on its own node (TRITON_NODE): triton/compose.yml, started by ctl.sh up; Caddy and Prometheus reach it there.
 
   # --- Single sign-on -------------------------------------------------------

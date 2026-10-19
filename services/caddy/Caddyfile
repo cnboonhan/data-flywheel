@@ -167,6 +167,15 @@ https://rerun.{$SERVICE_HOST}:8443 {
 		root * /raw
 		file_server
 	}
+	# LeRobot episodes, the same token: rerun-lerobot builds /lerobot/<group>/<dataset>/<root>/episode_<n>.rrd
+	@lerobot_token {
+		path *.rrd
+		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/lerobot/" + {env.RERUN_RAW_TOKEN} + "/")`
+	}
+	handle @lerobot_token {
+		uri path_regexp ^/lerobot/[^/]+ /lerobot
+		reverse_proxy rerun-lerobot:8080
+	}
 	# route keeps the written order: Caddy otherwise runs file_server before the
 	# imported SSO check, which left the files readable without a login.
 	handle /raw/* {
