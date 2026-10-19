@@ -2,6 +2,8 @@
 # Genie Sim's rendering on a GB300 GPU: render_bench.py in NVIDIA's Isaac Sim 5.1.0 image (arm64), on the Slurm-allocated GPU.
 #   sbatch -w <node> sensors/autolearn/gb300/render_bench.sbatch
 #   ISAAC_VENV=eval/system2/IsaacLab-Arena/.venv sbatch --export=ALL -w <node> ...   # a pip Isaac Sim 6.x instead of the image
+#   ISAAC_PRELOAD=/lib/aarch64-linux-gnu/libgomp.so.1:<venv>/lib/python3.11/site-packages/torch.libs/libgomp-*.so.1.0.0
+#     for a 5.1 venv: its isaacsim refuses to start unless both the system's and torch's libgomp are preloaded
 # Results: $STATE/logs/render-<job>.log and $STATE/results/render-<job>-*.json; Isaac's caches (shaders compile on the
 # first run, minutes) persist in $STATE/isaac-cache, so later runs start faster.
 #SBATCH -p raus -N1 -n1 -c16 --gres=gpu:1 --mem=200G -t 03:00:00 -J geniesim-render
@@ -16,7 +18,7 @@ echo "node $(hostname) GPU $GPU ${ISAAC_VENV:+venv }${ISAAC_VENV:-image $IMAGE}"
 [[ -n ${ISAAC_VENV:-} ]] || docker pull -q "$IMAGE"
 run() {   # renderer cameras width height
   if [[ -n ${ISAAC_VENV:-} ]]; then   # a pip Isaac Sim (6.x) on the host, as IsaacLab-Arena runs on the GB300: no container
-    LD_PRELOAD=/lib/aarch64-linux-gnu/libgomp.so.1 OMNI_KIT_ACCEPT_EULA=YES CUDA_VISIBLE_DEVICES=$GPU \
+    LD_PRELOAD=${ISAAC_PRELOAD:-/lib/aarch64-linux-gnu/libgomp.so.1} OMNI_KIT_ACCEPT_EULA=YES CUDA_VISIBLE_DEVICES=$GPU \
       timeout 50m "$ISAAC_VENV/bin/python" "$HERE/render_bench.py" --renderer "$1" --cameras "$2" --width "$3" --height "$4" \
       --out "$STATE/results/render-$SLURM_JOB_ID-$1-$2x$3x$4.json" 2>&1 | grep -vE "^\[[0-9.]+s\] \[(Info|Warning)\]" || echo "RUN FAILED: $*"
     return

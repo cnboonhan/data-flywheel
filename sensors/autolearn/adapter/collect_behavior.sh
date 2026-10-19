@@ -27,7 +27,8 @@ mkdir -p "$out"
 log="$out/collect.jsonl"
 cd "$A/aspire"
 export OMNIGIBSON_HEADLESS=1 OMNIGIBSON_GPU_ID=${OMNIGIBSON_GPU_ID:-0} CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-export OMNIGIBSON_DATA_PATH="$A/behavior-data" OMNIGIBSON_APPDATA_PATH="$A/aspire/.behavior-appdata"
+export OMNIGIBSON_DATA_PATH="${OMNIGIBSON_DATA_PATH:-$A/behavior-data}" OMNIGIBSON_APPDATA_PATH="${OMNIGIBSON_APPDATA_PATH:-$A/aspire/.behavior-appdata}"
+harness="${BEHAVIOR_HARNESS:-$A/cap-harness-behavior.sh}"   # gb300/collect_behavior.sbatch runs run_behavior.py unsandboxed
 ulimit -c 0
 # ticks the episode runs on after the witness first succeeds, so a demonstration includes the lift (run_behavior.py);
 # 300 (10 s) covers the policy's 3 cm lift steps to 15 cm, and the program usually ends before it
@@ -40,13 +41,14 @@ for seed in $(seq "$first" "$last"); do
   for rep in $(seq 1 "$repeats"); do
     [[ $(successes) -ge $target ]] && { echo "$(successes) successes in $log"; exit 0; }
     [[ $(done_runs "$seed" "$rep") -gt 0 ]] && continue
-    # python processes only: a shell whose command line merely mentions these names must not count
-    if pgrep -f 'python[^ ]* [^ ]*(run_behavior\.py|geniesim_benchmark/app/app\.py)' > /dev/null; then
+    # python processes only: a shell whose command line merely mentions these names must not count. Not under Slurm,
+    # where each job has a GPU of its own and other jobs' runs share the node
+    if [[ -z ${SLURM_JOB_ID:-} ]] && pgrep -f 'python[^ ]* [^ ]*(run_behavior\.py|geniesim_benchmark/app/app\.py)' > /dev/null; then
       echo "another Isaac Sim process is running; stopping" >&2; exit 1
     fi
     root="$out/seed_$(printf '%04d' "$seed")/rep_$rep"
     mkdir -p "$root"
-    "$A/cap-harness-behavior.sh" run --benchmark behavior --suite "$suite" --task-id 0 --seed "$seed" --program "$policy" \
+    "$harness" run --benchmark behavior --suite "$suite" --task-id 0 --seed "$seed" --program "$policy" \
       --output-root "$root" --flat-run-dir --max-steps 6000 --camera-width 512 --camera-height 512 > "$root/run.log" 2>&1 || true
     outcome="$(find "$root" -name outcome.json | head -1)"
     if [[ -z $outcome ]]; then
