@@ -3,7 +3,7 @@
 # gitignored state dirs) or in the two submodules' own venvs; the Docker image is the one exception.
 #
 #   setup.sh geniesim    the Genie Sim CLI venv, asset pack, image, container, RT Engine workspace, crash-reporter hook
-#   setup.sh aspire      ASPIRE's LIBERO venv, SAM3 + Contact-GraspNet + PyRoki venvs, the adapter's extra packages
+#   setup.sh aspire      ASPIRE's LIBERO venv, SAM3 + Contact-GraspNet + PyRoki venvs, the adapter's extra packages, the LeRobot venv
 #   setup.sh behavior    BEHAVIOR-1K: CUDA 12.8 toolkit, Isaac Sim 5.1 venv, the datasets (~40 GB, non-commercial terms)
 #   setup.sh services    start ASPIRE's SAM3 and Contact-GraspNet (ports 8114-8115) in the background
 #   setup.sh benchmark [CONFIG]   start a Genie Sim benchmark run in the container against the adapter on port 8999
@@ -64,6 +64,9 @@ aspire() {
   scripts/bootstrap_providers.sh --providers sam3,contact_graspnet,pyroki --profile "$PROFILE"
   log "adapter packages into the PyRoki venv"
   VIRTUAL_ENV="$A/aspire/.venv-pyroki" uv pip install msgpack opencv-python-headless
+  log "LeRobot venv for adapter/to_lerobot.py (0.3.3: the last release writing dataset v2.1, which the flywheel reads)"
+  [[ -d .venv-lerobot ]] || uv venv --python 3.10 .venv-lerobot
+  uv pip install --python .venv-lerobot/bin/python "lerobot==0.3.3" h5py pyarrow pandas opencv-python-headless av boto3   # + the xspark adapter's needs
 }
 
 behavior() {

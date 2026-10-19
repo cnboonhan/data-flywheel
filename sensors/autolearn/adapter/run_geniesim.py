@@ -30,6 +30,7 @@ p.add_argument("--urdf", type=Path, default=ROOT / "GenieSimAssets/robot/curobo_
 p.add_argument("--usda", type=Path, default=ROOT / "GenieSimAssets/robot/G2_omnipicker/robot_fix.usda")
 p.add_argument("--no-providers", action="store_true", help="skip SAM3 and Contact-GraspNet (programs that only move)")
 p.add_argument("--debug", action="store_true", help="save the first head image with the grippers projected")
+p.add_argument("--record", type=Path, help="record every tick (images, joints, targets) as raw episode folders under this dir, for to_lerobot.py")
 args = p.parse_args()
 
 from cap_harness.api import CapApi  # noqa: E402
@@ -42,6 +43,9 @@ ik = G2IkProvider(model)
 bridge = CorobotBridge(args.port)
 bridge.start()
 adapter = GenieSimAdapter(bridge, model, suite=args.config)
+if args.record:
+    from record import EpisodeRecorder
+    adapter.recorder = EpisodeRecorder(args.record / args.config)
 ik.joints_source = adapter._joints
 providers = {}
 if not args.no_providers:
@@ -57,6 +61,8 @@ for episode in range(args.episodes):
     ctx = obs.task_context
     print(f"episode {ctx.task_id}: {ctx.language!r}  cameras {sorted(obs.cameras)}  grippers "
           f"{ {a: round(v, 2) for a, v in obs.robot_state.gripper_positions.items()} } raw {adapter._raw['states'].get('gripper_states')}", flush=True)
+    if adapter.recorder is not None:
+        adapter.recorder.start({"task": args.config, "episode": ctx.task_id, "instruction": ctx.language, "program": str(args.program)})
     if args.debug:
         adapter.debug_dir = out
         adapter.debug_frame(out / f"episode{episode:02d}_head.jpg")     # the benchmark's own episode index restarts
@@ -66,6 +72,8 @@ for episode in range(args.episodes):
     t0 = time.time()
     result = run_program_with_api(api=api, program_path=args.program, extension_allowlist=ROBOSUITE_PUBLIC_TOOL_NAMES)
     progress = adapter.finish_episode()
+    if adapter.recorder is not None:
+        adapter.recorder.finish({"success": progress["success"], "progress": progress["subtasks"], "program_ok": result.ok})
     record = {"episode": ctx.task_id, "instruction": ctx.language, "program_ok": result.ok,
               "error": None if result.error is None else result.error.message, "result": result.result,
               "calls": len(result.calls), "steps": adapter._steps, "wall_s": round(time.time() - t0, 1),

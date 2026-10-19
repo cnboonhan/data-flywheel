@@ -6,6 +6,7 @@ The Data Conversion stage. Converts raw datasets into XPolicyLab's xspark format
 |---|---|
 | [`galaxeaOpenWorldDataset_to_xpolicylab`](galaxeaOpenWorldDataset/) | `raw/open_datasets/galaxea-open-world-r1lite/lerobot/<task>.tar.gz` → `galaxeaOpenWorldDataset` |
 | [`robodojo_to_xpolicylab`](robodojo/) | `raw/open_datasets/robodojo/<task>/<env_cfg>/data/` (copy) → `RoboDojo` |
+| [`geniesim_to_xpolicylab`](geniesim/) | `raw/internal_datasets/geniesim/<task>/` (LeRobot v2.1 from [autolearn](../../../sensors/autolearn/README.md)'s `to_lerobot.py`) → `geniesim`; also runs locally with `--out <dir>` |
 
 1. Run one as described in [gitea/](../README.md#run-a-workflow), with inputs `tasks` (glob, default `*`), `limit` (episodes per task, 0 = all) and `env_cfg` (default `arx_x5`). Start with a small `limit` to check the output.
 2. To add a source, create `<repo>/<repo>_to_xpolicylab.yml` (and its script) writing the same layout and a per-task `manifest.json`, then check an episode loads with `XPolicyLab.utils.data_loader.load`.

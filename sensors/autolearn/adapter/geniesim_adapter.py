@@ -43,6 +43,7 @@ from cap_harness.contracts import (
     Trajectory,
 )
 from cap_harness.errors import ApiError, ErrorCode
+from record import reply_row  # noqa: E402
 from cap_harness.geometry import matrix_to_quaternion_wxyz, quaternion_wxyz_to_matrix
 
 EMBODIMENT = "robosuite"          # ASPIRE's embodiment labels are a closed set; this one is 7 joints per arm
@@ -257,6 +258,7 @@ class GenieSimAdapter:
     control_period_s = 1.0 / CONTROL_FREQUENCY_HZ
 
     def __init__(self, bridge: CorobotBridge, model: G2Model, *, suite: str, observation_timeout_s: float = 600.0):
+        self.recorder = None          # an EpisodeRecorder (record.py), or None
         self.bridge = bridge
         self.model = model
         self.suite = suite
@@ -422,8 +424,13 @@ class GenieSimAdapter:
         self._owed = False
 
     def _exchange(self, reply: dict) -> int:
-        """Send a chunk for the owed observation, take the next one; returns the steps the chunk advanced."""
+        """Send a chunk for the owed observation, take the next one; returns the steps the chunk advanced.
+        With a recorder attached, a multi-row chunk goes one row per exchange so every tick has its observation."""
         steps = len(reply["left_arm"]["values"])
+        if self.recorder is not None and steps > 1:
+            return sum(self._exchange(reply_row(reply, i)) for i in range(steps) if not self._terminated)
+        if self.recorder is not None:
+            self.recorder.add(self._raw, reply)
         self.bridge.reply(reply)
         self._raw, self._owed = self.bridge.next_observation(self.timeout), True
         self._steps += steps

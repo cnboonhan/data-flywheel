@@ -1,0 +1,50 @@
+# Adapter: Genie Sim recordings (LeRobot v2.1 written by sensors/autolearn/adapter/to_lerobot.py, uploaded to
+# raw/internal_datasets/geniesim/<task>/) -> XPolicyLab xspark in s3://processed/xpolicylab/geniesim/<task>/<env_cfg>/data/,
+# in the runner (CPU only): datasets read from the read-only /buckets mount, results written through the gateway.
+# A copy of galaxeaOpenWorldDataset_to_xpolicylab for this source (7-joint G2 arms, directories instead of archives).
+# Incremental: re-running converts only episodes not yet in each task's manifest.json.
+name: geniesim_to_xpolicylab
+concurrency:
+  group: geniesim_to_xpolicylab
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      tasks:
+        description: "Glob of task names (dataset directory names); '*' = all. Converted, unchanged tasks are skipped"
+        default: "*"
+      limit:
+        description: "Max episodes per task in the output (0 = all)"
+        default: "0"
+      env_cfg:
+        description: "XPolicyLab env_cfg_type the data is filed under (an embodiment with 7-joint arms)"
+        default: "agibot_g2"
+
+jobs:
+  convert:
+    runs-on: python
+    timeout-minutes: 720
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+    steps:
+      - name: checkout
+        env:
+          URL: ${{ github.api_url }}/repos/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
+          TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import io, os, tarfile, urllib.request
+          req = urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})
+          with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(req).read())) as tar:
+              top = tar.getnames()[0].split("/")[0]
+              for m in tar.getmembers():
+                  m.name = m.name[len(top) + 1:]
+                  if m.name:
+                      tar.extract(m, ".")
+          PY
+      - run: pip -q install h5py pyarrow pandas numpy opencv-python-headless av boto3
+      - run: |
+          mkdir -p /tmp/scratch
+          python adapter/geniesim/geniesim_to_xpolicylab.py --raw-dir /buckets/raw/internal_datasets/geniesim \
+            --scratch /tmp/scratch --tasks "${{ inputs.tasks }}" --limit "${{ inputs.limit }}" --env-cfg "${{ inputs.env_cfg }}"
