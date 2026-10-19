@@ -5,7 +5,7 @@ checked against the command, and the FK gripper base and centre link are project
 depth the camera sees there must match FK's depth (a solid link) when the model and the simulator agree on that
 joint, and shows the table or the floor when they don't.
 
-    aspire/.venv-pyroki/bin/python adapter/joint_probe.py [--arm secondary] [--delta 0.5]
+    aspire/.venv-pyroki/bin/python adapter/probes/joint_probe.py [--arm secondary] [--delta 0.5]
 """
 import argparse
 import sys
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))     # the adapter
 from geniesim_adapter import ARM_JOINTS, CorobotBridge, G2IkProvider, G2Model, GenieSimAdapter, EE_LINKS  # noqa: E402
 from cap_harness.geometry import quaternion_wxyz_to_matrix  # noqa: E402
 

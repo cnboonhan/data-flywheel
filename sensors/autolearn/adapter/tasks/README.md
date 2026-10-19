@@ -62,23 +62,11 @@ Expect the learned `adapter/programs/place_relative.py` to score end to end on a
 ## Notes
 
 - The lab background is the pack's own splat (`common/laboratory_3/splat_7`). A panorama reconstructed with
-  `geniesim_world` cannot be loaded by this Genie Sim version; only backgrounds shipped as USD + `.nurec`
-  in the asset pack are.
-- No Isaac Sim run was possible while building this, so unverified: that the splat renders in the container,
-  that its floor coincides with the z = 0 collision plane, and that the head camera sees the table unoccluded.
-  The G1 task `table_task_g1_op.json` uses the same background with the same table, which is the evidence
-  the layout is workable.
-- The benchmark keys robot init states and scoring steps by sub-task name in code (`robot_init_states.py`,
-  `eval_utils.py`); `task_info.json` plus the hook fill those tables at import, so nothing upstream changes.
-- Generator deviations from its AGENTS.md / skills, bridged in `gen/generate.sh`: the container has `python3`
-  (with pxr) but no `python`, and `omni_python` lacks the generator's deps; `mitsuba`, `pygraphviz`,
-  `jaxtyping` and `transforms3d` are installed nowhere, so `gen/shims/` provides the parts `app.py` touches
-  (Mitsuba only for bounding boxes, Graphviz through the `dot` binary); `app.py` imports `LLM_RESULT.py`
-  from its own directory and `--template_path` points at a directory that only exists in the deployed
-  layout, so it is run through `runpy` from a directory holding our program; the USD it writes references
-  assets relative to `<src>/assets/`, which does not exist in a source checkout, and it snapshots the
-  package's template instead of the program it ran, both fixed after the run; output lands under
-  `<generator>/src/benchmark/config/llm_task/`, not the benchmark package.
+  `geniesim_world` cannot be loaded by this Genie Sim version; only backgrounds shipped as USD + `.nurec` are.
+- The benchmark keys robot init states and scoring steps by sub-task name in code; `task_info.json` plus
+  `../../hooks/sitecustomize.py` fill those tables at import, so nothing upstream changes.
+- `gen/generate.sh` bridges what the generator's docs leave out (missing packages, import and output paths);
+  the list is in [TROUBLESHOOTING.md](../../TROUBLESHOOTING.md).
 - Objects start 1 cm above the table top (shipped instances start ~15 cm up and drop). Sizes 3-11 cm,
   all graspable top-down by the 13.6 cm omnipicker; pairs >= 0.20 m apart; the target strip of each
   instruction is kept clear (`gen/verify.py` checks both).

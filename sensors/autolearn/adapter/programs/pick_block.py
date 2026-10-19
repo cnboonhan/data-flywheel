@@ -151,7 +151,7 @@ else:
     report["localized"] = True
     report["block"] = (cx, cy, top, n, nface)
     # The omnipicker's centre link is its pinch point: the fingertips swing in a near-horizontal arc and meet 1 cm
-    # past it (adapter/isaac/finger_probe.py). The grasp test (adapter/isaac/grasp_test.py) holds a face-aligned
+    # past it (adapter/probes/isaac/finger_probe.py). The grasp test (adapter/probes/isaac/grasp_test.py) holds a face-aligned
     # 5 cm cube when the centre link is 1-3 cm past the cube's centre and loses it at 4 cm or more, or at any
     # 30 deg yaw; so the centre link goes PAD_OFFSET past the cube's middle, 3.5 cm below its top, the tips
     # 0.5 cm above the table. No lateral offset: the pinch is symmetric about the centre link.
