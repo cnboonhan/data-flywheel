@@ -7,5 +7,8 @@ __pycache__/
 
 # Store stack secrets (see services/.env.example).
 services/.env
+# Local Caddy routes and landing-page links for apps that aren't part of the stack (services/caddy/README.md).
+services/caddy/site/local/*
+!services/caddy/site/local/README.md
 # Copies of the S3 bucket policies ctl.sh applied (name the users; regenerated on every apply).
 services/versitygw/policies/

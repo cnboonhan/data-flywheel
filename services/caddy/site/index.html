@@ -66,6 +66,8 @@
     <li><a href="/grafana/">Grafana</a> <small>Dashboards and log search (Loki)</small></li>
     <li><a href="https://s3.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/ui/">S3 Gateway UI</a> <small>Versity S3 Gateway &middot; API endpoint: <code>https://s3.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}</code></small></li>
     <li><a href="/auth/admin/flywheel/console/">Keycloak</a> <small>Single sign-on: users and groups</small></li>
+    {{- range listFiles "/local"}}{{if hasSuffix ".html" .}}
+    {{include (print "/local/" .)}}{{end}}{{end}}
   </ul>
   <section id="load">
     <h2>Language models</h2>

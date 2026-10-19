@@ -140,6 +140,12 @@ https://{$SERVICE_HOST}:8443 {
 	handle /devroles/* {
 		respond 404
 	}
+	# Local apps (site/local/, gitignored; README: local apps): *.routes are handle blocks on this host. The folder is
+	# only read by Caddy and the landing page's template, never served: its files name hosts and ports outside the stack.
+	import /srv/local/*.routes
+	handle /local/* {
+		respond 404
+	}
 	handle {
 		root * /srv
 		templates
@@ -225,6 +231,10 @@ https://llm.{$SERVICE_HOST}:8443 {
 		flush_interval -1
 	}
 }
+
+# Local apps on a subdomain of their own (site/local/*.caddy, gitignored; README: local apps). A glob that matches no
+# file only logs a warning, so the stack starts without any.
+import /srv/local/*.caddy
 
 # S3 API and the gateway's web UI (under /ui). SigV4 signs the request path,
 # so no prefix and no SSO here: clients hold access keys, which ctl.sh issues

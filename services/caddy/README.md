@@ -23,7 +23,35 @@ Caddy's request metrics (per site: rate, latency, requests in flight; plus its C
    ```
 2. To trust the CA on a client, follow [Access](../README.md#access).
 
+## Local apps
+
+Route an app that isn't part of the stack (one running on a cluster node, say) through Caddy without committing it: files in `site/local/` are gitignored, and Caddy and the landing page pick them up.
+
+1. Write the route. On a subdomain of its own (safest: the app needs no path prefix), as `site/local/<app>.caddy`:
+   ```
+   https://<app>.{$SERVICE_HOST}:8443 {
+   	import sso
+   	reverse_proxy <node address>:<port>
+   }
+   ```
+   Or under a path of the main host, as `site/local/<app>.routes`, for an app that can serve under a prefix:
+   ```
+   handle /<app>/* {
+   	import sso
+   	reverse_proxy <node address>:<port>
+   }
+   ```
+   `import sso` puts it behind the Keycloak login; leave it out only for an app with a login of its own.
+2. Add its link to the landing page, as `site/local/<app>.html` (one list item, a template like `index.html`):
+   ```html
+   <li><a href="https://<app>.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/">App</a> <small>what it is</small></li>
+   ```
+3. Restart Caddy (above).
+4. For a subdomain, add `<app>.$SERVICE_HOST` to the `/etc/hosts` line of anyone who comes through a tunnel ([Access](../README.md#access)).
+
 **Notes**
+- Files in `site/local/` are read by Caddy and the landing page, never served (`/local/*` answers 404).
+- Check a route before restarting: `services/ctl.sh run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile`. A broken local file stops Caddy, and every app with it.
 - To put a new app behind the login, import the `(sso)` snippet in its route, as `/loki`, FiftyOne, Rerun and the S3 UI do (forward auth to oauth2-proxy). `POST /loki/api/v1/push` is the exception: it takes the `LOKI_PUSH_TOKEN` bearer token instead ([loki/](../loki/README.md)).
 - Set `$SERVICE_HOST` to a name every client resolves to the node; `flywheel.<ip>.sslip.io` works without DNS.
 - Find the CA files in `$STATE_DIR/caddy/data/caddy/pki/authorities/local/`. Gitea and oauth2-proxy mount `root.crt`, which is why `ctl.sh up` starts Caddy first on a clean state; keep that order if you change the startup.
