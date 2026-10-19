@@ -188,6 +188,12 @@ aspire/.venv-lerobot/bin/python ../../services/gitea/adapter/geniesim/geniesim_t
 
 Seeds are task instances (300 per task; 1–25 are a campaign's evaluation seeds and 36–45 were the general policy's development set, so collect from 46). A per-seed campaign policy navigates on new instances but rarely holds (1 of 20); `pick_radio_r1pro.py`, generalized over instances 36–57, held on 9 of 12 fresh ones, so expect ~135 runs and ~10 h for 100 demonstrations. It misses lying radios and some at the edge of reach. ASPIRE ends a BEHAVIOR episode the tick the witness sees the object 5 mm up, which would cut every demonstration at the start of the lift; the collector sets `CAP_HARNESS_SUCCESS_GRACE_TICKS` so `run_behavior.py` holds that end off, and the policy lifts the radio 15 cm and keeps it. Each run is a fresh Isaac process, ~3 min; outcomes append to `collect.jsonl` and a rerun resumes. The converter takes the successful runs at the video rate (10 fps, every third tick, the three cameras, 7-joint arms, ASPIRE's 0–1 grippers, end-effector poses in `odom`, and the whole body from `run_behavior.py`'s `episode/whole_body.jsonl`: base pose, base velocity, torso joints and targets; runs without that record are skipped unless `--arms-only`); each demonstration is search, drive, approach, grasp and a 15 cm lift.
 
+| Skill | Policy | Fresh instances held |
+|---|---|---|
+| `turning_on_radio` (pick up the radio from a coffee table) | `pick_radio_r1pro.py` | 9 of 12; 76 % over 126 collection runs |
+| `picking_up_cup` (pick up the coffee cup from a kitchen counter) | `pick_cup_r1pro.py` (counter search, lift point ahead of the hand) | 18 of 32 development instances |
+| `picking_up_cup` | `pick_cup_rim_r1pro.py` (counter-viewpoint exploration, rim pinch with one finger inside) | 8 of 12 fresh (58–69) |
+
 **Collect on the GB300 cluster.** Each Slurm job is one GPU with its own SAM3 service and simulator, over a range of task instances; when every job has ended, one more job converts the successful runs and uploads the dataset to `s3://raw/internal_datasets/autolearn-behavior/<suite>/<policy>/`. Set up once from a login node, then submit:
 
 ```bash
