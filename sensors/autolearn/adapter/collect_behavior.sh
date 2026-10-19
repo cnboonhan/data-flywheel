@@ -29,8 +29,8 @@ export OMNIGIBSON_HEADLESS=1 OMNIGIBSON_GPU_ID=${OMNIGIBSON_GPU_ID:-0} CUDA_VISI
 export OMNIGIBSON_DATA_PATH="$A/behavior-data" OMNIGIBSON_APPDATA_PATH="$A/aspire/.behavior-appdata"
 ulimit -c 0
 
-successes() { [[ -f $log ]] && grep -c '"task_success": true' "$log" || echo 0; }
-done_runs() { [[ -f $log ]] && grep -c "\"seed\": $1, \"repeat\": $2," "$log" || echo 0; }
+successes() { [[ -f $log ]] && grep -c '"task_success": true' "$log" || true; }   # grep -c prints 0 itself on no match
+done_runs() { [[ -f $log ]] && grep -c "\"seed\": $1, \"repeat\": $2," "$log" || true; }
 
 for seed in $(seq "$first" "$last"); do
   for rep in $(seq 1 "$repeats"); do
