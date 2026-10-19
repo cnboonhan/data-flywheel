@@ -28,7 +28,7 @@ Code lives here in git; everything it downloads or produces lives in this folder
 | `adapter/tasks/` | benchmark tasks added beside upstream ([README](adapter/tasks/README.md)): a generated layout on the pack's Gaussian-splat laboratory, installed by `install.sh` without editing the submodule |
 | `hooks/sitecustomize.py` | on `PYTHONPATH` inside the container: turns Isaac Sim's crash reporter off and registers the tasks in `adapter/tasks/` in the benchmark's code tables |
 | `cap-harness-sandboxed.sh`, `cap-harness-behavior.sh`, `cap-harness-geniesim.sh` | ASPIRE's `cap-harness`, the BEHAVIOR runner and the Genie Sim runner inside bubblewrap with the user's credentials hidden; agent-written programs run only through these |
-| `gb300/` | Genie Sim's rendering benchmark on the GB300 nodes (`render_bench.py` + `.sbatch`) |
+| `gb300/` | the GB300 nodes: Genie Sim's rendering benchmark (`render_bench.py` + `.sbatch`); BEHAVIOR-1K collection as Slurm jobs (`collect_parallel.sh`, `collect_behavior.sbatch`, `aggregate_behavior.sbatch`, `run_behavior.sh`, `behavior.env`) |
 | planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (plan stage 1), `autolearn-cycle` (stage 6); [`geniesim_to_xpolicylab`](../../services/gitea/adapter/README.md) exists |
 
 | Gitignored state | Contents |
@@ -187,6 +187,26 @@ aspire/.venv-lerobot/bin/python ../../services/gitea/adapter/geniesim/geniesim_t
 ```
 
 Seeds are task instances (300 per task; 1–25 are a campaign's evaluation seeds and 36–45 were the general policy's development set, so collect from 46). A per-seed campaign policy navigates on new instances but rarely holds (1 of 20); `pick_radio_r1pro.py`, generalized over instances 36–57, held on 9 of 12 fresh ones, so expect ~135 runs and ~10 h for 100 demonstrations. It misses lying radios and some at the edge of reach. ASPIRE ends a BEHAVIOR episode the tick the witness sees the object 5 mm up, which would cut every demonstration at the start of the lift; the collector sets `CAP_HARNESS_SUCCESS_GRACE_TICKS` so `run_behavior.py` holds that end off, and the policy lifts the radio 15 cm and keeps it. Each run is a fresh Isaac process, ~3 min; outcomes append to `collect.jsonl` and a rerun resumes. The converter takes the successful runs at the video rate (10 fps, every third tick, the three cameras, 7-joint arms, ASPIRE's 0–1 grippers, end-effector poses in `odom`, and the whole body from `run_behavior.py`'s `episode/whole_body.jsonl`: base pose, base velocity, torso joints and targets; runs without that record are skipped unless `--arms-only`); each demonstration is search, drive, approach, grasp and a 15 cm lift.
+
+**Collect on the GB300 cluster.** Each Slurm job is one GPU with its own SAM3 service and simulator, over a range of task instances; when every job has ended, one more job converts the successful runs and uploads the dataset to `s3://raw/internal_datasets/autolearn-behavior/<suite>/<policy>/`. Set up once from a login node, then submit:
+
+```bash
+sensors/autolearn/setup.sh all      # on arm64: BEHAVIOR-1K, SAM3 (HF_TOKEN from services/.env) and LeRobot venvs, datasets, under /tier1/mistral/flywheel/autolearn
+sensors/autolearn/gb300/collect_parallel.sh sensors/autolearn/adapter/programs/pick_radio_r1pro.py 46 299 16 500 --suite turning_on_radio
+```
+
+```mermaid
+flowchart LR
+  P[collect_parallel.sh] -->|K jobs, disjoint seeds| J1[collect_behavior.sbatch<br/>SAM3 + Isaac on 1 GPU]
+  P --> J2[collect_behavior.sbatch]
+  J1 --> R[(collect/behavior/suite/policy/seeds_*)]
+  J2 --> R
+  R -->|afterany| A[aggregate_behavior.sbatch<br/>behavior_to_lerobot.py] --> S[(s3://raw/internal_datasets/autolearn-behavior)]
+```
+
+- Each job stops at its share of the target or the end of its range; size the range to the policy's success rate. Logs: `/tier1/mistral/flywheel/autolearn/logs/{behavior,sam3,aggregate}-<job>.log`; a rerun of the same range resumes from `collect.jsonl`.
+- Policies run without the bubblewrap sandbox (the nodes have none): collect with reviewed programs only, never a campaign's agent-written ones.
+- Isaac's caches go to node-local `/tmp/$USER/{behavior-appdata,home}-gpu<N>` and every run gets its own IPC namespace and `/dev/shm` (`run_behavior.sh`): with caches in the NFS home or two runs sharing IPC, concurrent runs hang after "app ready" or fail to load kitchen materials. A cold scene load is ~5 min, ~1.5 min once the GPU's cache is warm; a run that hangs is ended after `BEHAVIOR_RUN_TIMEOUT` (1800 s).
 
 **Train GalaxeaVLA on it.** GalaxeaVLA (XPolicyLab's `policy/GalaxeaVLA`, Galaxea's G0 models) is built for the R1 Pro and takes its whole body; its weights are under the non-commercial G0 Plus Community License. Convert in its key layout, then fine-tune G0 Tiny with this repo's data and task configs on a GB300 node:
 

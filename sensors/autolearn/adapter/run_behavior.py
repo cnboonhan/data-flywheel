@@ -38,7 +38,8 @@ from cap_harness.contracts import MotionStrategy, RobotPlanningContext  # noqa: 
 from cap_harness.errors import ApiError, ErrorCode  # noqa: E402
 from ik import UrdfIkProvider  # noqa: E402
 
-URDF = HERE.parent / "behavior-data/omnigibson-robot-assets/models/r1pro/urdf/r1pro_with_meta_links.urdf"
+URDF = (Path(os.environ.get("OMNIGIBSON_DATA_PATH") or HERE.parent / "behavior-data")
+        / "omnigibson-robot-assets/models/r1pro/urdf/r1pro_with_meta_links.urdf")
 
 
 def pyroki_for(adapter: BehaviorAdapter) -> UrdfIkProvider:
@@ -173,4 +174,27 @@ _registry_init = BehaviorTaskRegistry.__init__
 BehaviorTaskRegistry.__init__ = lambda self, tasks=BEHAVIOR_TASKS + EXTRA_TASKS: _registry_init(self, tasks)
 cap_run.CapApi = PyRokiCapApi
 BehaviorAdapter.planner = lambda self: NoBasePlan()
+
+
+def tolerate_unloadable_mdl():
+    """On arm64 (GB300) a kitchen object's material has an MDL module neuray cannot load ('rtx::neuraylib::MdlModuleId'
+    for '' is Invalid) and OmniGibson's MaterialPrim raises, so the scene never loads. Keep the material (it is created
+    and bound) and skip only its shader node, which OmniGibson reads for material inputs, not for loading or physics."""
+    from omnigibson.prims import material_prim as mp
+
+    post_load = mp.MaterialPrim._post_load
+
+    def _post_load(self):
+        try:
+            post_load(self)
+        except Exception as exc:
+            if "MdlModuleId" not in str(exc):
+                raise
+            print(f"material {self.prim_path}: MDL module not loadable, shader node skipped", file=sys.stderr)
+            self._shader_node = None
+
+    mp.MaterialPrim._post_load = _post_load
+
+
+tolerate_unloadable_mdl()
 sys.exit(main())
