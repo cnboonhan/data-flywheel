@@ -22,7 +22,7 @@ Code lives here in git; everything it downloads or produces lives in this folder
 | `setup.sh` | the whole setup, one subcommand per part: `geniesim`, `aspire`, `behavior`, `services`, `benchmark` |
 | `aspire/` | [ASPIRE](https://github.com/NVlabs/ASPIRE) (upstream submodule): coding agents write and debug robot programs; LIBERO-Pro, Robosuite, BEHAVIOR-1K |
 | `genie_sim/` | [Genie Sim 3.x](https://github.com/AgibotTech/genie_sim) (upstream submodule, MPL-2.0): Isaac Sim 5.1 scenes, task generation, benchmark, data collection |
-| `adapter/` | Genie Sim and BEHAVIOR-1K as ASPIRE environments: `geniesim_adapter.py` (the benchmark's policy socket as ASPIRE's `EnvironmentAdapter`), `ik.py` (PyRoki IK on any URDF), `run_geniesim.py` (a program per episode; `--record` keeps every tick through `record.py`), `run_behavior.py` (`cap-harness` with PyRoki in place of cuRobo), `to_lerobot.py` (recordings into a LeRobot v2.1 dataset) |
+| `adapter/` | Genie Sim and BEHAVIOR-1K as ASPIRE environments: `geniesim_adapter.py` (the benchmark's policy socket as ASPIRE's `EnvironmentAdapter`), `ik.py` (PyRoki IK on any URDF), `run_geniesim.py` (a program per episode; `--record` keeps every tick through `record.py`), `run_behavior.py` (`cap-harness` with PyRoki in place of cuRobo), `collect_behavior.sh` (a policy over many instances until N successes), `to_lerobot.py` and `behavior_to_lerobot.py` (recordings and runs into LeRobot v2.1 datasets) |
 | `adapter/programs/` | `wave.py` (lift, close, open: the smoke test), `pick_block.py` (hand-written pick), `place_relative.py` (learned pick-and-place) |
 | `adapter/probes/` | calibration and diagnostic programs and scripts, listed in [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | `adapter/tasks/` | benchmark tasks added beside upstream ([README](adapter/tasks/README.md)): a generated layout on the pack's Gaussian-splat laboratory, installed by `install.sh` without editing the submodule |
@@ -177,6 +177,16 @@ A campaign is ASPIRE's block-by-block skill (`aspire/.claude/skills/iterative-de
 | a failed plan costs 6–10 s | IK is milliseconds; reachability is `solve_ik` |
 
 Expect a bootstrap seed to succeed in 10–15 attempts and later seeds, inheriting the library and a policy, in under 10 (`turning_on_radio` seeds 26 and 27 held the radio at attempts 13 and 7).
+
+**Collect demonstrations.** Run a learned policy over fresh instances until enough succeeded, then convert:
+
+```bash
+adapter/collect_behavior.sh aspire/outputs/runs/<stamp>/behavior/turning_on_radio/stage1/seed_27/policy.py 36 299 --target 100
+aspire/.venv-lerobot/bin/python adapter/behavior_to_lerobot.py aspire/outputs/collect/behavior/turning_on_radio/policy --out aspire/outputs/datasets/behavior_turning_on_radio
+aspire/.venv-lerobot/bin/python ../../services/gitea/adapter/geniesim/geniesim_to_xpolicylab.py --raw-dir aspire/outputs/datasets --tasks 'behavior_*' --bench behavior --env-cfg galaxea_r1pro --out aspire/outputs/xspark
+```
+
+Seeds are task instances (300 per task; 1–25 are a campaign's evaluation seeds, so start at 36). Each run is a fresh Isaac process, ~3 min; outcomes append to `collect.jsonl` and a rerun resumes. The converter takes the successful runs at the video rate (10 fps, every third tick, the three cameras, 7-joint arms, ASPIRE's 0–1 grippers, end-effector poses in `odom`); the episode ends on the witness's hold, so each demonstration is search, drive, approach and grasp.
 
 ### ASPIRE on LIBERO
 

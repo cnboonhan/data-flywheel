@@ -1,8 +1,8 @@
 {
   "scene_id": "lab_table_with_everyday_objects",
-  "seed": 3734237577,
+  "seed": 1191027598,
   "layout": {
-    "benchmark_table_ad18a193": {
+    "benchmark_table_88267de2": {
       "usd": "benchmark_table_019",
       "xyz": [
         0.0,
@@ -16,10 +16,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_5065a3e9",
-        "lab_table_with_everyday_objects_0199d4dc",
-        "workspace_table_96e07205",
-        "benchmark_table_ad18a193"
+        "root_scene_713d62d4",
+        "lab_table_with_everyday_objects_fd1afa64",
+        "workspace_table_49e367a9",
+        "benchmark_table_88267de2"
       ],
       "keywords": [
         "workspace_table",
@@ -36,7 +36,7 @@
         ]
       }
     },
-    "benchmark_bowl_sponge_ef7c9c10": {
+    "benchmark_bowl_sponge_9e484bd0": {
       "usd": "benchmark_bowl_sponge_000",
       "xyz": [
         -0.18,
@@ -50,10 +50,10 @@
         0.999048
       ],
       "tags": [
-        "root_scene_5065a3e9",
-        "lab_table_with_everyday_objects_0199d4dc",
-        "place_on_table_9f7cdf1f",
-        "benchmark_bowl_sponge_ef7c9c10"
+        "root_scene_713d62d4",
+        "lab_table_with_everyday_objects_fd1afa64",
+        "place_on_table_797ab1c3",
+        "benchmark_bowl_sponge_9e484bd0"
       ],
       "keywords": [
         "sponge",
@@ -93,7 +93,7 @@
         ]
       }
     },
-    "benchmark_cup_bf43cdd5": {
+    "benchmark_cup_d5a427c3": {
       "usd": "benchmark_cup_105",
       "xyz": [
         -0.22,
@@ -107,10 +107,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_5065a3e9",
-        "lab_table_with_everyday_objects_0199d4dc",
-        "place_on_table_3b8bdb1e",
-        "benchmark_cup_bf43cdd5"
+        "root_scene_713d62d4",
+        "lab_table_with_everyday_objects_fd1afa64",
+        "place_on_table_56c79fd1",
+        "benchmark_cup_d5a427c3"
       ],
       "keywords": [
         "paper cup",
@@ -149,7 +149,7 @@
         ]
       }
     },
-    "benchmark_mouse_5cd4f0b8": {
+    "benchmark_mouse_e12cbe08": {
       "usd": "benchmark_mouse_000",
       "xyz": [
         0.02,
@@ -163,10 +163,10 @@
         0.965926
       ],
       "tags": [
-        "root_scene_5065a3e9",
-        "lab_table_with_everyday_objects_0199d4dc",
-        "place_on_table_3c28c2d3",
-        "benchmark_mouse_5cd4f0b8"
+        "root_scene_713d62d4",
+        "lab_table_with_everyday_objects_fd1afa64",
+        "place_on_table_eed6f59c",
+        "benchmark_mouse_e12cbe08"
       ],
       "keywords": [
         "computer mouse",
@@ -206,7 +206,7 @@
         ]
       }
     },
-    "benchmark_lemon_791ed351": {
+    "benchmark_lemon_89893153": {
       "usd": "benchmark_lemon_030",
       "xyz": [
         -0.2,
@@ -220,10 +220,10 @@
         0.939693
       ],
       "tags": [
-        "root_scene_5065a3e9",
-        "lab_table_with_everyday_objects_0199d4dc",
-        "place_on_table_1079a9e7",
-        "benchmark_lemon_791ed351"
+        "root_scene_713d62d4",
+        "lab_table_with_everyday_objects_fd1afa64",
+        "place_on_table_803ff92c",
+        "benchmark_lemon_89893153"
       ],
       "keywords": [
         "lemon",
@@ -263,7 +263,7 @@
         ]
       }
     },
-    "benchmark_rubik_cube_672e44a9": {
+    "benchmark_rubik_cube_7da3d3a0": {
       "usd": "benchmark_rubik_cube_001",
       "xyz": [
         0.04,
@@ -277,10 +277,10 @@
         0.984808
       ],
       "tags": [
-        "root_scene_5065a3e9",
-        "lab_table_with_everyday_objects_0199d4dc",
-        "place_on_table_12c1c456",
-        "benchmark_rubik_cube_672e44a9"
+        "root_scene_713d62d4",
+        "lab_table_with_everyday_objects_fd1afa64",
+        "place_on_table_5bba0990",
+        "benchmark_rubik_cube_7da3d3a0"
       ],
       "keywords": [
         "rubik cube",
@@ -329,13 +329,13 @@
       },
       "nodes": [
         {
-          "id": "root_scene_5065a3e9"
+          "id": "root_scene_713d62d4"
         },
         {
-          "id": "lab_table_with_everyday_objects_0199d4dc"
+          "id": "lab_table_with_everyday_objects_fd1afa64"
         },
         {
-          "id": "workspace_table_96e07205"
+          "id": "workspace_table_49e367a9"
         },
         {
           "tags": [
@@ -344,10 +344,10 @@
             "white",
             "marble_top"
           ],
-          "id": "benchmark_table_ad18a193"
+          "id": "benchmark_table_88267de2"
         },
         {
-          "id": "place_on_table_9f7cdf1f"
+          "id": "place_on_table_797ab1c3"
         },
         {
           "tags": [
@@ -356,10 +356,10 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_bowl_sponge_ef7c9c10"
+          "id": "benchmark_bowl_sponge_9e484bd0"
         },
         {
-          "id": "place_on_table_3b8bdb1e"
+          "id": "place_on_table_56c79fd1"
         },
         {
           "tags": [
@@ -368,10 +368,10 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_cup_bf43cdd5"
+          "id": "benchmark_cup_d5a427c3"
         },
         {
-          "id": "place_on_table_3c28c2d3"
+          "id": "place_on_table_eed6f59c"
         },
         {
           "tags": [
@@ -380,10 +380,10 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_mouse_5cd4f0b8"
+          "id": "benchmark_mouse_e12cbe08"
         },
         {
-          "id": "place_on_table_1079a9e7"
+          "id": "place_on_table_803ff92c"
         },
         {
           "tags": [
@@ -392,10 +392,10 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_lemon_791ed351"
+          "id": "benchmark_lemon_89893153"
         },
         {
-          "id": "place_on_table_12c1c456"
+          "id": "place_on_table_5bba0990"
         },
         {
           "tags": [
@@ -404,61 +404,61 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_rubik_cube_672e44a9"
+          "id": "benchmark_rubik_cube_7da3d3a0"
         }
       ],
       "edges": [
         {
-          "source": "root_scene_5065a3e9",
-          "target": "lab_table_with_everyday_objects_0199d4dc"
+          "source": "root_scene_713d62d4",
+          "target": "lab_table_with_everyday_objects_fd1afa64"
         },
         {
-          "source": "lab_table_with_everyday_objects_0199d4dc",
-          "target": "workspace_table_96e07205"
+          "source": "lab_table_with_everyday_objects_fd1afa64",
+          "target": "workspace_table_49e367a9"
         },
         {
-          "source": "lab_table_with_everyday_objects_0199d4dc",
-          "target": "place_on_table_9f7cdf1f"
+          "source": "lab_table_with_everyday_objects_fd1afa64",
+          "target": "place_on_table_797ab1c3"
         },
         {
-          "source": "lab_table_with_everyday_objects_0199d4dc",
-          "target": "place_on_table_3b8bdb1e"
+          "source": "lab_table_with_everyday_objects_fd1afa64",
+          "target": "place_on_table_56c79fd1"
         },
         {
-          "source": "lab_table_with_everyday_objects_0199d4dc",
-          "target": "place_on_table_3c28c2d3"
+          "source": "lab_table_with_everyday_objects_fd1afa64",
+          "target": "place_on_table_eed6f59c"
         },
         {
-          "source": "lab_table_with_everyday_objects_0199d4dc",
-          "target": "place_on_table_1079a9e7"
+          "source": "lab_table_with_everyday_objects_fd1afa64",
+          "target": "place_on_table_803ff92c"
         },
         {
-          "source": "lab_table_with_everyday_objects_0199d4dc",
-          "target": "place_on_table_12c1c456"
+          "source": "lab_table_with_everyday_objects_fd1afa64",
+          "target": "place_on_table_5bba0990"
         },
         {
-          "source": "workspace_table_96e07205",
-          "target": "benchmark_table_ad18a193"
+          "source": "workspace_table_49e367a9",
+          "target": "benchmark_table_88267de2"
         },
         {
-          "source": "place_on_table_9f7cdf1f",
-          "target": "benchmark_bowl_sponge_ef7c9c10"
+          "source": "place_on_table_797ab1c3",
+          "target": "benchmark_bowl_sponge_9e484bd0"
         },
         {
-          "source": "place_on_table_3b8bdb1e",
-          "target": "benchmark_cup_bf43cdd5"
+          "source": "place_on_table_56c79fd1",
+          "target": "benchmark_cup_d5a427c3"
         },
         {
-          "source": "place_on_table_3c28c2d3",
-          "target": "benchmark_mouse_5cd4f0b8"
+          "source": "place_on_table_eed6f59c",
+          "target": "benchmark_mouse_e12cbe08"
         },
         {
-          "source": "place_on_table_1079a9e7",
-          "target": "benchmark_lemon_791ed351"
+          "source": "place_on_table_803ff92c",
+          "target": "benchmark_lemon_89893153"
         },
         {
-          "source": "place_on_table_12c1c456",
-          "target": "benchmark_rubik_cube_672e44a9"
+          "source": "place_on_table_5bba0990",
+          "target": "benchmark_rubik_cube_7da3d3a0"
         }
       ]
     }

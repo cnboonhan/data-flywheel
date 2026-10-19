@@ -1,0 +1,8 @@
+{
+  "instructions": [
+    {
+      "instruction": "place the lemon to the top of the rubik cube"
+    }
+  ],
+  "task_id": "place_object_relative_position_lab_11"
+}

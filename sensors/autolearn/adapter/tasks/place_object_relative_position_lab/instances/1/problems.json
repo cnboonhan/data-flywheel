@@ -6,10 +6,10 @@
           {
             "ActionSetWaitAny": [
               {
-                "Follow": "benchmark_orange_74881338|[0.15,0.15,0.15]|left_gripper"
+                "Follow": "benchmark_orange_949d4071|[0.15,0.15,0.15]|left_gripper"
               },
               {
-                "Follow": "benchmark_orange_74881338|[0.15,0.15,0.15]|right_gripper"
+                "Follow": "benchmark_orange_949d4071|[0.15,0.15,0.15]|right_gripper"
               },
               {
                 "StepOut": 300
@@ -25,11 +25,11 @@
                   "rules": [
                     {
                       "name": "RelativePosition",
-                      "params": "benchmark_orange_74881338|benchmark_lemon_15fc11dd|rightof"
+                      "params": "benchmark_orange_949d4071|benchmark_lemon_582d9d46|rightof"
                     },
                     {
                       "name": "RelativePosition",
-                      "params": "benchmark_orange_74881338|benchmark_lemon_15fc11dd|aligned_x|0.1"
+                      "params": "benchmark_orange_949d4071|benchmark_lemon_582d9d46|aligned_x|0.1"
                     }
                   ]
                 }

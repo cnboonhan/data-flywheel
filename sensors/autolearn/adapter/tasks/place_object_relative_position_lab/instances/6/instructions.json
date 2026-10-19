@@ -1,0 +1,8 @@
+{
+  "instructions": [
+    {
+      "instruction": "place the lemon to the left of the sponge"
+    }
+  ],
+  "task_id": "place_object_relative_position_lab_6"
+}

@@ -3,11 +3,12 @@
 # scene_info.json and graph.*; generate.sh runs it once per LAB_INSTANCE.
 
 from helper import *
+from spec import random_instance   # instances past the four hand-written ones
 
 """
 scene_name: lab_table_with_everyday_objects
 description: benchmark_table_019 at the origin with five everyday objects resting on its top; one of four
-             hand-written layouts, chosen by the LAB_INSTANCE environment variable (0-3).
+             hand-written layouts (LAB_INSTANCE 0-3) or a seeded random one from spec.py (4 and up).
 """
 
 INSTANCE = int(os.environ.get("LAB_INSTANCE", "0"))
@@ -92,7 +93,7 @@ def lab_table_with_everyday_objects() -> Shape:
     table_top = float(get_object_info(table)["max"][2])
     objects = [
         library_call("place_on_table", oid=oid, keywords=list(keywords), xy=xy, yaw_deg=yaw, table_top=table_top)
-        for (oid, keywords), xy, yaw in LAYOUTS[INSTANCE]
+        for (oid, keywords), xy, yaw in (LAYOUTS[INSTANCE] if INSTANCE < len(LAYOUTS) else random_instance(INSTANCE)[1])
     ]
     return concat_shapes(table, *objects)
 

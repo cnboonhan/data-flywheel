@@ -1,0 +1,78 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def "World"
+{
+    def "Objects"
+    {
+        def Xform "benchmark_table_23fd0c59" (
+            payload = @/geniesim_assets/objects/benchmark/table/benchmark_table_019/Aligned.usda@
+        )
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0, 0, 0.265)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+            over "entity"
+            {
+                custom bool physics:kinematicEnabled = 1
+            }
+        }
+
+        def Xform "benchmark_bowl_sponge_17aed86c" (
+            payload = @/geniesim_assets/objects/benchmark/bowl_sponge/benchmark_bowl_sponge_000/Aligned.usda@
+        )
+        {
+            quatf xformOp:orient = (0.995634, 0, 0, 0.093346)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (-0.183, 0.267, 0.755)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Xform "benchmark_rubik_cube_d6009832" (
+            payload = @/geniesim_assets/objects/benchmark/rubik_cube/benchmark_rubik_cube_001/Aligned.usda@
+        )
+        {
+            quatf xformOp:orient = (0.988585, 0, 0, -0.150664)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (-0.083, -0.03, 0.768)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Xform "benchmark_mouse_e9e02368" (
+            payload = @/geniesim_assets/objects/benchmark/mouse/benchmark_mouse_000/Aligned.usda@
+        )
+        {
+            quatf xformOp:orient = (0.999011, 0, 0, -0.044469)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.021, -0.262, 0.754)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Xform "benchmark_cup_942ee04e" (
+            payload = @/geniesim_assets/objects/benchmark/cup/benchmark_cup_105/Aligned.usda@
+        )
+        {
+            quatf xformOp:orient = (0.994708, 0, 0, 0.102742)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.017, 0.248, 0.779)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Xform "benchmark_medicine_bottle_16283f4a" (
+            payload = @/geniesim_assets/objects/benchmark/medicine_bottle/benchmark_medicine_bottle_000/Aligned.usda@
+        )
+        {
+            quatf xformOp:orient = (0.959596, 0, 0, -0.281381)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (-0.242, 0.04, 0.795)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+    }
+}
+

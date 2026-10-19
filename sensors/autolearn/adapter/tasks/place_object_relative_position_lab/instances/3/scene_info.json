@@ -1,8 +1,8 @@
 {
   "scene_id": "lab_table_with_everyday_objects",
-  "seed": 2872617363,
+  "seed": 294327569,
   "layout": {
-    "benchmark_table_8612e4ad": {
+    "benchmark_table_1ac0ac3e": {
       "usd": "benchmark_table_019",
       "xyz": [
         0.0,
@@ -16,10 +16,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_bc6866df",
-        "lab_table_with_everyday_objects_8b9a999a",
-        "workspace_table_bbba5452",
-        "benchmark_table_8612e4ad"
+        "root_scene_f5ca9228",
+        "lab_table_with_everyday_objects_b0ac31de",
+        "workspace_table_75a7f504",
+        "benchmark_table_1ac0ac3e"
       ],
       "keywords": [
         "workspace_table",
@@ -36,7 +36,7 @@
         ]
       }
     },
-    "benchmark_orange_81832471": {
+    "benchmark_orange_fd0336f1": {
       "usd": "benchmark_orange_004",
       "xyz": [
         -0.06,
@@ -50,10 +50,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_bc6866df",
-        "lab_table_with_everyday_objects_8b9a999a",
-        "place_on_table_5db6fa03",
-        "benchmark_orange_81832471"
+        "root_scene_f5ca9228",
+        "lab_table_with_everyday_objects_b0ac31de",
+        "place_on_table_4ea200d3",
+        "benchmark_orange_fd0336f1"
       ],
       "keywords": [
         "orange",
@@ -94,7 +94,7 @@
         ]
       }
     },
-    "benchmark_lemon_b535e587": {
+    "benchmark_lemon_50228a2e": {
       "usd": "benchmark_lemon_030",
       "xyz": [
         0.0,
@@ -108,10 +108,10 @@
         0.984808
       ],
       "tags": [
-        "root_scene_bc6866df",
-        "lab_table_with_everyday_objects_8b9a999a",
-        "place_on_table_e55772ad",
-        "benchmark_lemon_b535e587"
+        "root_scene_f5ca9228",
+        "lab_table_with_everyday_objects_b0ac31de",
+        "place_on_table_fe6b3f08",
+        "benchmark_lemon_50228a2e"
       ],
       "keywords": [
         "lemon",
@@ -151,7 +151,7 @@
         ]
       }
     },
-    "benchmark_bowl_sponge_b767f2cc": {
+    "benchmark_bowl_sponge_0621f2ba": {
       "usd": "benchmark_bowl_sponge_000",
       "xyz": [
         -0.24,
@@ -165,10 +165,10 @@
         0.991445
       ],
       "tags": [
-        "root_scene_bc6866df",
-        "lab_table_with_everyday_objects_8b9a999a",
-        "place_on_table_127a4958",
-        "benchmark_bowl_sponge_b767f2cc"
+        "root_scene_f5ca9228",
+        "lab_table_with_everyday_objects_b0ac31de",
+        "place_on_table_c986d637",
+        "benchmark_bowl_sponge_0621f2ba"
       ],
       "keywords": [
         "sponge",
@@ -208,7 +208,7 @@
         ]
       }
     },
-    "benchmark_medicine_bottle_7150da26": {
+    "benchmark_medicine_bottle_d6a73b90": {
       "usd": "benchmark_medicine_bottle_000",
       "xyz": [
         0.02,
@@ -222,10 +222,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_bc6866df",
-        "lab_table_with_everyday_objects_8b9a999a",
-        "place_on_table_d513554b",
-        "benchmark_medicine_bottle_7150da26"
+        "root_scene_f5ca9228",
+        "lab_table_with_everyday_objects_b0ac31de",
+        "place_on_table_050477ad",
+        "benchmark_medicine_bottle_d6a73b90"
       ],
       "keywords": [
         "medicine bottle",
@@ -265,7 +265,7 @@
         ]
       }
     },
-    "benchmark_mouse_e7ef199a": {
+    "benchmark_mouse_4c0865af": {
       "usd": "benchmark_mouse_000",
       "xyz": [
         -0.24,
@@ -279,10 +279,10 @@
         0.996195
       ],
       "tags": [
-        "root_scene_bc6866df",
-        "lab_table_with_everyday_objects_8b9a999a",
-        "place_on_table_29164f89",
-        "benchmark_mouse_e7ef199a"
+        "root_scene_f5ca9228",
+        "lab_table_with_everyday_objects_b0ac31de",
+        "place_on_table_072cbe3b",
+        "benchmark_mouse_4c0865af"
       ],
       "keywords": [
         "computer mouse",
@@ -332,13 +332,13 @@
       },
       "nodes": [
         {
-          "id": "root_scene_bc6866df"
+          "id": "root_scene_f5ca9228"
         },
         {
-          "id": "lab_table_with_everyday_objects_8b9a999a"
+          "id": "lab_table_with_everyday_objects_b0ac31de"
         },
         {
-          "id": "workspace_table_bbba5452"
+          "id": "workspace_table_75a7f504"
         },
         {
           "tags": [
@@ -347,10 +347,10 @@
             "white",
             "marble_top"
           ],
-          "id": "benchmark_table_8612e4ad"
+          "id": "benchmark_table_1ac0ac3e"
         },
         {
-          "id": "place_on_table_5db6fa03"
+          "id": "place_on_table_4ea200d3"
         },
         {
           "tags": [
@@ -359,10 +359,10 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_orange_81832471"
+          "id": "benchmark_orange_fd0336f1"
         },
         {
-          "id": "place_on_table_e55772ad"
+          "id": "place_on_table_fe6b3f08"
         },
         {
           "tags": [
@@ -371,10 +371,10 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_lemon_b535e587"
+          "id": "benchmark_lemon_50228a2e"
         },
         {
-          "id": "place_on_table_127a4958"
+          "id": "place_on_table_c986d637"
         },
         {
           "tags": [
@@ -383,10 +383,10 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_bowl_sponge_b767f2cc"
+          "id": "benchmark_bowl_sponge_0621f2ba"
         },
         {
-          "id": "place_on_table_d513554b"
+          "id": "place_on_table_050477ad"
         },
         {
           "tags": [
@@ -395,10 +395,10 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_medicine_bottle_7150da26"
+          "id": "benchmark_medicine_bottle_d6a73b90"
         },
         {
-          "id": "place_on_table_29164f89"
+          "id": "place_on_table_072cbe3b"
         },
         {
           "tags": [
@@ -407,61 +407,61 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_mouse_e7ef199a"
+          "id": "benchmark_mouse_4c0865af"
         }
       ],
       "edges": [
         {
-          "source": "root_scene_bc6866df",
-          "target": "lab_table_with_everyday_objects_8b9a999a"
+          "source": "root_scene_f5ca9228",
+          "target": "lab_table_with_everyday_objects_b0ac31de"
         },
         {
-          "source": "lab_table_with_everyday_objects_8b9a999a",
-          "target": "workspace_table_bbba5452"
+          "source": "lab_table_with_everyday_objects_b0ac31de",
+          "target": "workspace_table_75a7f504"
         },
         {
-          "source": "lab_table_with_everyday_objects_8b9a999a",
-          "target": "place_on_table_5db6fa03"
+          "source": "lab_table_with_everyday_objects_b0ac31de",
+          "target": "place_on_table_4ea200d3"
         },
         {
-          "source": "lab_table_with_everyday_objects_8b9a999a",
-          "target": "place_on_table_e55772ad"
+          "source": "lab_table_with_everyday_objects_b0ac31de",
+          "target": "place_on_table_fe6b3f08"
         },
         {
-          "source": "lab_table_with_everyday_objects_8b9a999a",
-          "target": "place_on_table_127a4958"
+          "source": "lab_table_with_everyday_objects_b0ac31de",
+          "target": "place_on_table_c986d637"
         },
         {
-          "source": "lab_table_with_everyday_objects_8b9a999a",
-          "target": "place_on_table_d513554b"
+          "source": "lab_table_with_everyday_objects_b0ac31de",
+          "target": "place_on_table_050477ad"
         },
         {
-          "source": "lab_table_with_everyday_objects_8b9a999a",
-          "target": "place_on_table_29164f89"
+          "source": "lab_table_with_everyday_objects_b0ac31de",
+          "target": "place_on_table_072cbe3b"
         },
         {
-          "source": "workspace_table_bbba5452",
-          "target": "benchmark_table_8612e4ad"
+          "source": "workspace_table_75a7f504",
+          "target": "benchmark_table_1ac0ac3e"
         },
         {
-          "source": "place_on_table_5db6fa03",
-          "target": "benchmark_orange_81832471"
+          "source": "place_on_table_4ea200d3",
+          "target": "benchmark_orange_fd0336f1"
         },
         {
-          "source": "place_on_table_e55772ad",
-          "target": "benchmark_lemon_b535e587"
+          "source": "place_on_table_fe6b3f08",
+          "target": "benchmark_lemon_50228a2e"
         },
         {
-          "source": "place_on_table_127a4958",
-          "target": "benchmark_bowl_sponge_b767f2cc"
+          "source": "place_on_table_c986d637",
+          "target": "benchmark_bowl_sponge_0621f2ba"
         },
         {
-          "source": "place_on_table_d513554b",
-          "target": "benchmark_medicine_bottle_7150da26"
+          "source": "place_on_table_050477ad",
+          "target": "benchmark_medicine_bottle_d6a73b90"
         },
         {
-          "source": "place_on_table_29164f89",
-          "target": "benchmark_mouse_e7ef199a"
+          "source": "place_on_table_072cbe3b",
+          "target": "benchmark_mouse_4c0865af"
         }
       ]
     }

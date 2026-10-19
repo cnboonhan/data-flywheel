@@ -1,0 +1,30 @@
+strict digraph  {
+	graph [rankdir="LR"];
+	"root_scene_ab88d9ca";
+	"lab_table_with_everyday_objects_e778c6c4";
+	"workspace_table_a88ca453";
+	"benchmark_table_be06d7e6" [tags="['workspace_table', 'table', 'white', 'marble_top']"];
+	"place_on_table_576ac6cf";
+	"benchmark_medicine_bottle_3bb134e8" [tags="['medicine bottle', 'benchmark_medicine_bottle_000', 'on_desk', 'left']"];
+	"place_on_table_085bb3d1";
+	"benchmark_mouse_00c11d41" [tags="['computer mouse', 'benchmark_mouse_000', 'on_desk', 'left']"];
+	"place_on_table_181acade";
+	"benchmark_lemon_86717b01" [tags="['lemon', 'benchmark_lemon_030', 'on_desk', 'right']"];
+	"place_on_table_2aa336d9";
+	"benchmark_bowl_sponge_cc093796" [tags="['sponge', 'benchmark_bowl_sponge_000', 'on_desk', 'right']"];
+	"place_on_table_a7299278";
+	"benchmark_rubik_cube_43fa6a35" [tags="['rubik cube', 'benchmark_rubik_cube_001', 'on_desk', 'right']"];
+	"root_scene_ab88d9ca" -> "lab_table_with_everyday_objects_e778c6c4";
+	"lab_table_with_everyday_objects_e778c6c4" -> "workspace_table_a88ca453";
+	"lab_table_with_everyday_objects_e778c6c4" -> "place_on_table_576ac6cf";
+	"lab_table_with_everyday_objects_e778c6c4" -> "place_on_table_085bb3d1";
+	"lab_table_with_everyday_objects_e778c6c4" -> "place_on_table_181acade";
+	"lab_table_with_everyday_objects_e778c6c4" -> "place_on_table_2aa336d9";
+	"lab_table_with_everyday_objects_e778c6c4" -> "place_on_table_a7299278";
+	"workspace_table_a88ca453" -> "benchmark_table_be06d7e6";
+	"place_on_table_576ac6cf" -> "benchmark_medicine_bottle_3bb134e8";
+	"place_on_table_085bb3d1" -> "benchmark_mouse_00c11d41";
+	"place_on_table_181acade" -> "benchmark_lemon_86717b01";
+	"place_on_table_2aa336d9" -> "benchmark_bowl_sponge_cc093796";
+	"place_on_table_a7299278" -> "benchmark_rubik_cube_43fa6a35";
+}

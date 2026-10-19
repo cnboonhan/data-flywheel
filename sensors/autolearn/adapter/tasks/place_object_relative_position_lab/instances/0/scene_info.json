@@ -1,8 +1,8 @@
 {
   "scene_id": "lab_table_with_everyday_objects",
-  "seed": 2408615470,
+  "seed": 2659880157,
   "layout": {
-    "benchmark_table_e76866ec": {
+    "benchmark_table_fbf4955a": {
       "usd": "benchmark_table_019",
       "xyz": [
         0.0,
@@ -16,10 +16,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_55136ada",
-        "lab_table_with_everyday_objects_4be78d63",
-        "workspace_table_d2601ec0",
-        "benchmark_table_e76866ec"
+        "root_scene_a49533b9",
+        "lab_table_with_everyday_objects_75105ad2",
+        "workspace_table_47bb837a",
+        "benchmark_table_fbf4955a"
       ],
       "keywords": [
         "workspace_table",
@@ -36,7 +36,7 @@
         ]
       }
     },
-    "benchmark_cup_e4d8a022": {
+    "benchmark_cup_b63a07ae": {
       "usd": "benchmark_cup_105",
       "xyz": [
         -0.08,
@@ -50,10 +50,10 @@
         0.996195
       ],
       "tags": [
-        "root_scene_55136ada",
-        "lab_table_with_everyday_objects_4be78d63",
-        "place_on_table_0b52e5d0",
-        "benchmark_cup_e4d8a022"
+        "root_scene_a49533b9",
+        "lab_table_with_everyday_objects_75105ad2",
+        "place_on_table_ef6545ff",
+        "benchmark_cup_b63a07ae"
       ],
       "keywords": [
         "paper cup",
@@ -92,7 +92,7 @@
         ]
       }
     },
-    "benchmark_bowl_sponge_245d1134": {
+    "benchmark_bowl_sponge_03a8e79d": {
       "usd": "benchmark_bowl_sponge_000",
       "xyz": [
         -0.22,
@@ -106,10 +106,10 @@
         0.991445
       ],
       "tags": [
-        "root_scene_55136ada",
-        "lab_table_with_everyday_objects_4be78d63",
-        "place_on_table_c1d185af",
-        "benchmark_bowl_sponge_245d1134"
+        "root_scene_a49533b9",
+        "lab_table_with_everyday_objects_75105ad2",
+        "place_on_table_56a633e4",
+        "benchmark_bowl_sponge_03a8e79d"
       ],
       "keywords": [
         "sponge",
@@ -149,7 +149,7 @@
         ]
       }
     },
-    "benchmark_orange_a1bc2b7a": {
+    "benchmark_orange_68b3abf4": {
       "usd": "benchmark_orange_004",
       "xyz": [
         0.0,
@@ -163,10 +163,10 @@
         1.0
       ],
       "tags": [
-        "root_scene_55136ada",
-        "lab_table_with_everyday_objects_4be78d63",
-        "place_on_table_e66e2917",
-        "benchmark_orange_a1bc2b7a"
+        "root_scene_a49533b9",
+        "lab_table_with_everyday_objects_75105ad2",
+        "place_on_table_b2bc6550",
+        "benchmark_orange_68b3abf4"
       ],
       "keywords": [
         "orange",
@@ -207,7 +207,7 @@
         ]
       }
     },
-    "benchmark_mouse_3c078e3c": {
+    "benchmark_mouse_1bec4716": {
       "usd": "benchmark_mouse_000",
       "xyz": [
         -0.22,
@@ -221,10 +221,10 @@
         0.984808
       ],
       "tags": [
-        "root_scene_55136ada",
-        "lab_table_with_everyday_objects_4be78d63",
-        "place_on_table_3c9f81dd",
-        "benchmark_mouse_3c078e3c"
+        "root_scene_a49533b9",
+        "lab_table_with_everyday_objects_75105ad2",
+        "place_on_table_22cf7bc0",
+        "benchmark_mouse_1bec4716"
       ],
       "keywords": [
         "computer mouse",
@@ -264,7 +264,7 @@
         ]
       }
     },
-    "benchmark_lemon_df5cc701": {
+    "benchmark_lemon_2cc555dc": {
       "usd": "benchmark_lemon_030",
       "xyz": [
         0.02,
@@ -278,10 +278,10 @@
         0.953717
       ],
       "tags": [
-        "root_scene_55136ada",
-        "lab_table_with_everyday_objects_4be78d63",
-        "place_on_table_3781687d",
-        "benchmark_lemon_df5cc701"
+        "root_scene_a49533b9",
+        "lab_table_with_everyday_objects_75105ad2",
+        "place_on_table_511f7e98",
+        "benchmark_lemon_2cc555dc"
       ],
       "keywords": [
         "lemon",
@@ -331,13 +331,13 @@
       },
       "nodes": [
         {
-          "id": "root_scene_55136ada"
+          "id": "root_scene_a49533b9"
         },
         {
-          "id": "lab_table_with_everyday_objects_4be78d63"
+          "id": "lab_table_with_everyday_objects_75105ad2"
         },
         {
-          "id": "workspace_table_d2601ec0"
+          "id": "workspace_table_47bb837a"
         },
         {
           "tags": [
@@ -346,10 +346,10 @@
             "white",
             "marble_top"
           ],
-          "id": "benchmark_table_e76866ec"
+          "id": "benchmark_table_fbf4955a"
         },
         {
-          "id": "place_on_table_0b52e5d0"
+          "id": "place_on_table_ef6545ff"
         },
         {
           "tags": [
@@ -358,10 +358,10 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_cup_e4d8a022"
+          "id": "benchmark_cup_b63a07ae"
         },
         {
-          "id": "place_on_table_c1d185af"
+          "id": "place_on_table_56a633e4"
         },
         {
           "tags": [
@@ -370,10 +370,10 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_bowl_sponge_245d1134"
+          "id": "benchmark_bowl_sponge_03a8e79d"
         },
         {
-          "id": "place_on_table_e66e2917"
+          "id": "place_on_table_b2bc6550"
         },
         {
           "tags": [
@@ -382,10 +382,10 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_orange_a1bc2b7a"
+          "id": "benchmark_orange_68b3abf4"
         },
         {
-          "id": "place_on_table_3c9f81dd"
+          "id": "place_on_table_22cf7bc0"
         },
         {
           "tags": [
@@ -394,10 +394,10 @@
             "on_desk",
             "right"
           ],
-          "id": "benchmark_mouse_3c078e3c"
+          "id": "benchmark_mouse_1bec4716"
         },
         {
-          "id": "place_on_table_3781687d"
+          "id": "place_on_table_511f7e98"
         },
         {
           "tags": [
@@ -406,61 +406,61 @@
             "on_desk",
             "left"
           ],
-          "id": "benchmark_lemon_df5cc701"
+          "id": "benchmark_lemon_2cc555dc"
         }
       ],
       "edges": [
         {
-          "source": "root_scene_55136ada",
-          "target": "lab_table_with_everyday_objects_4be78d63"
+          "source": "root_scene_a49533b9",
+          "target": "lab_table_with_everyday_objects_75105ad2"
         },
         {
-          "source": "lab_table_with_everyday_objects_4be78d63",
-          "target": "workspace_table_d2601ec0"
+          "source": "lab_table_with_everyday_objects_75105ad2",
+          "target": "workspace_table_47bb837a"
         },
         {
-          "source": "lab_table_with_everyday_objects_4be78d63",
-          "target": "place_on_table_0b52e5d0"
+          "source": "lab_table_with_everyday_objects_75105ad2",
+          "target": "place_on_table_ef6545ff"
         },
         {
-          "source": "lab_table_with_everyday_objects_4be78d63",
-          "target": "place_on_table_c1d185af"
+          "source": "lab_table_with_everyday_objects_75105ad2",
+          "target": "place_on_table_56a633e4"
         },
         {
-          "source": "lab_table_with_everyday_objects_4be78d63",
-          "target": "place_on_table_e66e2917"
+          "source": "lab_table_with_everyday_objects_75105ad2",
+          "target": "place_on_table_b2bc6550"
         },
         {
-          "source": "lab_table_with_everyday_objects_4be78d63",
-          "target": "place_on_table_3c9f81dd"
+          "source": "lab_table_with_everyday_objects_75105ad2",
+          "target": "place_on_table_22cf7bc0"
         },
         {
-          "source": "lab_table_with_everyday_objects_4be78d63",
-          "target": "place_on_table_3781687d"
+          "source": "lab_table_with_everyday_objects_75105ad2",
+          "target": "place_on_table_511f7e98"
         },
         {
-          "source": "workspace_table_d2601ec0",
-          "target": "benchmark_table_e76866ec"
+          "source": "workspace_table_47bb837a",
+          "target": "benchmark_table_fbf4955a"
         },
         {
-          "source": "place_on_table_0b52e5d0",
-          "target": "benchmark_cup_e4d8a022"
+          "source": "place_on_table_ef6545ff",
+          "target": "benchmark_cup_b63a07ae"
         },
         {
-          "source": "place_on_table_c1d185af",
-          "target": "benchmark_bowl_sponge_245d1134"
+          "source": "place_on_table_56a633e4",
+          "target": "benchmark_bowl_sponge_03a8e79d"
         },
         {
-          "source": "place_on_table_e66e2917",
-          "target": "benchmark_orange_a1bc2b7a"
+          "source": "place_on_table_b2bc6550",
+          "target": "benchmark_orange_68b3abf4"
         },
         {
-          "source": "place_on_table_3c9f81dd",
-          "target": "benchmark_mouse_3c078e3c"
+          "source": "place_on_table_22cf7bc0",
+          "target": "benchmark_mouse_1bec4716"
         },
         {
-          "source": "place_on_table_3781687d",
-          "target": "benchmark_lemon_df5cc701"
+          "source": "place_on_table_511f7e98",
+          "target": "benchmark_lemon_2cc555dc"
         }
       ]
     }

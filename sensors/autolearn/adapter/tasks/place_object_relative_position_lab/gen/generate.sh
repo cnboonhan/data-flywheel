@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate the four instances of place_object_relative_position_lab with geniesim_generator (CPU only,
+# Regenerate the instances of place_object_relative_position_lab (LAB_INSTANCES, default 4; more are seeded random) with geniesim_generator (CPU only,
 # in the geniesim3 container). Overwrites ../instances/. Object ids are re-drawn on every run (the DSL
 # stamps each call with uuid4), so checks are rewritten too.
 #
@@ -19,10 +19,10 @@ STAGE="$G/.lab-gen"                              # /workspace/.lab-gen in the co
 GEN_PKG=/workspace/source/geniesim_generator/src/geniesim_generator
 OUT_HOST="$G/source/geniesim_generator/src/benchmark/config/llm_task/$SCENE_ID"
 OUT_CONT="/workspace/source/geniesim_generator/src/benchmark/config/llm_task/$SCENE_ID"
-NUM_INSTANCES=4
+NUM_INSTANCES=${LAB_INSTANCES:-4}                 # 0-3 hand-written, the rest seeded random (spec.py)
 
 run() {  # run a python3 command in the container as the invoking user, GPU hidden (another Isaac process owns it)
-  docker exec -u "$(id -u):$(id -g)" -e CUDA_VISIBLE_DEVICES= -e PYTHONPATH="/workspace/.lab-gen/shims:$GEN_PKG:/workspace/source/geniesim_generator/src:/" "$@"
+  docker exec -u "$(id -u):$(id -g)" -e CUDA_VISIBLE_DEVICES= -e LAB_INSTANCES="$NUM_INSTANCES" -e PYTHONPATH="/workspace/.lab-gen/shims:$GEN_PKG:/workspace/source/geniesim_generator/src:/" "$@"
 }
 cleanup() { rm -rf "$STAGE" "$G/source/geniesim_generator/src/benchmark"; }
 trap cleanup EXIT
@@ -41,7 +41,7 @@ done
 echo "== payload paths and kinematic table"
 run geniesim3 python3 /workspace/.lab-gen/postprocess.py "$OUT_CONT"
 echo "== instructions and checks"
-python3 "$HERE/checks.py" "$OUT_HOST"
+LAB_INSTANCES="$NUM_INSTANCES" python3 "$HERE/checks.py" "$OUT_HOST"
 echo "== verify"
 run geniesim3 python3 /workspace/.lab-gen/verify.py "$OUT_CONT"
 rm -rf "$HERE/../instances"

@@ -73,7 +73,7 @@ in the adapter or the program:
 |---|---|---|
 | `'PiEnv' object has no attribute 'init_arm'` on a new sub-task | the benchmark keys robot init states by sub-task name in `robot_init_states.py` (`TASK_INFO_DICT`), and scoring steps in `eval_utils.py` | `task_info.json` with `{"like": "<shipped task>"}` in the task folder; `hooks/sitecustomize.py` fills both tables at import |
 | `geniesim_generator`'s `app.py` does not run as its docs say | the container has `python3` with `pxr` but no `python`; `mitsuba`, `pygraphviz`, `jaxtyping` and `transforms3d` are installed nowhere; `app.py` imports `LLM_RESULT.py` from its own directory; it writes asset paths relative to a directory that only exists in the deployed layout, snapshots its template instead of the program it ran, and writes under the generator's own `src/benchmark/`, not the benchmark package | `adapter/tasks/place_object_relative_position_lab/gen/generate.sh`: shims for the missing packages, `runpy` from a staging directory, a post-process that makes payload paths absolute and the table kinematic, a copy into the benchmark package |
-| The splat background cannot be checked without Isaac Sim | the NuRec volume renders only in the container | the G1 task uses the same background and table; run the benchmark on the task once and look at `--debug` snapshots |
+| A random layout passes `spec.py`'s own strip check and fails `verify.py` | `verify.py` measures the target strip on object extents, the layout on centres | the layout's strip is widened by a 6 cm half-size (`STRIP` in `spec.py`) |
 | A panorama from `geniesim_world` never loads | this Genie Sim version loads only backgrounds shipped as USD + `.nurec`; PanoRecon's Gaussian PLYs have no loader yet | build layouts on the pack's backgrounds |
 
 ## BEHAVIOR-1K: the PyRoki runner
@@ -87,6 +87,7 @@ in the adapter or the program:
 | The straight joint interpolation sweeps the object | no collision checking between PyRoki's IK and the interpolation planner | a waypoint over the table edge (in the campaign's skill library) |
 | The base drives off the scene | the traversability map marks an opening with no floor as free | a seen-floor guard on candidate poses (in the skill library) |
 | Exit status 139 after `outcome.json` exists | Isaac Sim segfaults on interpreter teardown | a complete run; judge by `outcome.json` |
+| `collect_behavior.sh` stops at once with "another Isaac Sim process is running" | its `pgrep -f` matched a shell whose command line mentioned the process names (the shell that launched it) | the check matches python processes only; launch the collector with `setsid nohup` so it outlives the shell |
 
 ## ASPIRE itself
 

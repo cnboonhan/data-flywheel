@@ -9,7 +9,7 @@ def "World"
 {
     def "Objects"
     {
-        def Xform "benchmark_table_ad18a193" (
+        def Xform "benchmark_table_88267de2" (
             payload = @/geniesim_assets/objects/benchmark/table/benchmark_table_019/Aligned.usda@
         )
         {
@@ -24,7 +24,7 @@ def "World"
             }
         }
 
-        def Xform "benchmark_bowl_sponge_ef7c9c10" (
+        def Xform "benchmark_bowl_sponge_9e484bd0" (
             payload = @/geniesim_assets/objects/benchmark/bowl_sponge/benchmark_bowl_sponge_000/Aligned.usda@
         )
         {
@@ -34,7 +34,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_cup_bf43cdd5" (
+        def Xform "benchmark_cup_d5a427c3" (
             payload = @/geniesim_assets/objects/benchmark/cup/benchmark_cup_105/Aligned.usda@
         )
         {
@@ -44,7 +44,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_mouse_5cd4f0b8" (
+        def Xform "benchmark_mouse_e12cbe08" (
             payload = @/geniesim_assets/objects/benchmark/mouse/benchmark_mouse_000/Aligned.usda@
         )
         {
@@ -54,7 +54,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_lemon_791ed351" (
+        def Xform "benchmark_lemon_89893153" (
             payload = @/geniesim_assets/objects/benchmark/lemon/benchmark_lemon_030/Aligned.usda@
         )
         {
@@ -64,7 +64,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_rubik_cube_672e44a9" (
+        def Xform "benchmark_rubik_cube_7da3d3a0" (
             payload = @/geniesim_assets/objects/benchmark/rubik_cube/benchmark_rubik_cube_001/Aligned.usda@
         )
         {

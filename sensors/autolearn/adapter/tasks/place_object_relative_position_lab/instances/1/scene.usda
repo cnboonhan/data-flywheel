@@ -9,7 +9,7 @@ def "World"
 {
     def "Objects"
     {
-        def Xform "benchmark_table_2513adc9" (
+        def Xform "benchmark_table_520bd50a" (
             payload = @/geniesim_assets/objects/benchmark/table/benchmark_table_019/Aligned.usda@
         )
         {
@@ -24,7 +24,7 @@ def "World"
             }
         }
 
-        def Xform "benchmark_lemon_15fc11dd" (
+        def Xform "benchmark_lemon_582d9d46" (
             payload = @/geniesim_assets/objects/benchmark/lemon/benchmark_lemon_030/Aligned.usda@
         )
         {
@@ -34,7 +34,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_orange_74881338" (
+        def Xform "benchmark_orange_949d4071" (
             payload = @/geniesim_assets/objects/benchmark/orange/benchmark_orange_004/Aligned.usda@
         )
         {
@@ -44,7 +44,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_cup_89f47d28" (
+        def Xform "benchmark_cup_8332185e" (
             payload = @/geniesim_assets/objects/benchmark/cup/benchmark_cup_105/Aligned.usda@
         )
         {
@@ -54,7 +54,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_medicine_bottle_60f75b90" (
+        def Xform "benchmark_medicine_bottle_fd3757fc" (
             payload = @/geniesim_assets/objects/benchmark/medicine_bottle/benchmark_medicine_bottle_000/Aligned.usda@
         )
         {
@@ -64,7 +64,7 @@ def "World"
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }
 
-        def Xform "benchmark_bowl_sponge_fbbab303" (
+        def Xform "benchmark_bowl_sponge_3e03ff6c" (
             payload = @/geniesim_assets/objects/benchmark/bowl_sponge/benchmark_bowl_sponge_000/Aligned.usda@
         )
         {

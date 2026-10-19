@@ -23,15 +23,16 @@ flowchart LR
    ```bash
    cd sensors/autolearn && ./setup.sh benchmark g2op_spatial_place_object_relative_position_lab
    ```
-3. Regenerate the instances (CPU only, in the `geniesim3` container; nothing is downloaded). Object ids are
-   re-drawn each run, so `checks.py` and `verify.py` run again inside it; then re-install:
+3. Regenerate the instances (CPU only, in the `geniesim3` container; nothing is downloaded): the four hand-written
+   layouts plus seeded random ones up to `LAB_INSTANCES` (objects from the pool, positions in the band, pairs ≥ 0.20 m
+   apart, the target strip free). Object ids are re-drawn each run, so `checks.py` and `verify.py` run again; then re-install:
    ```bash
-   sensors/autolearn/adapter/tasks/place_object_relative_position_lab/gen/generate.sh
+   LAB_INSTANCES=12 sensors/autolearn/adapter/tasks/place_object_relative_position_lab/gen/generate.sh
    ```
 
 ## place_object_relative_position_lab
 
-Four tabletop instances on the asset pack's Gaussian-splat background (`background/laboratory/laboratory_3`,
+Tabletop instances (four hand-written, the rest seeded random; twelve installed) on the asset pack's Gaussian-splat background (`background/laboratory/laboratory_3`,
 a NuRec volume), G2 omnipicker, one instruction each: "place the A to the left/right/top/bottom of the B",
 scored like the shipped `place_object_relative_position` (reach A within 300 steps, then A `RelativePosition`
 B and `aligned_x|0.1` or `aligned_y|0.1` within 600 steps). Why every number is what it is:
