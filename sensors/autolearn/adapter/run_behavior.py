@@ -18,6 +18,7 @@ Run it through `cap-harness-behavior.sh`, which sandboxes it like the LIBERO loo
         --max-steps 6000 --camera-width 512 --camera-height 512
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -128,6 +129,31 @@ if GRACE > 0:
     BehaviorAdapter.check_success = lambda self: _check(self) or bool(
         getattr(getattr(self._protocol_evaluator, "inner", None), "success", False))
 
+# Whole-body record: ASPIRE's per-tick episode carries the arms and grippers only, while the base drives and the torso
+# leans through behavior.* calls; a VLA trained without them never learns to drive or lean. Each tick appends the base
+# pose in odom, the base and torso joint readings and targets to episode/whole_body.jsonl beside steps.jsonl.
+_step = BehaviorAdapter.step
+
+
+def step_recording_whole_body(self, action):
+    result = _step(self, action)
+    root = getattr(self._run_observer, "root", None)
+    if root is not None and self._env is not None:
+        try:
+            layout = self.layout
+            q = np.asarray(self.robot.get_joint_positions(), dtype=float)
+            target = np.asarray(self._q_target, dtype=float)
+            row = {"tick": int(self._elapsed_steps), "base_pose_odom": [float(v) for v in self.base_pose_odom()],
+                   "base_q": q[layout.base].tolist(), "base_target": target[layout.base].tolist(),
+                   "torso_q": q[layout.trunk].tolist(), "torso_target": target[layout.trunk].tolist()}
+            with open(Path(root) / "episode" / "whole_body.jsonl", "a") as f:
+                f.write(json.dumps(row) + "\n")
+        except Exception as exc:  # recording must never break a run
+            print(f"whole-body record skipped: {exc}", file=sys.stderr)
+    return result
+
+
+BehaviorAdapter.step = step_recording_whole_body
 cap_run.CapApi = PyRokiCapApi
 BehaviorAdapter.planner = lambda self: NoBasePlan()
 sys.exit(main())

@@ -7,11 +7,16 @@ A run's `episode/steps.jsonl` holds one record per 30 Hz tick (the arm targets s
 tick each frame was taken at. Features follow the Galaxea layout the flywheel's adapter reads, with the R1 Pro's
 7-joint arms: `observation.images.{head,left_wrist,right_wrist}`, `observation.state`/`action` `.{left_arm,
 right_arm}`, `.{left,right}_gripper` (ASPIRE's 0 closed … 1 open), `observation.state.{left,right}_ee_pose`
-([x y z qx qy qz qw] in `odom`), the task language as the task. geniesim_to_xpolicylab.py then writes xspark.
+([x y z qx qy qz qw] in `odom`), the task language as the task, and the whole body from `episode/whole_body.jsonl`
+(run_behavior.py): `observation.state.base_pose` (x, y, yaw in odom), `observation.state.torso`, `action.torso`
+(targets), `action.base_velocity` (vx, vy, wz in the base frame, from the next frame's pose). Runs recorded before
+that file existed are skipped unless `--arms-only`. geniesim_to_xpolicylab.py then writes xspark.
 """
 
 import argparse
 import json
+import math
+import os
 import shutil
 from pathlib import Path
 
@@ -29,6 +34,8 @@ p.add_argument("collect_dir", type=Path, help="a collect_behavior.sh output dir 
 p.add_argument("--out", type=Path, required=True)
 p.add_argument("--all", action="store_true", help="keep failed runs too")
 p.add_argument("--repo-id", default=None)
+p.add_argument("--arms-only", action="store_true",
+               help="keep runs recorded before episode/whole_body.jsonl existed (no base or torso features)")
 args = p.parse_args()
 
 
@@ -36,11 +43,13 @@ def arr(v):
     return np.asarray(v["$array_inline"] if isinstance(v, dict) else v, dtype=np.float32)
 
 
-runs = sorted(d.parent for d in args.collect_dir.rglob("outcome.json"))
+runs = sorted(Path(dp) for dp, dn, fs in os.walk(args.collect_dir, followlinks=True) if "outcome.json" in fs)   # follows links
 kept = []
 for r in runs:
     o = json.loads((r / "outcome.json").read_text())
-    if (args.all or o.get("task_success")) and (r / "episode/steps.jsonl").exists() and (r / "media/videos/head.mp4").exists():
+    whole = (r / "episode/whole_body.jsonl").exists()
+    if (args.all or o.get("task_success")) and (r / "episode/steps.jsonl").exists() and (r / "media/videos/head.mp4").exists() \
+            and (whole or args.arms_only):
         kept.append(r)
 print(f"{len(kept)} of {len(runs)} runs" + ("" if args.all else " (successful)"), flush=True)
 if not kept:
@@ -60,6 +69,11 @@ for group in ("observation.state", "action"):
         features[f"{group}.{side}_gripper"] = {"dtype": "float32", "shape": (1,), "names": [f"{side}_gripper"]}
 for side in ARMS.values():
     features[f"observation.state.{side}_ee_pose"] = {"dtype": "float32", "shape": (7,), "names": ["x", "y", "z", "qx", "qy", "qz", "qw"]}
+if not args.arms_only:     # the whole body: base pose in odom, base velocity in the base frame, torso joints
+    features["observation.state.base_pose"] = {"dtype": "float32", "shape": (3,), "names": ["x", "y", "yaw"]}
+    features["observation.state.torso"] = {"dtype": "float32", "shape": (4,), "names": [f"torso_{i}" for i in range(4)]}
+    features["action.torso"] = {"dtype": "float32", "shape": (4,), "names": [f"torso_{i}" for i in range(4)]}
+    features["action.base_velocity"] = {"dtype": "float32", "shape": (3,), "names": ["vx", "vy", "wz"]}
 
 if args.out.exists():
     shutil.rmtree(args.out)
@@ -70,6 +84,11 @@ for r in kept:
     task = json.loads((r / "episode/reset.json").read_text())["metadata"]["language"]
     records = [json.loads(l) for l in (r / "episode/steps.jsonl").open() if l.strip()]
     videos = {cam: frames(r / f"media/videos/{cam}.mp4") for cam in CAMERAS}
+    body = {}
+    if not args.arms_only:
+        for l in (r / "episode/whole_body.jsonl").open():
+            row = json.loads(l)
+            body[row["tick"]] = row
     n = min(len(v) for v in videos.values())
     if n != -(-len(records) // VIDEO_EVERY):      # not exactly every third tick: spread the frames over the records
         picks = np.linspace(0, len(records) - 1, n).round().astype(int)
@@ -92,6 +111,21 @@ for r in kept:
             pose = st["end_effector_poses"][arm]
             wxyz = arr(pose["quaternion_wxyz"])
             frame[f"observation.state.{side}_ee_pose"] = np.concatenate([arr(pose["position"]), wxyz[[1, 2, 3, 0]]]).astype(np.float32)
+        if not args.arms_only:
+            tick = int(rec.get("step_index", k + 1))
+            b = body.get(tick) or body[min(body, key=lambda t: abs(t - tick))]
+            nxt_tick = int(records[min(k + VIDEO_EVERY, len(records) - 1)].get("step_index", tick + VIDEO_EVERY))
+            b2 = body.get(nxt_tick) or body[min(body, key=lambda t: abs(t - nxt_tick))]
+            x, y, yaw = b["base_pose_odom"]
+            x2, y2, yaw2 = b2["base_pose_odom"]
+            dt = max(nxt_tick - tick, 1) / 30.0          # the 30 Hz control period
+            dx, dy = x2 - x, y2 - y                     # the next frame's motion, expressed in the base frame
+            vx, vy = (math.cos(yaw) * dx + math.sin(yaw) * dy) / dt, (-math.sin(yaw) * dx + math.cos(yaw) * dy) / dt
+            wz = math.atan2(math.sin(yaw2 - yaw), math.cos(yaw2 - yaw)) / dt
+            frame["observation.state.base_pose"] = np.asarray([x, y, yaw], dtype=np.float32)
+            frame["observation.state.torso"] = np.asarray(b["torso_q"], dtype=np.float32)
+            frame["action.torso"] = np.asarray(b["torso_target"], dtype=np.float32)
+            frame["action.base_velocity"] = np.asarray([vx, vy, wz], dtype=np.float32)
         ds.add_frame(frame, task=task)
     ds.save_episode()
     print(f"{r.parent.parent.name}/{r.parent.name}: {n} frames, {task!r}", flush=True)
