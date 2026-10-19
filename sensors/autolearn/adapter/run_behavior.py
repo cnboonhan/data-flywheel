@@ -32,6 +32,7 @@ import cap_harness.run as cap_run  # noqa: E402
 from cap_harness.api import CapApi  # noqa: E402
 from cap_harness.artifacts import TracedProvider  # noqa: E402
 from cap_harness.behavior.adapter import BehaviorAdapter, _pose_matrix  # noqa: E402
+from cap_harness.behavior.registry import BEHAVIOR_TASKS, BehaviorTaskMetadata, BehaviorTaskRegistry  # noqa: E402
 from cap_harness.cli import main  # noqa: E402
 from cap_harness.contracts import MotionStrategy, RobotPlanningContext  # noqa: E402
 from cap_harness.errors import ApiError, ErrorCode  # noqa: E402
@@ -154,6 +155,22 @@ def step_recording_whole_body(self, action):
 
 
 BehaviorAdapter.step = step_recording_whole_body
+# Pickup tasks beyond ASPIRE's two, registered here so the submodule stays untouched. Each is a BEHAVIOR-1K activity with
+# task instances on disk, reduced to a pickup of one object of its scope (ASPIRE's pickup witness: held and >= 5 mm up).
+EXTRA_TASKS = (
+    BehaviorTaskMetadata(
+        task_name="picking_up_cup",
+        activity_name="set_up_a_coffee_station_in_your_kitchen",   # starts with the cup on a kitchen countertop
+        language="pick up the cup",
+        target_scope="coffee_cup.n.01_1",
+        target_prompt="coffee cup",
+        support_prompt="countertop",
+        scene_model="house_single_floor",
+        load_room_types=("kitchen",),
+    ),
+)
+_registry_init = BehaviorTaskRegistry.__init__
+BehaviorTaskRegistry.__init__ = lambda self, tasks=BEHAVIOR_TASKS + EXTRA_TASKS: _registry_init(self, tasks)
 cap_run.CapApi = PyRokiCapApi
 BehaviorAdapter.planner = lambda self: NoBasePlan()
 sys.exit(main())
