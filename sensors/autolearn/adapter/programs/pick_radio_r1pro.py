@@ -1,11 +1,13 @@
 # Pick up the red radio on BEHAVIOR-1K `turning_on_radio` with the Galaxea R1 Pro (run through cap-harness-behavior.sh).
-# Learned, not hand-written: per-seed ASPIRE campaign policies (seeds 26, 27) generalized by a coding agent over task
-# instances 36-45 in 3 versions; held the radio on 8 of 10 of those instances. Collected with adapter/collect_behavior.sh.
+# Learned, not hand-written: per-seed ASPIRE campaign policies (seeds 26, 27) generalized by coding agents over task
+# instances 36-57 in 16 versions; held the radio on 9 of 12 fresh instances (58-69). Collected with
+# adapter/collect_behavior.sh. Grasps an upright radio by its wire handle, then lifts in two 3 cm steps.
 # policy.py - one R1 Pro policy for BEHAVIOR-1K turning_on_radio on any instance (generalization dev).
 # Grown from seed 27's campaign policy (itself grown from seed 26's); every pose comes from perception at run time.
 import math
 
 report = {"stage": "start"}
+known = {}      # the last accepted radio centre (see RADIO_JUMP_M)
 
 
 # Code block 1: sweep the head camera in place until the radio segments confidently; collect the floor seen on the way.
@@ -298,6 +300,7 @@ def reach_map(tag):
 if report.get("found"):
     radio_c = robust_crop(found_cloud.point_cloud, 0.2)
     rg = describe("radio cropped(0.2)", radio_c)
+    known["xy"] = [float(rg.pose.position[0]), float(rg.pose.position[1])]
     report["radio_center"] = fmt(rg.pose.position)
     report["radio_extents"] = fmt(rg.extents)
     rz_top = max(float(p[2]) for p in radio_c.points)
@@ -404,14 +407,67 @@ def edge_distance(support, ox, oy, ang):
     return best
 
 
+# Last accepted radio centre (odom xy): a later read further than RADIO_JUMP_M from it is another red object.
+# RADIO_JUMP_M 0.4: generalization dev v05, collection seed 56: after the drive the best "red radio" mask was a red
+# object on a shelf 2.9 m away (31 points at 1.17 m) and the policy spent the episode on it; the real radio moves at most
+# a few cm between reads unless knocked over (~0.15 m). Untuned beyond that.
+RADIO_JUMP_M = 0.4
+BACKUP_M = 0.25      # see the back-up after the drive
+# CAND_MIN_SCORE 0.05: candidate masks considered when the best one is implausible; the real radio's mask scored
+# 0.06-0.70 from the head across dev seeds 46-57, garbage boxes 0.002-0.03. Untuned.
+CAND_MIN_SCORE = 0.05
+
+
+def cloud_plausible(cloud):
+    """(ok, cx, cy, zmed) of a median-cropped cloud: near the last accepted centre and below REACH_MAX_Z."""
+    pts = cloud.points
+    if len(pts) < 20:
+        return False, 0.0, 0.0, 0.0
+    cx = median_of([float(p[0]) for p in pts])
+    cy = median_of([float(p[1]) for p in pts])
+    cz = median_of([float(p[2]) for p in pts])
+    ok = cz <= REACH_MAX_Z
+    if "xy" in known and math.hypot(cx - known["xy"][0], cy - known["xy"][1]) > RADIO_JUMP_M:
+        ok = False
+    return ok, cx, cy, cz
+
+
 def localize_radio(tag):
-    """Segment + localize the radio from the head camera, median-cropped; returns (geometry, cloud) or (None, None)."""
-    loc = localize_object(str(meta.get("target_prompt") or "red radio"), camera_name="head")
-    if not loc.ok:
+    """Segment + localize the radio from the head camera, median-cropped; returns (geometry, cloud) or (None, None).
+    When the best mask is implausible (far from the last accepted centre or too high), take the candidate mask whose
+    cloud is plausible and nearest that centre."""
+    tp = str(meta.get("target_prompt") or "red radio")
+    loc = localize_object(tp, camera_name="head")
+    cloud = None
+    if loc.ok:
+        cloud = robust_crop(loc.point_cloud, 0.2)
+        okp, cx0, cy0, cz0 = cloud_plausible(cloud)
+        if not okp:
+            print(tag, "best mask implausible: centre", round(cx0, 3), round(cy0, 3), round(cz0, 3), "known", fmt(known.get("xy", [])))
+            cloud = None
+    else:
         print(tag, "localize failed:", loc.error.message if loc.error else None)
+    if cloud is None and "xy" in known:
+        seg = segment_text("head", tp)
+        best, best_d = None, None
+        if seg.ok:
+            for s in seg.segmentations:
+                if float(s.score) < CAND_MIN_SCORE:
+                    continue
+                try:
+                    pc = robust_crop(mask_to_point_cloud(s, "head", target_frame=rs.base_frame), 0.2)
+                except ValueError:
+                    continue
+                okp, cx1, cy1, cz1 = cloud_plausible(pc)
+                dd = math.hypot(cx1 - known["xy"][0], cy1 - known["xy"][1])
+                print(tag, "candidate score", round(float(s.score), 3), "centre", round(cx1, 3), round(cy1, 3), round(cz1, 3), "dist", round(dd, 3), "ok", okp)
+                if okp and (best_d is None or dd < best_d):
+                    best, best_d = pc, dd
+        cloud = best
+    if cloud is None:
         return None, None
-    cloud = robust_crop(loc.point_cloud, 0.2)
     g = describe(tag + " radio cropped", cloud)
+    known["xy"] = [float(g.pose.position[0]), float(g.pose.position[1])]
     return g, cloud
 
 
@@ -473,6 +529,21 @@ if report.get("found") and sup.ok and cands:
     report["base_after_nav"] = fmt([bx1, by1, byaw1])
     report["nav_err_m"] = round(math.hypot(bx1 - cx, by1 - cy), 3)
     rg2, radio_c2 = localize_radio("after nav")
+    # BACKUP_M 0.25: the head camera does not see a radio much closer than ~0.6 m at table height (collection seed 56: the
+    # ring pose 0.6 m away put it under the image's bottom edge and the policy stopped there); back straight up onto seen
+    # floor and look again, at most twice. Untuned.
+    for kb in range(2):
+        if rg2 is not None:
+            break
+        bxb = bx1 - BACKUP_M * math.cos(byaw1)
+        byb = by1 - BACKUP_M * math.sin(byaw1)
+        if not floor_near(bxb, byb):
+            print("radio not seen after nav; no seen floor behind to back up onto")
+            break
+        nav("back up " + str(kb), bxb, byb, byaw1, "servo", max_steps=300)
+        bx1, by1, byaw1 = behavior.get_base_pose()
+        rg2, radio_c2 = localize_radio("after back up " + str(kb))
+        report["backed_up"] = kb + 1
     if rg2 is not None:
         report["radio_center2"] = fmt(rg2.pose.position)
         report["radio_top_z2"] = round(max(float(p[2]) for p in radio_c2.points), 3)
@@ -526,15 +597,35 @@ def same_axis_quats(q_ref):
 MAX_JOINT_JUMP = 1.0
 
 
-def reach_pose(tag, x, y, z, q_ref, tol, steps):
-    """move_to_pose; when its own (current-seeded) IK is refused (generalization dev v01 seed 40: every rung's descent was
+# SMALL_JUMP 0.6 rad: the largest joint change a move near the radio may make. move_to_pose solves IK from the current
+# joints (deterministic, the same as solve_ik seeded there) and interpolates straight in joint space, so a far solution
+# swings the hand: generalization dev v05, collection seed 49: a 2 cm rung-pregrasp move took j5 from -0.35 to 1.77,
+# the hand swung 19 cm out and back down through the radio and knocked it over. Rung moves need < 0.3; untuned.
+SMALL_JUMP = 0.6
+# DESCENT_STEP_M 0.03: the Cartesian step of the approach-end descent (see there); a 3 cm step needs < 0.3 rad. Untuned.
+DESCENT_STEP_M = 0.03
+# OVER_STEP_M 0.05: the Cartesian step from the lift to the over point (see there); untuned.
+OVER_STEP_M = 0.05
+
+
+def reach_pose(tag, x, y, z, q_ref, tol, steps, max_jump=SMALL_JUMP):
+    """move_to_pose when its predicted IK solution (seeded at the current joints) is within max_jump of the current
+    joints; otherwise, or when its own IK is refused (generalization dev v01 seed 40: every rung's descent was
     `ik_unreachable`, residual 1.3 cm / 9.3 deg, and the hand never left the pregrasp), take the nearest current-seeded
     IK solution over orientations with the same finger line and drive it with move_to_joints; failing that, stop 2-6 cm
     higher. Returns the last ExecutionResult."""
-    r = move_to_pose(Pose(position=[x, y, z], quaternion_wxyz=q_ref, frame=st.base_frame), tolerance=tol, max_steps=steps, arm=arm)
-    if r.ok or terminated_by(r) or "planner" not in str(r.status).lower():
-        return r
     cur = [float(v) for v in get_robot_state().joint_positions[arm]]
+    pose0 = Pose(position=[x, y, z], quaternion_wxyz=q_ref, frame=st.base_frame)
+    ik0 = solve_ik(pose0, seed_joints=cur, arm=arm)
+    j0 = ik_joints(ik0) if ik0.ok else None
+    jump0 = max(abs(a - b) for a, b in zip(j0, cur)) if j0 is not None else None
+    r = None
+    if j0 is None or jump0 <= max_jump:
+        r = move_to_pose(pose0, tolerance=tol, max_steps=steps, arm=arm)
+        if r.ok or terminated_by(r) or "planner" not in str(r.status).lower():
+            return r
+    else:
+        print(tag, "predicted IK jump", round(jump0, 2), "rad > ", max_jump, ": nearest same-line solution instead")
     for dz in (0.0, 0.02, 0.04, 0.06):
         best, best_d = None, None
         for qq in same_axis_quats(q_ref):
@@ -546,14 +637,21 @@ def reach_pose(tag, x, y, z, q_ref, tol, steps):
                 continue
             dmax = max(abs(a - b) for a, b in zip(jj, cur))
             m = bounds_margin(arm, jj)
-            if dmax <= MAX_JOINT_JUMP and (m is None or m > 0.02) and (best_d is None or dmax < best_d):
+            if dmax <= max_jump and (m is None or m > 0.02) and (best_d is None or dmax < best_d):
                 best, best_d = jj, dmax
         if best is not None:
             r = move_to_joints(best, tolerance=0.02, max_steps=steps, arm=arm)
             hp = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
             print(tag, "via joints: dz", dz, "jump", round(best_d, 2), "ok:", r.ok, "status:", str(r.status), "hand:", fmt(hp), "target z", round(z, 3))
             return r
-    print(tag, "no current-seeded IK within", MAX_JOINT_JUMP, "rad at any height")
+    print(tag, "no current-seeded IK within", max_jump, "rad at any height")
+    hz_now = float(get_robot_state().end_effector_poses[arm].position[2])
+    if max_jump < MAX_JOINT_JUMP and z >= hz_now - 0.01:
+        # a move up or level may change arm family (up to MAX_JOINT_JUMP): with SMALL_JUMP alone the arm stranded after
+        # a fallback rung and every later rung pregrasp was refused (generalization dev v10, dev seed 36)
+        return reach_pose(tag + " (wider)", x, y, z, q_ref, tol, steps, max_jump=MAX_JOINT_JUMP)
+    if r is None:      # the predicted solution was refused and nothing near exists: hold still rather than swing
+        r = move_to_joints(cur, tolerance=0.02, max_steps=5, arm=arm)
     return r
 
 
@@ -612,13 +710,17 @@ DZ_PRE = 0.04
 # DZ_APPROACH 0.08: where the joint-space approach legs end (the hover reads and the ladder then descend by verified
 # Cartesian moves). Generalization dev v01 seed 39: the over and pregrasp joint targets landed 3.6-3.8 cm below the poses
 # they were solved for (joint error 0.006 rad: an IK residual), and the pregrasp at top + 0.04 hit the handle and tipped
-# the radio; 0.08 keeps that error clear of the top. Untuned.
-DZ_APPROACH = 0.08
+# the radio; 0.08 kept that error clear of the top. 0.10 since v05: the head under-reads the thin handle by up to 4 cm
+# (collection seed 52: head top 0.632, wrist top 0.672) and 52's approach end at head top + 0.08 touched the handle. Untuned.
+DZ_APPROACH = 0.10
 DZ_OVER = 0.15
 DZ_GRASP = -0.09
-# DZ_HANDLE -0.03: fingertips 3 cm under the top read, below the handle's wires and above the body top (v02 seed 45: a
-# descent met the body 5.3 cm under the top read). Untuned.
-DZ_HANDLE = -0.03
+# DZ_HANDLE_GRIP 0.02: the hand this far under the top read for a handle grasp: collection seeds 46/50 held the handle
+# with the hand stopped at top - 0.016 (their descents fell back 6 cm high by chance); deeper puts the fingertips on the
+# body top beside the handle. HANDLE_MAX_SHORT 0.05: a top read narrower than this is the handle bar (upright reads
+# 0.025-0.033 on seeds 46-57, a radio lying face up 0.097-0.098). Untuned.
+DZ_HANDLE_GRIP = 0.02
+HANDLE_MAX_SHORT = 0.05
 
 
 def oriented(ref_q, byaw, yaw_deg, pitch_deg):
@@ -663,8 +765,13 @@ if report.get("nav_ok"):
     print("hop forward", round(hop, 3), "lateral", round(lat_shift, 3), "for arm", side_arm, "floor at target:", floor_near(tx, ty))
     report["hop_lat"] = round(lat_shift, 3)
     if not floor_near(tx, ty):
+        # the hop was measured against the edge at the shifted pose; without the shift it must be re-measured here
+        # (generalization dev v06, collection seed 56: the edge was 0.64 m ahead at the shifted pose and 0.32 m here, the
+        # 0.31 m hop drove the base into the table and the radio fell)
         lat_shift = 0.0
+        hop = max(-0.3, ea - 0.33) if ea < 1.5 else 0.0
         tx, ty = bx1 + hop * math.cos(byaw1), by1 + hop * math.sin(byaw1)
+        print("lateral shift dropped (no seen floor there): hop re-measured", round(hop, 3))
     if abs(hop) > 0.02 or abs(lat_shift) > 0.02:
         r = behavior.navigate_to_pose(tx, ty, byaw1, planner="servo", tolerance_m=0.02, max_steps=400)
         print("hop servo ->", fmt([tx, ty, byaw1]), "ok:", r.ok, "status:", str(r.status), "steps:", r.steps_executed,
@@ -727,10 +834,17 @@ if report.get("nav_ok"):
         j2s = 1.0 if arm == "primary" else -1.0
         seeds = [cur, [0.0] * 7] + [[s1, j2s * 0.3, 0.0, s4, 0.0, 0.0, 0.0] for s1 in (-1.0, -0.5, 0.0, 0.5, 1.0) for s4 in (-0.5, -1.2)]
         out = []
-        for dz in (DZ_APPROACH, DZ_OVER, DZ_GRASP):
+        # the grasp height is the handle's (top - DZ_HANDLE_GRIP) when the head reads a handle bar: the ladder tries the
+        # handle first, and a lean chosen for the body depth found no pregrasp on v07 seed 48 (radio 0.72 m ahead)
+        dz_g = -DZ_HANDLE_GRIP if (rr["short"] <= HANDLE_MAX_SHORT and rr["long"] >= 0.08) else DZ_GRASP
+        for dz in (DZ_APPROACH, DZ_OVER, dz_g):
             best = None
+            # the grasp height must solve without the 30 deg tilts: a lean that reached it only tilted 30 deg left the
+            # wrist-read grasp (1.3 cm nearer) unreachable at every tilt (generalization dev v13, collection seed 55: radio
+            # 0.80 m ahead at lean 0.4; it held at lean 0.6 under v03)
+            tilts_k = (0, -15, 15) if dz == dz_g else (0, -15, 15, -30, 30)
             for sign in (1.0, -1.0):
-                for tilt in (0, -15, 15, -30, 30):
+                for tilt in tilts_k:
                     qq, tf = hand_quat(-sign * math.sin(rr["ang"]), sign * math.cos(rr["ang"]), tilt)
                     pose_c = Pose(position=[rr["gx"], rr["gy"], rr["top"] + dz], quaternion_wxyz=qq, frame=st_base_frame)
                     for sd in seeds:
@@ -807,7 +921,9 @@ if report.get("nav_ok"):
     short_axis = (-math.sin(ang), math.cos(ang))
     long_axis = (math.cos(ang), math.sin(ang))
     # heights from the head-read top (handle included); the grasp never below 3 cm above the radio's lowest points
-    z_pre, z_grasp = top + DZ_APPROACH, max(base_z + 0.03, top + DZ_GRASP)
+    head_handle = bool(short_len <= HANDLE_MAX_SHORT and long_len >= 0.08)      # see lean_margins
+    report["head_handle"] = head_handle
+    z_pre, z_grasp = top + DZ_APPROACH, max(base_z + 0.03, top + (-DZ_HANDLE_GRIP if head_handle else DZ_GRASP))
     print("heights: pre", round(z_pre, 3), "grasp", round(z_grasp, 3), "base_z", round(base_z, 3), "top", round(top, 3))
 
     def terminated_by(r):
@@ -915,6 +1031,7 @@ if report.get("nav_ok"):
             if jj is not None and (pre_m is None or (m is not None and m > pre_m)):
                 pre_j, pre_m, pre_q = jj, m, qq
         q = pre_q
+        pre_tilt = orients[way_q.index(q)][2]
         report["pre_margin"] = pre_m
         print("pregrasp family: orient index", way_q.index(q), "margin", pre_m, "joints", fmt(pre_j, 2) if pre_j else None)
         legs = {}
@@ -923,12 +1040,17 @@ if report.get("nav_ok"):
         if pre_j is not None:
             # 2. over: above the radio, seeded from the pregrasp solution; any orientation, highest reachable height
             over_j, over_m, over_pose = None, None, None
-            for dz in (DZ_OVER, 0.20, 0.10, 0.25, 0.08):     # 0.08 last: a low "over" still beats a straight lift -> pregrasp sweep
-                for qq in way_q:
+            # highest first since v15: the hand crosses to the radio at the lift's height and only then descends in
+            # Cartesian steps; collection seed 55 (v14): an over leg at top + 0.15 swept the upright radio over (0.08
+            # last: a low "over" still beats a straight lift -> pregrasp sweep)
+            for dz in (0.25, 0.20, DZ_OVER, 0.10, 0.08):
+                for qq in [q] + [x for x in way_q if x is not q]:
                     pose_c = Pose(position=[gx, gy, top + dz], quaternion_wxyz=qq, frame=st.base_frame)
                     jj, m = best_ik(pose_c, [pre_j], "over dz " + str(dz) + " orient " + str(way_q.index(qq)))
                     if jj is not None and m is not None and m >= 0.05 and (over_m is None or m > over_m):
                         over_j, over_m, over_pose = jj, m, pose_c
+                    if over_j is not None and qq is q:
+                        break      # the approach orientation itself: no wrist turn on the way down
                 if over_j is not None:
                     break
             # 3. lift: the hanging hand straight up, seeded from the over (or pregrasp) solution
@@ -945,14 +1067,52 @@ if report.get("nav_ok"):
             if lift_j is not None:
                 r, hp = go_joints("lift", lift_j, lift_pose)
                 legs["lift"] = bool(r.ok)
-            if over_j is not None:
+            # lift -> over in Cartesian steps of at most OVER_STEP_M (the first may turn the wrist, at the lift height):
+            # the single joint-space over leg dipped on its way out and knocked the upright radio over (generalization
+            # dev v10, dev seed 36: radio 1.0 m ahead, over leg ended 5 cm low); the solved joint leg stays the fallback
+            hs = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
+            zo = float(over_pose.position[2]) if over_pose is not None else top + DZ_OVER
+            dist = math.sqrt((gx - hs[0]) ** 2 + (gy - hs[1]) ** 2 + (zo - hs[2]) ** 2)
+            nso = max(1, int(math.ceil(dist / OVER_STEP_M)))
+            stepped = True
+            for k in range(1, nso + 1):
+                t = k / float(nso)
+                r = reach_pose("over step " + str(k) + "/" + str(nso), hs[0] + t * (gx - hs[0]), hs[1] + t * (gy - hs[1]), hs[2] + t * (zo - hs[2]),
+                               q, 0.03, 120, max_jump=(MAX_JOINT_JUMP if k == 1 else SMALL_JUMP))
+                if terminated_by(r):
+                    break
+                hk = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
+                if math.hypot(hk[0] - (hs[0] + t * (gx - hs[0])), hk[1] - (hs[1] + t * (gy - hs[1]))) > 0.06:
+                    stepped = False
+                    print("over step", k, "left the line by > 6 cm; joint-space over leg instead")
+                    break
+            legs["over_stepped"] = stepped
+            if not stepped and over_j is not None:
                 r, hp = go_joints("over", over_j, over_pose)
                 legs["over"] = bool(r.ok)
+            # the joint-space legs land off their solved poses after a 0.4 lean (collection seeds 46, 50, 53: lift and
+            # over 4-16 cm off with joint errors <= 0.009 rad), and the joint-interpolated descent from there swept the
+            # radio over on 53: first a verified Cartesian move to the point above the radio, still 15 cm over its top
+            hp = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
+            if math.hypot(hp[0] - gx, hp[1] - gy) > 0.03:
+                r = reach_pose("over fix", gx, gy, max(top + DZ_OVER, hp[2]), q, 0.02, 200, max_jump=MAX_JOINT_JUMP)
+                hp = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
+                print("over fix ok:", r.ok, "status:", str(r.status), "hand:", fmt(hp), "off_xy:", round(math.hypot(hp[0] - gx, hp[1] - gy), 3))
+                legs["over_fix"] = bool(r.ok)
             pre = Pose(position=[gx, gy, z_pre], quaternion_wxyz=q, frame=st.base_frame)
             # the last leg is a verified Cartesian move: joint targets landed 3.6-7.8 cm below their solved poses on v01
             # seeds 39 and 45 (IK residuals <= 1.5 cm, joint errors <= 0.017 rad: the leaned arm sags), and a joint-space
             # approach end that low hit the radio
-            r = reach_pose("approach end", gx, gy, z_pre, q, 0.02, 200)
+            # down to the approach end in Cartesian steps of DESCENT_STEP_M, each a small joint change: one 5 cm move
+            # between two far IK solutions interpolated in joint space dipped 6 cm below its target into an upright
+            # radio and knocked it over (generalization dev v07, collection seed 48)
+            hz0 = float(get_robot_state().end_effector_poses[arm].position[2])
+            nst = max(1, int(math.ceil((hz0 - z_pre) / DESCENT_STEP_M)))
+            for k in range(1, nst + 1):
+                zk = hz0 + (z_pre - hz0) * k / float(nst)
+                r = reach_pose("approach end " + str(k) + "/" + str(nst), gx, gy, zk, q, 0.02, 200)
+                if terminated_by(r):
+                    break
             hp = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
             print("approach end ok:", r.ok, "status:", str(r.status), "hand:", fmt(hp), "off_xy:", round(math.hypot(hp[0] - gx, hp[1] - gy), 3), "off_z:", round(hp[2] - z_pre, 3))
             if not r.ok and not terminated_by(r) and math.hypot(hp[0] - gx, hp[1] - gy) > 0.02:
@@ -995,13 +1155,40 @@ def wrist_read(tag):
     except ValueError:
         print(tag, "wrist crop empty")
         return None
+    # body centre across the radio: the top 3 cm of an upright radio is its wire handle, which need not sit over the
+    # middle of the body (collection seed 57: body rungs centred on the handle line put one finger on the body every
+    # time), so the across-axis centre of the body comes from the band under the handle (top - 0.08 .. top - 0.035,
+    # above the table for a ~0.12 m radio), its 5-95 % span along the short axis. Untuned band.
+    bgx, bgy, bspan = wgx, wgy, None
+    try:
+        band = crop_point_cloud(wcl, [-50.0, -50.0, wtop - 0.08], [50.0, 50.0, wtop - 0.035])
+        if len(band.points) >= 50:
+            sx, sy = -math.sin(wang), math.cos(wang)
+            pr = sorted((float(p[0]) - wgx) * sx + (float(p[1]) - wgy) * sy for p in band.points)
+            lo5, hi95 = pr[len(pr) // 20], pr[(19 * len(pr)) // 20]
+            bspan = hi95 - lo5
+            mid = 0.5 * (lo5 + hi95)
+            bgx, bgy = wgx + mid * sx, wgy + mid * sy
+    except ValueError:
+        pass
+    box = None
+    try:
+        box = fmt(wloc.segmentation.box_xyxy, 0)
+    except (AttributeError, TypeError):
+        box = None
     print(tag, "wrist: centre", round(wgx, 3), round(wgy, 3), "top", round(wtop, 3), "base", round(wbase, 3), "long deg", round(math.degrees(wang), 1),
           "long", round(wlong, 3), "short", round(wshort, 3), "n_top", len(wtc.points), "n_all", len(wcl.points),
-          "minus head centre:", round(wgx - gx, 3), round(wgy - gy, 3))
-    return {"cx": wgx, "cy": wgy, "top": wtop, "base": wbase, "ang": wang, "long": wlong, "short": wshort, "n": len(wtc.points)}
+          "minus head centre:", round(wgx - gx, 3), round(wgy - gy, 3), "| body band centre", round(bgx, 3), round(bgy, 3),
+          "span", round(bspan, 3) if bspan is not None else None, "offset from top centre", round(math.hypot(bgx - wgx, bgy - wgy), 3), "| box", box)
+    return {"cx": wgx, "cy": wgy, "top": wtop, "base": wbase, "ang": wang, "long": wlong, "short": wshort, "n": len(wtc.points),
+            "bx": bgx, "by": bgy, "bspan": bspan}
 
 
 JAW_MIN = 0.015
+# JAW_MAX 0.97: a jaw at or above this has nothing between the fingers' pads (fully open reads 1.0). Was 0.92 ("jammed
+# open"): collection seeds 55 and 57 closed to 0.928-0.96 with the fingers squeezing the body at its full width and never
+# tried the lift; the body is about as wide as the open jaw. Untuned.
+JAW_MAX = 0.97
 
 
 def probe(tag, px, py, q_use, zp, zg):
@@ -1022,15 +1209,20 @@ def probe(tag, px, py, q_use, zp, zg):
     hz = float(st2.end_effector_poses[arm].position[2])
     out["descent_ok"] = bool(r.ok)
     out["stopped_above"] = round(hz - zg, 3)          # > 0.02 means the fingers met something before the target height
+    out["hand"] = fmt(st2.end_effector_poses[arm].position)
     rc = close_gripper(arm=arm)
     out["jaw"] = round(float(get_robot_state().gripper_positions[arm]), 3)
     out["terminated"] = ""
     # jaw bands (normalized, 0 closed / 1 open): closing on air reads 0.000-0.003 and a handle pinch 0.12-0.28 (seed 26
-    # attempts 13/15, seed-26 pilot 41), so JAW_MIN 0.015 sits between them; > 0.92 is jammed open. Untuned beyond that.
-    if JAW_MIN < out["jaw"] < 0.92:
+    # attempts 13/15, seed-26 pilot 41), so JAW_MIN 0.015 sits between them; see JAW_MAX for the open end.
+    if JAW_MIN < out["jaw"] < JAW_MAX:
         hp2 = [float(v) for v in get_robot_state().end_effector_poses[arm].position]
-        # a slow 6 cm IK lift first: the witness latches at 5 mm, and the 0.2 rad un-lean (a 17 cm swing) shook a pinch loose
-        r = reach_pose("rung lift", hp2[0], hp2[1], hp2[2] + 0.06, q_use, 0.02, 120)
+        # a slow IK lift first, in two 3 cm steps: the witness latches at 5 mm, the 0.2 rad un-lean (a 17 cm swing) shook a
+        # pinch loose, and one 6 cm lift at the reach limit pulled a shallow handle pinch out (generalization dev v11, dev
+        # seed 36: jaw 0.367 -> 0.057)
+        r = reach_pose("rung lift", hp2[0], hp2[1], hp2[2] + 0.03, q_use, 0.02, 120)
+        if not terminated_by(r):
+            r = reach_pose("rung lift 2", hp2[0], hp2[1], hp2[2] + 0.06, q_use, 0.02, 120)
         st3 = get_robot_state()
         out["ik_lift_hand_z"] = round(float(st3.end_effector_poses[arm].position[2]), 3)
         out["jaw_after_ik_lift"] = round(float(st3.gripper_positions[arm]), 3)
@@ -1058,6 +1250,11 @@ def probe(tag, px, py, q_use, zp, zg):
 # 37: four hover reads walked 0.08 -> 0.15 -> 0.22 -> 0.24 m away and the ladder closed on the table beside the radio;
 # seed 26 attempt 10 measured a true head bias of 0.11 m, so the guard sits just under it). Untuned.
 WRIST_MAX_DEV = 0.10
+# BACKOFF_M 0.06: the base step back when the ladder's grasp height has no IK (see the ladder); untuned.
+BACKOFF_M = 0.06
+# BACKOFF_MAX_FWD_M 0.75: back off only when the radio is nearer than this (seed 48: 0.69 m, too near; seed 55: 0.80 m,
+# where backing off made it worse); untuned.
+BACKOFF_MAX_FWD_M = 0.75
 
 if report.get("pregrasp_ok") and chosen is not None:
     w1 = wrist_read("w1")
@@ -1065,6 +1262,7 @@ if report.get("pregrasp_ok") and chosen is not None:
         print("w1 rejected: off the head centre by", round(math.hypot(w1["cx"] - gx, w1["cy"] - gy), 3))
         w1 = None
     w = w1
+    hover_reads = []
     if w is not None:
         # hover above the wrist centre and read again until the centre stops moving (seed 26 attempt 12: a single read saw
         # only part of the top face), at most three times, never past WRIST_MAX_DEV from the head centre
@@ -1089,8 +1287,18 @@ if report.get("pregrasp_ok") and chosen is not None:
             shift = math.hypot(wn["cx"] - w["cx"], wn["cy"] - w["cy"])
             print("hover read", it, "shift:", round(shift, 3))
             w = wn
+            hover_reads.append(wn)
             if shift < 0.01:
                 break
+        # the ladder centre is the mean of the hover reads, not the last one: generalization dev v15, dev seed 40: the
+        # reads from successive hovers (each a slightly different wrist tilt) went 0.504 -> 0.487 -> 0.443 in x, and
+        # every handle rung at the last one closed on air
+        if len(hover_reads) >= 2:
+            n_h = float(len(hover_reads))
+            w = dict(w)
+            for key in ("cx", "cy", "bx", "by"):
+                w[key] = sum(v[key] for v in hover_reads) / n_h
+            print("hover reads averaged:", len(hover_reads), "centre", round(w["cx"], 3), round(w["cy"], 3))
         report["wrist_centre"] = [round(w["cx"], 3), round(w["cy"], 3)]
         report["wrist_top"] = round(w["top"], 3)
         report["wrist_base"] = round(w["base"], 3)
@@ -1100,7 +1308,7 @@ if report.get("pregrasp_ok") and chosen is not None:
         # shelf below (seed 27), several cm too low for a descent floor
         wrist_bases = [v["base"] for v in (w1, w) if v is not None]
         table_z = min(wrist_bases) if wrist_bases else base_z
-        zp = w["top"] + DZ_PRE
+        zp = max(w["top"], top) + DZ_PRE       # the higher of the two top reads: the thin handle is under-read by either
         zg = max(table_z + 0.02, w["top"] + DZ_GRASP)   # fingertips never below 2 cm above the table
         print("table_z", round(table_z, 3), "(head base_z", round(base_z, 3), ") top", round(w["top"], 3), "height over table", round(w["top"] - table_z, 3))
         report["height_over_table"] = round(w["top"] - table_z, 3)
@@ -1116,17 +1324,22 @@ if report.get("pregrasp_ok") and chosen is not None:
         short_dir = (-math.sin(ang), math.cos(ang))
         report["ladder_axis"] = "head"
 
-    def orient_for(axis_vec, tag):
+    def orient_for(axis_vec, tag, z_low):
         """Hand orientation with +y along axis_vec (either sign): first tilt whose pregrasp and grasp both solve IK from
         any seed; else the first that solves the pregrasp only (the descent then stalls where it can)."""
         fallback = None
-        for sign in (chosen[1], -chosen[1]):
-            for tilt in (chosen[2], 0, 15, -15, 30, -30):
+        # the approach orientation's own sign and tilt first: v03 seed 39 approached with one sign and laddered with the
+        # other, the wrist turned half a revolution 4 cm above the radio and knocked it over before the first rung
+        yq = qrot(q, [0.0, 1.0, 0.0])
+        sign0 = 1.0 if yq[0] * axis_vec[0] + yq[1] * axis_vec[1] >= 0.0 else -1.0
+        tilts = [pre_tilt] + [t for t in (0, 15, -15, 30, -30) if t != pre_tilt]
+        for sign in (sign0, -sign0):
+            for tilt in tilts:
                 qq, tf = hand_quat(sign * axis_vec[0], sign * axis_vec[1], tilt)
                 ok_pre = any_ik(Pose(position=[cx, cy, zp], quaternion_wxyz=qq, frame=st.base_frame))
                 if not ok_pre:
                     continue
-                if any_ik(Pose(position=[cx, cy, zg], quaternion_wxyz=qq, frame=st.base_frame)):
+                if any_ik(Pose(position=[cx, cy, z_low], quaternion_wxyz=qq, frame=st.base_frame)):
                     print(tag, "orientation: sign", sign, "tilt", tilt)
                     return qq
                 if fallback is None:
@@ -1137,31 +1350,61 @@ if report.get("pregrasp_ok") and chosen is not None:
     st_h = get_robot_state()
     rungs = []
     done = ""
-    q_use = orient_for(short_dir, "ladder")
+    # long >= 0.05: the wrist sees only part of the bar from the hover (collection seed 55 under v15 read 0.068)
+    handle = bool(w is not None and w["short"] <= HANDLE_MAX_SHORT and w["long"] >= 0.05)
+    report["handle_seen"] = handle
+    zh = max(zg, max(w["top"] if w is not None else top, top) - DZ_HANDLE_GRIP)
+    q_use = orient_for(short_dir, "ladder", zh if handle else zg)
+    # the wrist reads the radio up to ~6 cm nearer the robot than the head, and near the body the leaned arm cannot reach
+    # the handle's height (generalization dev v09, collection seed 48: lean 0.4, radio 0.69 m ahead by the wrist, every
+    # handle descent stopped 7 cm high): back the base straight up BACKOFF_M at a time, at most twice, and solve again
+    for kb in range(2):
+        z_low = zh if handle else zg
+        if q_use is not None and any_ik(Pose(position=[cx, cy, z_low], quaternion_wxyz=q_use, frame=st.base_frame)):
+            break
+        bxk, byk, byawk = behavior.get_base_pose()
+        fwd_k = (cx - bxk) * math.cos(byawk) + (cy - byk) * math.sin(byawk)
+        if fwd_k > BACKOFF_MAX_FWD_M:
+            print("grasp height unreachable with the radio", round(fwd_k, 3), "m ahead: too far to back off")
+            break
+        tbx, tby = bxk - BACKOFF_M * math.cos(byawk), byk - BACKOFF_M * math.sin(byawk)
+        if not floor_near(tbx, tby):
+            break
+        r = behavior.navigate_to_pose(tbx, tby, byawk, planner="servo", tolerance_m=0.02, max_steps=200)
+        print("grasp height unreachable: base backed up", BACKOFF_M, "->", fmt(behavior.get_base_pose()), "ok:", r.ok)
+        report["backoff"] = kb + 1
+        q_use = orient_for(short_dir, "ladder after backoff", z_low)
     if q_use is not None:
         ca = qrot(q_use, [0.0, 1.0, 0.0])       # the fingers travel along hand +y
         nv = math.hypot(ca[0], ca[1]) or 1.0
         dxv, dyv = ca[0] / nv, ca[1] / nv
         print("ladder heights: pre", round(zp, 3), "grasp", round(zg, 3), "centre", round(cx, 3), round(cy, 3), "finger axis", round(dxv, 2), round(dyv, 2),
               "radio long", round(math.degrees(math.atan2(long_dir[1], long_dir[0])), 1))
-        # Rungs along the finger axis. Body rungs first: straddling the upright body (~0.06 thick under a ~0.10 opening)
-        # held at jaw 0.596 on v02 seed 40's second rung (d=+0.015); a rung off-centre by ~2 cm reads jaw 1.0 (a finger
-        # already on the body) and the next offset fixes it. Then handle rungs, the fingertips 3 cm under the top read and
-        # closed across the wire handle: the seed-26 holds (jaw 0.26-0.28) and seed-26 pilot 41 (jaw 0.12) were pinches.
-        zh = max(zg, (w["top"] if w is not None else top) + DZ_HANDLE)
-        plan = [(0.0, zg, "body"), (0.015, zg, "body"), (-0.015, zg, "body"), (0.03, zg, "body"), (-0.03, zg, "body"),
-                (0.0, zh, "handle"), (0.015, zh, "handle"), (-0.015, zh, "handle")]
+        # Rungs along the finger axis. Handle rungs first when the top read is a thin bar (an upright radio's wire handle,
+        # read 0.10-0.20 x 0.03): the 0.03 bar under a ~0.09 opening leaves ~3 cm either side, where the ~0.086 body
+        # leaves under 1 cm; collection seeds 46 and 50 held by the handle (jaw 0.377 / 0.374, the hand at top - 0.016)
+        # and lifted it to success. Then body rungs centred on the body band (see wrist_read).
+        bxc, byc = (w["bx"], w["by"]) if w is not None else (cx, cy)
+        body = [(0.0, zg, "body"), (0.015, zg, "body"), (-0.015, zg, "body")]
+        if handle:
+            plan = [(0.0, zh, "handle"), (0.015, zh, "handle"), (-0.015, zh, "handle"), (0.03, zh, "handle"), (-0.03, zh, "handle")] + body
+        else:
+            plan = body + [(0.03, zg, "body"), (-0.03, zg, "body")]
+        print("ladder plan: handle", handle, "handle centre", round(cx, 3), round(cy, 3), "body centre", round(bxc, 3), round(byc, 3), "zh", round(zh, 3), "zg", round(zg, 3))
         for d, zd, kind in plan:
-            out = probe(kind + " d=" + str(d), cx + d * dxv, cy + d * dyv, q_use, zp, zd)
+            ox_, oy_ = (cx, cy) if kind == "handle" else (bxc, byc)
+            out = probe(kind + " d=" + str(d), ox_ + d * dxv, oy_ + d * dyv, q_use, zp, zd)
             rungs.append(out)
             if out.get("terminated"):
                 done = out["tag"]
                 break
-            # a mid jaw that slipped may have moved the radio: re-read from the wrist at the rung's pregrasp (zero ticks)
-            if JAW_MIN < out.get("jaw", 0.0) < 0.92:
+            # contact (a mid jaw that slipped, or a descent that stopped on the radio) may have moved the radio: re-read
+            # from the wrist at the rung's pregrasp (zero ticks)
+            if JAW_MIN < out.get("jaw", 0.0) < JAW_MAX or out.get("stopped_above", 0.0) > 0.015:
                 wr = wrist_read("after " + out["tag"])
                 if wr is not None and wr["n"] >= 30 and math.hypot(wr["cx"] - cx, wr["cy"] - cy) < WRIST_MAX_DEV:
                     cx, cy = wr["cx"], wr["cy"]
+                    bxc, byc = wr["bx"], wr["by"]
     report["rungs"] = rungs
     report["ladder_done_at"] = done
     report["stage"] = "ladder"
