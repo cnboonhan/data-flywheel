@@ -96,7 +96,9 @@ aws s3 cp ./file s3://raw/<dest>/file                            # one file
 ```bash
 mlflow experiments search                                        # experiments and their IDs
 mlflow runs list --experiment-id <id>                            # runs of one experiment
+python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry
 mlflow artifacts download --artifact-uri models:/<model>/<version> --dst-path ./model      # a registered model
+mlflow artifacts download --artifact-uri models:/<model>@<alias> --dst-path ./model        # by alias (e.g. @dynamo: what Dynamo serves)
 mlflow artifacts download --artifact-uri runs:/<run id>/<path> --dst-path ./out            # a run's artifacts
 ```
 
