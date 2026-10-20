@@ -1,11 +1,13 @@
-"""LeRobot v3 episodes as Rerun recordings, for Rerun's web viewer: it opens one file by URL, not a LeRobot folder.
+"""LeRobot episodes (v3, or v2.x: one parquet and one video per camera per episode) as Rerun recordings, for Rerun's
+web viewer: it opens one file by URL, not a LeRobot folder.
 
     GET /lerobot/<group>/<dataset>/<root>/episode_<N>.rrd     (Caddy strips its path token first)
 
-Reads /raw/<group>/<dataset>/<root> (read-only): the episode's row in meta/episodes, its frames in data/, and each
-camera's span of the chunk video, cut to its own H.264 file. Writes the recording to /cache once and serves it from
-there after: the cameras as videos, observation.state and action as plots (one per named joint), the task as text, all
-on a `time` timeline from the episode's start. The cache keeps the newest recordings within CACHE_GB.
+Reads /raw/<group>/<dataset>/<root> (read-only): the episode's row in meta/episodes (meta/episodes.jsonl in v2.x),
+its frames in data/, and each camera's span of the chunk video (v2.x: the episode's own video), as its own H.264 file.
+Writes the recording to /cache once and serves it from there after: the cameras as videos, every observation.state*
+and action* feature as plots (one per named joint), the task as text, all on a `time` timeline from the episode's
+start. The cache keeps the newest recordings within CACHE_GB.
 """
 import glob
 import json
@@ -31,6 +33,16 @@ PATH = re.compile(r"^/lerobot/(?P<root>[A-Za-z0-9._/+-]+)/episode_(?P<ep>\d+)\.r
 _locks, _locks_guard = {}, threading.Lock()
 
 
+def episode_row_v2(root, ep):
+    """The episode's record in a v2.x root's meta/episodes.jsonl."""
+    with open(f"{root}/meta/episodes.jsonl") as f:
+        for line in f:
+            row = json.loads(line)
+            if int(row["episode_index"]) == ep:
+                return row
+    raise FileNotFoundError(f"episode {ep} not in {root}")
+
+
 def episode_row(root, ep):
     """The episode's row of meta/episodes/*/*.parquet, as a dict."""
     d = pads.dataset(sorted(glob.glob(f"{root}/meta/episodes/*/*.parquet")), format="parquet")
@@ -41,16 +53,24 @@ def episode_row(root, ep):
 
 
 def cut(src, start, end, dst):
-    """The [start, end) seconds of a chunk video as their own file, re-encoded so the first frame is a keyframe."""
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", src, "-an",
+    """The [start, end) seconds of a chunk video (end None: to its end) as their own file, re-encoded so the first frame is
+    a keyframe."""
+    span = ["-ss", f"{start:.3f}"] + (["-to", f"{end:.3f}"] if end is not None else [])
+    subprocess.run(["ffmpeg", "-v", "error", "-y", *span, "-i", src, "-an",
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-g", "50", dst],
                    check=True)   # crf 23, keyframe every 2 s at 25 fps: viewer-grade, small; untuned
 
 
 def build(root, ep, out):
     info = json.load(open(f"{root}/meta/info.json"))
-    row = episode_row(root, ep)
-    data = pq.read_table(f"{root}/" + info["data_path"].format(chunk_index=row["data/chunk_index"], file_index=row["data/file_index"]))
+    v2 = str(info.get("codebase_version", "")).lstrip("v").startswith("2")
+    chunk = ep // int(info.get("chunks_size", 1000))
+    if v2:
+        row = episode_row_v2(root, ep)
+        data = pq.read_table(f"{root}/" + info["data_path"].format(episode_chunk=chunk, episode_index=ep))
+    else:
+        row = episode_row(root, ep)
+        data = pq.read_table(f"{root}/" + info["data_path"].format(chunk_index=row["data/chunk_index"], file_index=row["data/file_index"]))
     data = data.filter(pc.equal(data["episode_index"], ep))
     t = np.asarray(data["timestamp"].to_numpy(), dtype=np.float64)
     t = t - t[0]
@@ -59,10 +79,11 @@ def build(root, ep, out):
     task = row.get("tasks")
     rec.log("task", rr.TextDocument("\n".join(task) if isinstance(task, list) else str(task)), static=True)
     time = rr.TimeColumn("time", duration=t)
-    for key in ("observation.state", "action"):
-        if key not in data.column_names:
-            continue
+    keys = [k for k, f in info["features"].items() if (k.startswith("observation.state") or k.startswith("action"))
+            and f.get("dtype") in ("float32", "float64") and k in data.column_names]   # v2.x splits them (state.left_arm, ...)
+    for key in keys:
         vals = np.stack(data[key].to_numpy(zero_copy_only=False)).astype(np.float64)
+        vals = vals.reshape(len(vals), -1)      # a one-value feature may be stored as a plain scalar
         names = (info["features"][key].get("names") or {})
         names = names.get("motors", names) if isinstance(names, dict) else names
         names = names if isinstance(names, list) and len(names) == vals.shape[1] else [str(i) for i in range(vals.shape[1])]
@@ -72,9 +93,13 @@ def build(root, ep, out):
     with tempfile.TemporaryDirectory(dir=CACHE) as tmp, ThreadPoolExecutor(len(cams) or 1) as pool:
         jobs = {}
         for k in cams:
-            src = f"{root}/" + info["video_path"].format(video_key=k, chunk_index=row[f"videos/{k}/chunk_index"],
-                                                        file_index=row[f"videos/{k}/file_index"])
-            jobs[k] = pool.submit(cut, src, row[f"videos/{k}/from_timestamp"], row[f"videos/{k}/to_timestamp"], f"{tmp}/{k}.mp4")
+            if v2:
+                src = f"{root}/" + info["video_path"].format(episode_chunk=chunk, video_key=k, episode_index=ep)
+                jobs[k] = pool.submit(cut, src, 0.0, None, f"{tmp}/{k}.mp4")
+            else:
+                src = f"{root}/" + info["video_path"].format(video_key=k, chunk_index=row[f"videos/{k}/chunk_index"],
+                                                            file_index=row[f"videos/{k}/file_index"])
+                jobs[k] = pool.submit(cut, src, row[f"videos/{k}/from_timestamp"], row[f"videos/{k}/to_timestamp"], f"{tmp}/{k}.mp4")
         for k, job in jobs.items():
             job.result()
             asset = rr.AssetVideo(path=f"{tmp}/{k}.mp4")

@@ -6,7 +6,7 @@ Rerun web viewer (`rerun --serve-web`, built from `Dockerfile`) at `https://reru
    ```
    https://rerun.$SERVICE_HOST:$CADDY_PORT/?url=https://rerun.$SERVICE_HOST:$CADDY_PORT/raw/$RERUN_RAW_TOKEN/<group>/<dataset>/<path>.mcap
    ```
-2. Open a LeRobot v3 episode. The viewer opens files, not LeRobot folders, so `rerun-lerobot` (`lerobot_rrd.py`) builds a recording of the episode on the first request (cameras as videos, state and action as plots, the task as text; ~2 s for a 6-camera, 450-frame episode) and serves it from `$STATE_DIR/rerun-cache/` after. FiftyOne's LeRobot samples carry this link as `rerun_url`:
+2. Open a LeRobot episode (v3, or v2.x such as `sensors/autolearn`'s collections). The viewer opens files, not LeRobot folders, so `rerun-lerobot` (`lerobot_rrd.py`) builds a recording of the episode on the first request (cameras as videos, every `observation.state*` and `action*` feature as plots, the task as text; ~2 s for a 6-camera, 450-frame episode) and serves it from `$STATE_DIR/rerun-cache/` after. FiftyOne's LeRobot samples carry this link as `rerun_url`:
    ```
    https://rerun.$SERVICE_HOST:$CADDY_PORT/?url=https://rerun.$SERVICE_HOST:$CADDY_PORT/lerobot/$RERUN_RAW_TOKEN/<group>/<dataset>/<root>/episode_<n>.rrd
    ```

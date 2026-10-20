@@ -38,6 +38,8 @@ jobs:
 
             lerobot   meta/info.json v3 roots   one sample per episode, a media reference
                                                 into the root's videos and parquet; rerun_url opens it in Rerun
+            lerobot2  meta/info.json v2.x roots one group per episode, a video slice per camera (FiftyOne's
+                                                importer reads v3 only); rerun_url opens the episode in Rerun
             xspark    */data/episode_*.hdf5     one group per episode, a slice per
                                                 preview_video/<episode>_<camera>.mp4
             colmap    images/ + sparse/0/         one image sample per photo, with its COLMAP pose
@@ -123,6 +125,71 @@ jobs:
                       ds.select(ids).set_values("raw_unit", [unit] * len(ids))
                       ds.select(ids).set_values("raw_sig", [s] * len(ids))
                       print(f"  + {unit}: {len(ids)} episodes", flush=True)
+
+
+          class LeRobotV2:
+              """LeRobot v2.x roots (one parquet and one video per camera per episode, e.g. lerobot 0.3.3's output, which the
+              flywheel's XPolicyLab adapter reads). A unit is one episode, so a growing collection only adds its new ones."""
+              name = "lerobot2"
+
+              @staticmethod
+              def roots(top):
+                  import json
+                  out = []
+                  for root, dirs, files in os.walk(top):
+                      dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                      if root.endswith("/meta") and "info.json" in files:
+                          try:
+                              v = json.load(open(os.path.join(root, "info.json"))).get("codebase_version", "")
+                          except ValueError:
+                              continue
+                          if v.lstrip("v").startswith("2"):
+                              out.append(os.path.dirname(root))
+                          dirs[:] = []
+                  return out
+
+              def episodes(self, top):
+                  """(unit, root, info, episode record, parquet, {camera: video}) for every episode on disk."""
+                  import json
+                  for root in self.roots(top):
+                      info = json.load(open(os.path.join(root, "meta", "info.json")))
+                      size = int(info.get("chunks_size", 1000))
+                      cams = [k for k, f in info.get("features", {}).items() if f.get("dtype") == "video"]
+                      eps = os.path.join(root, "meta", "episodes.jsonl")
+                      for line in (open(eps) if os.path.exists(eps) else []):
+                          e = json.loads(line)
+                          i = int(e["episode_index"])
+                          parquet = os.path.join(root, info["data_path"].format(episode_chunk=i // size, episode_index=i))
+                          videos = {c: os.path.join(root, info["video_path"].format(episode_chunk=i // size, video_key=c, episode_index=i))
+                                    for c in cams}
+                          videos = {c: v for c, v in videos.items() if os.path.exists(v)}
+                          yield f"{os.path.relpath(root, top)}/episode_{i:06d}", root, info, e, parquet, videos
+
+              def scan(self, top):
+                  return {u: sig(*([pq] if os.path.exists(pq) else []), *v.values()) for u, _, _, _, pq, v in self.episodes(top)}
+
+              def add(self, ds, top, units):
+                  slice_of = lambda key: key.split("observation.images.")[-1].replace(".", "_")   # slice names cannot hold dots
+                  if not ds.has_field("camera"):
+                      ds.add_group_field("camera", default="head")
+                  samples = []
+                  for unit, root, info, e, pq, videos in self.episodes(top):
+                      if unit not in units or not videos:
+                          continue
+                      tasks = e.get("tasks") or []
+                      fields = dict(raw_unit=unit, raw_sig=units[unit], lerobot_root=os.path.relpath(root, top),
+                                    episode_index=int(e["episode_index"]), length=int(e.get("length", 0)), fps=info.get("fps"),
+                                    task=tasks[0] if tasks else None, robot_type=info.get("robot_type"))
+                      group = fo.Group()
+                      for cam, v in videos.items():
+                          samples.append(fo.Sample(filepath=v, camera=group.element(slice_of(cam)), **fields))
+                      if len(samples) >= 3000:   # added in batches of 3000, as XSpark; untuned
+                          ds.add_samples(samples, progress=False)
+                          print(f"  + {len(samples)} slices", flush=True)
+                          samples = []
+                  if samples:
+                      ds.add_samples(samples, progress=False)
+                      print(f"  + {len(samples)} slices", flush=True)
 
 
           class XSpark:
@@ -307,6 +374,8 @@ jobs:
           def layout_for(top):
               if LeRobot.roots(top):
                   return LeRobot()
+              if LeRobotV2.roots(top):
+                  return LeRobotV2()
               if Colmap().roots(top):
                   return Colmap()
               names = list(walk(top))
@@ -347,7 +416,7 @@ jobs:
                   return
               if stale or new:
                   ds = apply(ds, name, layout, top, stale, new)
-              if layout.name in ("mcap", "lerobot") and ds is not None:
+              if layout.name in ("mcap", "lerobot", "lerobot2") and ds is not None:
                   link_rerun(ds, top, layout.name)
 
 
@@ -359,7 +428,7 @@ jobs:
               if stale:
                   ds.delete_samples(all_samples(ds).match(F("raw_unit").is_in(stale)))
               layout.add(ds, top, new)
-              if layout.name in ("xspark", "colmap", "images"):
+              if layout.name in ("xspark", "colmap", "images", "lerobot2"):
                   all_samples(ds).exists("metadata", False).compute_metadata(progress=False)
               return ds
 
@@ -374,15 +443,17 @@ jobs:
               if not (base and token):
                   return
               rel = os.path.relpath(top, os.path.dirname(os.path.dirname(top)))
-              ids, units, urls = ds.values(["id", "raw_unit", "rerun_url"]) if ds.has_field("rerun_url") else (*ds.values(["id", "raw_unit"]), None)
-              if layout == "lerobot":
-                  eps = ds.values("episode_index")
-                  want = [f"{base}/?url={base}/lerobot/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(u)}/episode_{e}.rrd"
-                          for u, e in zip(units, eps)]
+              view = all_samples(ds)      # every camera slice of a grouped (lerobot2) dataset
+              ids, units, urls = view.values(["id", "raw_unit", "rerun_url"]) if ds.has_field("rerun_url") else (*view.values(["id", "raw_unit"]), None)
+              if layout in ("lerobot", "lerobot2"):
+                  eps = view.values("episode_index")
+                  roots = view.values("lerobot_root") if layout == "lerobot2" else units   # lerobot2's unit is one episode
+                  want = [f"{base}/?url={base}/lerobot/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(r)}/episode_{e}.rrd"
+                          for r, e in zip(roots, eps)]
               else:
                   want = [f"{base}/?url={base}/raw/{token}/{urllib.parse.quote(rel)}/{urllib.parse.quote(u)}" for u in units]
               if urls != want:
-                  ds.set_values("rerun_url", dict(zip(ids, want)), key_field="id")
+                  view.set_values("rerun_url", dict(zip(ids, want)), key_field="id")
                   print(f"  rerun_url set on {len(ids)} samples", flush=True)
 
 
