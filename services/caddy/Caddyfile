@@ -140,6 +140,10 @@ https://{$SERVICE_HOST}:8443 {
 	handle /devroles/* {
 		respond 404
 	}
+	# rerun.<host>/browse/'s listing template: it reads RERUN_RAW_TOKEN, so only that site (behind SSO) renders it
+	handle /rerun-browse.html {
+		respond 404
+	}
 	# Local apps (site/local/, gitignored; README: local apps): *.routes are handle blocks on this host. The folder is
 	# only read by Caddy and the landing page's template, never served: its files name hosts and ports outside the stack.
 	import /srv/local/*.routes
@@ -190,6 +194,19 @@ https://rerun.{$SERVICE_HOST}:8443 {
 			uri strip_prefix /raw
 			root * /raw
 			file_server
+		}
+	}
+	# The raw bucket as folders, bags and LeRobot v2.x episodes linked into the viewer (site/rerun-browse.html)
+	redir /browse /browse/
+	handle /browse/* {
+		route {
+			import sso
+			uri strip_prefix /browse
+			root * /raw
+			file_server {
+				browse /srv/rerun-browse.html
+				hide .*
+			}
 		}
 	}
 	handle {

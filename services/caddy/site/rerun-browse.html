@@ -1,0 +1,58 @@
+<!doctype html>
+{{- /* Caddy file_server browse template for rerun.<host>/browse/ (Caddyfile): the raw bucket as folders, each bag and
+       LeRobot v2.x episode linked into the Rerun viewer with the path token (RERUN_RAW_TOKEN), so nobody types it. */ -}}
+{{- $token := env "RERUN_RAW_TOKEN" -}}
+{{- $base := printf "https://%s" .Req.Host -}}
+{{- $dir := trimPrefix "/browse" .Path | trimSuffix "/" -}}
+{{- /* a LeRobot v2.x chunk folder (<root>/data/chunk-NNN): its episode_N.parquet files become episode links */ -}}
+{{- $root := "" -}}
+{{- if regexMatch "/data/chunk-[0-9]+$" $dir }}{{ $root = regexReplaceAll "/data/chunk-[0-9]+$" $dir "" }}{{ end -}}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rerun browse {{ $dir }}/</title>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #e5e5ea; --link: #0a64d6; --pill: #eef4ff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161618; --fg: #f2f2f7; --muted: #98989f; --line: #2c2c2e; --link: #6aa8ff; --pill: #1f2a3d; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; word-break: break-all; }
+  p.hint { color: var(--muted); margin: 0 0 16px; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+  td.size, td.time { color: var(--muted); white-space: nowrap; text-align: right; }
+  td.name { word-break: break-all; }
+  a.open { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--pill); font-size: 12px; margin-left: 8px; }
+  @media (max-width: 600px) { td.time { display: none; } }
+</style>
+</head>
+<body>
+<main>
+<h1>raw{{ $dir }}/</h1>
+<p class="hint">Bags (.mcap, .bag) and LeRobot v2.x episodes (under <code>data/chunk-*</code>) open in Rerun. LeRobot v3 files hold many episodes each: open those from FiftyOne's <code>rerun_url</code>.</p>
+<table>
+{{- if .CanGoUp }}
+<tr><td class="name"><a href="../">../</a></td><td class="size"></td><td class="time"></td></tr>
+{{- end }}
+{{- range .Items }}
+{{- $path := printf "%s/%s" $dir .Name }}
+<tr>
+  <td class="name">
+    <a href="{{ html .URL }}">{{ html .Name }}</a>
+    {{- if and $token (not .IsDir) (or (hasSuffix ".mcap" .Name) (hasSuffix ".bag" .Name)) }}
+    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/raw/%s%s" $base $token $path) }}">open in Rerun</a>
+    {{- else if and $token $root (not .IsDir) (regexMatch "^episode_[0-9]+\\.parquet$" .Name) }}
+    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/lerobot/%s%s/episode_%d.rrd" $base $token $root (regexFind "[0-9]+" .Name | atoi)) }}">open in Rerun</a>
+    {{- end }}
+  </td>
+  <td class="size">{{ if not .IsDir }}{{ .HumanSize }}{{ end }}</td>
+  <td class="time">{{ .ModTime.Format "2006-01-02 15:04" }}</td>
+</tr>
+{{- end }}
+</table>
+</main>
+</body>
+</html>

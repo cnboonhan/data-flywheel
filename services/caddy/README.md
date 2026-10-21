@@ -11,7 +11,7 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 | `/pushgateway/metrics/job/...` (PUT, POST, DELETE) | Pushgateway, bearer token `PUSHGATEWAY_TOKEN` ([slurm-exporter/](../slurm-exporter/README.md)) |
 | `/ca.crt` | root certificate of the local CA |
 | `https://fiftyone.$SERVICE_HOST` | FiftyOne |
-| `https://rerun.$SERVICE_HOST` | Rerun ([rerun/](../rerun/README.md)) |
+| `https://rerun.$SERVICE_HOST` | Rerun ([rerun/](../rerun/README.md)); `/browse/` lists the `raw` bucket with open-in-Rerun links (`site/rerun-browse.html`) |
 | `https://s3.$SERVICE_HOST` (`/ui/` behind SSO) | Versity S3 gateway |
 | `https://triton.$SERVICE_HOST` | Triton: inference and metadata open, no token; admin calls (load, unload, settings) refused, as `sync-triton` manages the models ([triton/](../triton/README.md)) |
 
@@ -42,7 +42,7 @@ Route an app that isn't part of the stack (one running on a cluster node, say) t
    }
    ```
    `import sso` puts it behind the Keycloak login; leave it out only for an app with a login of its own.
-2. Add its link to the landing page, as `site/local/<app>.html` (one list item, a template like `index.html`):
+2. Add its link to the landing page's Local apps section, as `site/local/<app>.html` (one list item, a template like `index.html`):
    ```html
    <li><a href="https://<app>.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/">App</a> <small>what it is</small></li>
    ```
