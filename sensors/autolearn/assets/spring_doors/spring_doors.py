@@ -266,6 +266,8 @@ def _step(dt):
         view, dofs = door["view"], door["dofs"]
         q = view.get_joint_positions(joint_indices=dofs)
         qd = view.get_joint_velocities(joint_indices=dofs)
+        if q is None or qd is None:      # the view is invalid for a step while the stage reloads or renders only
+            continue
         k, d, h = door["k"], door["d"], door["handle"]
         door["open"] = abs(float(q[0, 0]) - door["closed"])
         if h is not None:

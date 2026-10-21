@@ -275,8 +275,11 @@ def load_instance_at_door(self, metadata, instance_id):
     pos, _ = robot.get_position_orientation()
     import torch as th
 
-    robot.set_position_orientation(th.tensor([x, y, float(pos[2])]),
-                                   th.tensor([0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2)]))
+    start_pos = th.tensor([x, y, float(pos[2])])
+    start_quat = th.tensor([0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2)])
+    robot.set_position_orientation(start_pos, start_quat)
+    # BEHAVIOR's task puts the robot back at the presampled pose on every reset: that pose becomes the door start too
+    env.scene.write_task_metadata(key="robot_poses", data={"robot": [{"position": start_pos, "orientation": start_quat}]})
     for _ in range(10):
         self._og.sim.step_physics()
     env.scene.update_initial_file()
@@ -332,7 +335,10 @@ _bind_any = BehaviorAdapter.bind_protocol_evaluator
 def bind_door_witness(self, evaluator):
     spec = DOOR_TASKS.get(getattr(self._metadata, "task_name", None))
     if spec is not None:
-        evaluator = DoorWitness(self._metadata.task_name, spec["door"], spec["open_rad"])
+        door = DoorWitness(self._metadata.task_name, spec["door"], spec["open_rad"])
+        # cap_harness.run writes protocol.json (and protocol_success) from its own reference to the pickup witness
+        evaluator.evidence = door.evidence
+        evaluator = door
     return _bind_any(self, evaluator)
 
 

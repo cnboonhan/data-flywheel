@@ -24,12 +24,15 @@ handles:
   lever_length: 0.13        # m, spindle to lever tip
   lever_thickness: 0.02     # m, the lever's square section
   standoff: 0.05            # m from each face to its lever, room for fingers
-  mass: 0.4                 # kg, both levers and the spindle
+  mass: 0.25                # kg, both levers and the spindle (a common lever pair)
   max_deg: 45               # the lever's travel down from horizontal
   unlatch_deg: 30           # turn that frees the latch
-  return_torque: 2.0        # N m back towards horizontal at max_deg (about 15 N at the tip); at 1.0 with no preload
-                            # the 0.4 kg lever sagged 6 degrees; untuned beyond that
-  preload_deg: 10           # the spring aims this far above the horizontal stop, so the lever rests level
+  return_torque: 0.8        # N m back towards horizontal at max_deg (~6 N at the tip, a real lever's feel). At 2.0 the
+                            # R1 Pro's gripper, pinching the bar, was forced open while pressing it (opening 0.22 ->
+                            # 0.3-0.5) and only 3 of 8 presses passed the unlatch angle (the rest stalled at 15-21 deg)
+  preload_deg: 15           # the spring aims this far above the horizontal stop, so the lever rests level: the 0.25 kg
+                            # lever's weight (~0.1 N m) is under the 0.2 N m preload; at 1.0 N m with no preload a
+                            # 0.4 kg lever sagged 6 degrees
   return_damping: 0.002     # N m s / deg on the lever's spring; untuned
   latch_band: 0.03          # rad from closed within which the latch catches; at 0.02 the closer's slow last
                             # approach (0.021 rad after 5.5 s) left the door just outside it
