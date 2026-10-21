@@ -197,4 +197,5 @@ def tolerate_unloadable_mdl():
 
 
 tolerate_unloadable_mdl()
-sys.exit(main())
+if __name__ == "__main__":      # eval_galaxea_behavior.py imports the patches above without running cap-harness
+    sys.exit(main())

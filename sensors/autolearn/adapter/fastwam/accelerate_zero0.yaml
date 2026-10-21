@@ -1,0 +1,13 @@
+# FastWAM's scripts/accelerate_configs/accelerate_zero1_ds.yaml, pointed at ds_zero0.json (path set by train_fastwam.sbatch)
+compute_environment: LOCAL_MACHINE
+distributed_type: DEEPSPEED
+deepspeed_config:
+  deepspeed_config_file: ds_zero0.json
+  zero3_init_flag: false
+mixed_precision: null
+machine_rank: 0
+num_machines: 1
+num_processes: 1
+rdzv_backend: static
+same_network: true
+use_cpu: false

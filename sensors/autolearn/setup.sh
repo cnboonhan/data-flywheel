@@ -224,12 +224,81 @@ PY
   fi
 }
 
+arm64_galaxea() {
+  # GalaxeaVLA (XPolicyLab's policy/GalaxeaVLA, Galaxea's G0) for training and serving on the GB300: its package without
+  # its pins, then those pins minus the simulators it bundles for Galaxea's own benchmarks (sapien, mplib, coacd,
+  # robosuite, robomimic, bddl, pymunk: not needed to train or serve, and sapien/mplib have no arm64 wheels) and deepspeed
+  # (unused; accelerate imports it when present and its import needs a CUDA toolkit, which killed a checkpoint save), from PyPI
+  # and PyTorch's cu128 index instead of the Aliyun mirrors its pyproject names. Not editable: nothing is written into
+  # the submodule.
+  local V=$STATE/venv-galaxea G=$A/../../eval/system1/RoboDojo/XPolicyLab/policy/GalaxeaVLA/GalaxeaVLA
+  [[ -f $V/.galaxea-ok ]] && return
+  log "GalaxeaVLA venv $V"
+  local PIP=(uv pip install --python "$V/bin/python")
+  uv venv --allow-existing --python 3.10 "$V"      # galaxea_fm requires Python 3.10
+  "${PIP[@]}" --index-url https://download.pytorch.org/whl/cu128 torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1
+  local deps; deps=$(python3 - "$G/pyproject.toml" <<'PY'
+import re, sys, tomllib
+d = tomllib.load(open(sys.argv[1], "rb"))["project"]["dependencies"]
+skip = re.compile(r"^(torch|torchvision|torchaudio|sapien|mplib|coacd|robosuite|robomimic|bddl|pymunk|gym|gymnasium|torchcodec|deepspeed)\b")
+print(" ".join(x for x in d if not skip.match(x)))
+PY
+)
+  # shellcheck disable=SC2086
+  "${PIP[@]}" --index-strategy unsafe-best-match --extra-index-url https://download.pytorch.org/whl/cu128 $deps 'torch==2.7.1'
+  "${PIP[@]}" --no-deps "$G"
+  "${PIP[@]}" --no-deps "$A/../../eval/system1/RoboDojo/XPolicyLab"
+  rm -rf "$G/build" "$A/../../eval/system1/RoboDojo/XPolicyLab/build"   # setuptools' in-tree build output: keep the submodules clean
+  [[ -e $G/.venv ]] || ln -s "$V" "$G/.venv"      # XPolicyLab's train.sh activates GalaxeaVLA/.venv (gitignored there)
+  "$V/bin/python" -c 'import galaxea_fm, torch; print("galaxea_fm ok, torch", torch.__version__)' && touch "$V/.galaxea-ok"
+}
+
+arm64_fastwam() {
+  # FastWAM (XPolicyLab's policy/FastWAM: a world action model on Wan2.2-TI2V-5B) for training and serving on the
+  # GB300: its package without its pins, then those pins minus torchcodec (needs FFmpeg's shared libraries, which the
+  # nodes lack; FastWAM's LeRobot loader falls back to PyAV, whose wheels bundle FFmpeg). DeepSpeed (its ZeRO-1
+  # training, which FastWAM's trainer requires) runs nvcc at start: the CUDA 12.8 toolkit (NVIDIA's arm64 "sbsa" runfile,
+  # $CUDA_RUNFILE_SBSA or downloaded) is installed into $STATE/cuda-12.8 as CUDA_HOME, user space, no system change
+  # (NVIDIA's nvcc pip wheel ships only ptxas). Not editable: nothing is written into the submodule.
+  local V=$STATE/venv-fastwam F=$A/../../eval/system1/RoboDojo/XPolicyLab/policy/FastWAM/FastWAM CH=$STATE/cuda-12.8
+  [[ -f $V/.fastwam-ok ]] && return
+  log "FastWAM venv $V"
+  local PIP=(uv pip install --python "$V/bin/python")
+  uv venv --allow-existing --python 3.10 "$V"
+  "${PIP[@]}" --index-url https://download.pytorch.org/whl/cu128 torch==2.7.1 torchvision==0.22.1
+  local deps; deps=$(python3 - "$F/pyproject.toml" <<'PY'
+import re, sys, tomllib
+d = tomllib.load(open(sys.argv[1], "rb"))["project"]["dependencies"]
+print(" ".join(x for x in d if not re.match(r"^(torch|torchvision|torchcodec)\b", x)))
+PY
+)
+  # shellcheck disable=SC2086
+  "${PIP[@]}" $deps 'torch==2.7.1' --extra-index-url https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match
+  if [[ ! -x $CH/bin/nvcc ]]; then
+    local run=${CUDA_RUNFILE_SBSA:-$STATE/scratch/cuda/cuda_12.8.1_linux_sbsa.run}
+    [[ -f $run ]] || { mkdir -p "$(dirname "$run")"; curl -sL -o "$run" \
+      https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux_sbsa.run; }
+    log "CUDA 12.8 toolkit into $CH"
+    # the installer logs to /tmp/cuda-installer.log and segfaults ("Log file not open") when another user owns that file
+    # (as on the login node): then run this step on a compute node (srun)
+    [[ ! -e /tmp/cuda-installer.log || -O /tmp/cuda-installer.log ]] || { echo "/tmp/cuda-installer.log belongs to another user: run setup.sh fastwam on a compute node" >&2; return 1; }
+    env -u DISPLAY sh "$run" --silent --toolkit --toolkitpath="$CH" --no-man-page --no-drm --override --tmpdir="$STATE/scratch/cuda"
+  fi
+  "${PIP[@]}" --no-deps "$F"
+  "${PIP[@]}" --no-deps "$A/../../eval/system1/RoboDojo/XPolicyLab"
+  rm -rf "$F/build" "$A/../../eval/system1/RoboDojo/XPolicyLab/build"   # setuptools' in-tree build output
+  CUDA_HOME=$CH "$V/bin/python" -c 'import fastwam, deepspeed, torch, av; print("fastwam ok, deepspeed", deepspeed.__version__, "torch", torch.__version__)' \
+    && touch "$V/.fastwam-ok"
+}
+
 if [[ $(uname -m) == aarch64 ]]; then
   case "${1:-}" in
     aspire) arm64_aspire ;;
     behavior) arm64_behavior ;;
+    galaxea) arm64_galaxea ;;
+    fastwam) arm64_fastwam ;;
     all) arm64_aspire; arm64_behavior ;;
-    *) echo "on arm64 only: setup.sh aspire | behavior | all (BEHAVIOR-1K collection; see the arm64 notes in this file)" >&2; exit 2 ;;
+    *) echo "on arm64 only: setup.sh aspire | behavior | galaxea | fastwam | all (BEHAVIOR-1K collection, GalaxeaVLA, FastWAM; see the arm64 notes in this file)" >&2; exit 2 ;;
   esac
   exit 0
 fi

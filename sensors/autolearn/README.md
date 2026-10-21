@@ -227,6 +227,27 @@ GALAXEA_TASK_CONFIG=r1pro_sim/g0tiny_behavior \
 
 The weights come through the `download-models-hf` workflow (`OpenGalaxea/G0-VLA` with include `G0Tiny_260120/*`, and `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`). The galaxea layout: `observation.images.{head,left_wrist,right_wrist}_rgb`, state and action `{left,right}_ee_pose` (base frame, x y z qx qy qz qw; the action is the next frame's pose), `{left,right}_gripper` (0 closed … 100 open), `torso` (joints; targets as action), and `action.chassis.velocities` (vx vy 0 0 0 wz) — [`adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml`](adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml), which differs from upstream's `r1pro/eef_torso` by the chassis, 512×512 cameras, and keeping each episode's drive (`ee_start_moving_thresh: 0`).
 
+**Train and evaluate policies on the cup collection (GB300).** Four policies train from the 501 `picking_up_cup` demonstrations and run on the same 22 held-out instances (`$STATE/eval/galaxea/heldout_seeds.txt`), each starting parked at the counter where the scripted policy parked (`collect/behavior/picking_up_cup/pick_cup_heldout`). `adapter/eval_galaxea_behavior.py` drives the simulator and asks a policy server over HTTP for action chunks: `--space ee` (hand poses, through IK) or `--space joint` (20 joints: arms, grippers, torso). Set up each one once, then submit:
+
+| Policy | Kind, actions | Licence | Set up | Convert, train | Serve, evaluate |
+|---|---|---|---|---|---|
+| G0 Tiny (GalaxeaVLA) | VLA, ee | G0 Plus Community (non-commercial) | `setup.sh galaxea` | `behavior_to_lerobot.py --format galaxea`, `gb300/train_galaxea.sbatch` | `adapter/galaxea/serve_galaxea.py`, `gb300/eval_galaxea.sbatch` |
+| π0.5 (openpi) | VLA, joint | Apache-2.0 code, Gemma terms weights | `gb300/setup_pi05.sh` | `adapter/pi05/to_lerobot_v30.py`, `norm_stats.py`, `gb300/train_pi05.sbatch` | `adapter/pi05/serve_pi05.py`, `gb300/eval_pi05.sbatch` |
+| FastWAM | WAM, joint | MIT; Wan2.2 Apache-2.0 | `setup.sh fastwam` | `adapter/lerobot_to_fastwam.py`, `gb300/prep_fastwam.sbatch`, `gb300/train_fastwam.sbatch` | `adapter/fastwam/serve_fastwam.py` |
+| X-WAM | WAM, ee (torso held) | Apache-2.0 | `gb300/setup_xwam.sh` | `adapter/xwam/lerobot_to_xwam.py`, `gb300/train_xwam.sbatch` | `adapter/xwam/serve_xwam.py`, `gb300/eval_xwam.sbatch` |
+
+Split an evaluation over several GPUs; the jobs share the label's `results.jsonl`, and the same command again fills in what is missing:
+
+```bash
+S=/tier1/mistral/flywheel/autolearn
+sensors/autolearn/gb300/eval_parallel.sh 6 sensors/autolearn/gb300/eval_pi05.sbatch <label> <checkpoint> \
+    $S/collect/behavior/picking_up_cup/pick_cup_heldout -- $(cat $S/eval/galaxea/heldout_seeds.txt)
+```
+
+- The scripted policy succeeds on 12 of the 22; every pretrained model zero-shot on 0; G0 Tiny fine-tuned on 5. Single instances vary between runs of the same sampled policy, so compare counts, not instances.
+- FastWAM trains in fp32 weights under DeepSpeed ZeRO stage 0: under ZeRO-1 a weight turns NaN after the first step, and in bf16 its losses climb (comments in `train_fastwam.sbatch`). X-WAM runs ZeRO stage 0 too, at its own precision.
+- Checkpoints, datasets and results stay under `$STATE` (`galaxea/`, `pi05/`, `fastwam/`, `xwam/`, `eval/<policy>/<label>/`), never in the submodules.
+
 ### ASPIRE on LIBERO
 
 ASPIRE's own path, for comparison and for its skill library. After `./setup.sh aspire`:
