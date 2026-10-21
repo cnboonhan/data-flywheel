@@ -72,7 +72,6 @@
   {{- if $local}}
   <section id="local">
     <h2>Local apps</h2>
-    <p><small>Running on a cluster node, outside the stack (<code>site/local/</code>, not committed).</small></p>
     <ul>
       {{- range $local}}
       {{include (print "/local/" .)}}{{end}}
