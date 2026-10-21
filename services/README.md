@@ -69,8 +69,9 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 
 1. Create an account: Keycloak user, MLflow access token and S3 key pair, printed once. One Keycloak login covers every web UI ([keycloak/](keycloak/README.md)); S3 access per bucket: [versitygw/](versitygw/README.md).
    ```bash
-   services/ctl.sh user add <name> <email> [password]
+   services/ctl.sh user add <name> [<email> or - [password]]
    ```
+   Without an email, Keycloak asks the user for it at first login.
 
 ## State
 

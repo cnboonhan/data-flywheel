@@ -346,7 +346,7 @@ setup_envs() {
 }
 
 # Add a person to every service under one username:
-#   ctl.sh user add <name> <email> [password]
+#   ctl.sh user add <name> [<email> or - [password]]   (no email: Keycloak asks for it at first login)
 # Keycloak (SSO: Gitea, Grafana, MLflow, FiftyOne, Rerun, Loki), an MLflow
 # access token for API clients (printed once) and the S3 gateway (an access key
 # pair, printed once). Password defaults to a random one, printed.
@@ -423,13 +423,18 @@ apply_s3_policies_save() {
 
 user_add() {
   # Random password: 18 bytes in base64 (24 chars) minus /+=, cut to 20 chars; length untuned.
-  local name=${1:?name} email=${2:?email} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
+  local name=${1:?name} email=${2:-} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
+  [[ $email == - ]] && email=
   local kc=(docker compose --project-name flywheel exec -T keycloak /opt/keycloak/bin/kcadm.sh)
   "${kc[@]}" config credentials --server http://localhost:8080/auth --realm master --user "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null
   if "${kc[@]}" get users -r flywheel -q "username=$name" --fields username 2>/dev/null | grep -q "\"$name\""; then
     echo "keycloak: $name exists"
   else
-    "${kc[@]}" create users -r flywheel -s "username=$name" -s "email=$email" -s enabled=true -s emailVerified=true >/dev/null
+    if [[ -n $email ]]; then
+      "${kc[@]}" create users -r flywheel -s "username=$name" -s "email=$email" -s enabled=true -s emailVerified=true >/dev/null
+    else   # Keycloak's profile form at first login asks for the email
+      "${kc[@]}" create users -r flywheel -s "username=$name" -s enabled=true -s 'requiredActions=["UPDATE_PROFILE"]' >/dev/null
+    fi
     "${kc[@]}" set-password -r flywheel --username "$name" --new-password "$pw"
     echo "keycloak: created $name"
   fi
@@ -465,7 +470,7 @@ user_add() {
 if [[ $1 == user ]]; then
   case ${2:-} in
     add) user_add "${@:3}" ;;
-    *) echo "usage: ctl.sh user add <name> <email> [password]" >&2; exit 2 ;;
+    *) echo "usage: ctl.sh user add <name> [<email> or - [password]]" >&2; exit 2 ;;
   esac
   exit
 fi

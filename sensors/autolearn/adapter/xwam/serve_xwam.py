@@ -8,8 +8,10 @@ right_gripper: 0 closed .. 100 open; torso: 4 joints; task: the instruction) and
 {left,right}_ee_pose [T, 7] (base frame, x y z qx qy qz qw), {left,right}_gripper [T, 1] (0..100), torso [T, 4].
 
 The model is X-WAM's own evaluation/deploy_policy.py XWAMPolicy (the experiment's config.yaml carries the statistics).
-It predicts per-step deltas (position, rotation vector, gripper) for each hand; they are integrated from the current
-pose as XPolicyLab's model.py does, without its axis redefinition (lerobot_to_xwam.py applies none). X-WAM has no torso
+Each hand's rotation goes in redefined as lerobot_to_xwam.py trained it (R @ P, its frame.json; as a quaternion with
+w >= 0, the form X-WAM's loader gives). It predicts per-step deltas (position, rotation vector, gripper) for each hand;
+they are integrated from the current pose as XPolicyLab's model.py does, in the robot's own frame: a rotation delta
+dR = R_next R^T is the same with or without P. X-WAM has no torso
 output: the torso is held at the lean the demonstrations end in (lerobot_to_xwam.py's torso.json).
 """
 import argparse
@@ -45,6 +47,8 @@ POLICY = XWAMPolicy(exp_path=args.exp, steps=args.steps, wan_checkpoint_dir=args
                     action_denoise_steps=args.action_denoise_steps, device="cuda", compile_model=False)
 cfg = OmegaConf.load(os.path.join(args.exp, "config.yaml"))
 TORSO = np.asarray(json.load(open(args.torso_json or os.path.join(cfg.dataset.dataset_path, "torso.json")))["torso"], dtype=np.float32)
+FRAME = {k: Rotation.from_matrix(np.asarray(v)) for k, v in json.load(open(os.path.join(cfg.dataset.dataset_path, "frame.json"))).items()
+         if k in ("left", "right")}
 SIDES = ("left", "right")
 CALLS = [0]
 print(f"[serve_xwam] {args.exp} {args.steps} ready: torso held at {TORSO.round(3).tolist()}", flush=True)
@@ -55,7 +59,9 @@ def act(obs):
     prop = []
     for side in SIDES:
         pose = np.asarray(obs[f"{side}_ee_pose"], dtype=np.float64)
-        prop += list(pose[:3]) + list(pose[[6, 3, 4, 5]]) + [float(obs[f"{side}_gripper"][0]) / 100.0]   # wxyz, 0..1
+        q = (Rotation.from_quat(pose[3:7]) * FRAME[side]).as_quat()[[3, 0, 1, 2]]     # R @ P, wxyz
+        q = q * (1.0 if q[0] >= 0 else -1.0)          # w >= 0, as RobotDataset canonicalizes the training proprios
+        prop += list(pose[:3]) + list(q) + [float(obs[f"{side}_gripper"][0]) / 100.0]
     prop = np.asarray(prop, dtype=np.float32)[None]
     CALLS[0] += 1
     deltas, _ = POLICY.infer_batch(video=video, proprios=prop, prompts=[str(obs["task"])], seeds=[args.seed + CALLS[0]])

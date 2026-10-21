@@ -1,12 +1,13 @@
 #!/bin/bash
 # Fine-tune X-WAM (XPolicyLab's policy/X_WAM, on Wan2.2-TI2V-5B) on a BEHAVIOR-1K collection, on one GB300 node, from the
 # pretrained X-WAM checkpoint (sharinka0715/X-WAM-checkpoints pretrained/, Apache-2.0; gb300/setup_xwam.sh fetches it).
-#   [XWAM_ZERO_STAGE=0] sbatch --export=ALL sensors/autolearn/gb300/train_xwam.sbatch <xwam dataset> <run name> [overrides...]
+#   [XWAM_ZERO_STAGE=0] [XWAM_RESUME_CKPT=$STATE/xwam/<run>/checkpoints/last.ckpt] \
+#     sbatch --export=ALL sensors/autolearn/gb300/train_xwam.sbatch <xwam dataset> <run name> [overrides...]
 # The dataset comes from adapter/xwam/lerobot_to_xwam.py, its quantile.yaml from X-WAM's scripts/compute_stats.py.
 # XPolicyLab's train.sh is not used: it writes into the submodule (checkpoints/, data/) and reads its fixed data config;
 # adapter/xwam/train_xwam.py runs the same scripts/train_sft.py with this run's data config. Overrides are X-WAM's
 # OmegaConf keys (lr=, num_training_steps=, save_interval=, batch_size_per_gpu=, ...). Runs go to $STATE/xwam/<run name>/.
-#SBATCH -p raus -N1 -n1 -c64 --gres=gpu:4 --mem=800G -t 24:00:00 -J xwam-train
+#SBATCH -p raus -N1 -n1 -c64 --gres=gpu:4 --mem=800G -t 120:00:00 -J xwam-train
 #SBATCH -o /tier1/mistral/flywheel/autolearn/logs/xwam-train-%j.log
 set -euo pipefail
 A=/home/htx_boonhan/workspaces/data-flywheel/sensors/autolearn   # sbatch runs a copy of this file

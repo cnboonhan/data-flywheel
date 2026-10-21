@@ -6,8 +6,12 @@ X-WAM reads one JSON per episode (proprios: both hands' end-effector position, r
 next frame's pose, from which its loader takes per-step deltas) and one video per camera, the layout XPolicyLab's
 transform_robodojo_to_xwam.py writes. Here:
 
-- poses are in the base frame (behavior_to_lerobot.py's in_base, as the GalaxeaVLA data and eval_galaxea_behavior.py),
-  and no axis redefinition is applied: the R1 Pro's gripper frame is kept as is, so serve_xwam.py needs no reframing;
+- poses are in the base frame (behavior_to_lerobot.py's in_base, as the GalaxeaVLA data and eval_galaxea_behavior.py);
+- each hand's rotation is redefined by a fixed rotation, R @ P with P the transpose of that hand's mean orientation
+  over the data (written to frame.json; serve_xwam.py applies the same), as upstream's transform_robodojo_to_xwam.py
+  does with its own P for the arx: X-WAM feeds the proprio rotation as a quaternion with w >= 0, and the R1 Pro's
+  grasp orientations sit near w = 0 (median |w| 0.10), where that form flips between q and -q from frame to frame;
+  reframed, the median |w| is 0.98. The actions are unaffected: X-WAM's rotation deltas a_R p_R^T cancel P;
 - grippers are ASPIRE's 0 closed .. 1 open;
 - each episode starts where the base stops for good (the eval starts parked at the counter, at the scripted run's
   base_after_hop): the search and the drive before it hold the base-frame poses still and would teach standing still;
@@ -16,7 +20,8 @@ transform_robodojo_to_xwam.py writes. Here:
 
 X-WAM has no torso output: the torso lean the demonstrations make before reaching is left to serve_xwam.py, which holds
 the torso at the lean this script records in torso.json (the median of each episode's final torso).
-Then the quantile statistics: X-WAM's own scripts/compute_stats.py on the output (train_xwam.sbatch runs it).
+Then the quantile statistics: run X-WAM's own scripts/compute_stats.py on the output (--output <out>/quantile.yaml),
+which train_xwam.sbatch reads.
 """
 import argparse
 import json
@@ -75,16 +80,33 @@ def write_video(rgb, path, fps):
             c.mux(pkt)
 
 
-def convert(job):
-    src, out, ep, index, info, task = job
-    size = int(info["chunks_size"])
-    t = pq.read_table(src / info["data_path"].format(episode_chunk=ep // size, episode_index=ep))
-    base = col(t, "observation.state.base_pose")
+def trim_start(base):
+    """The first frame after the base's last drive (BASE_MIN_RUN frames or more of motion)."""
     step = np.abs(np.diff(base, axis=0))
     step[:, 2] = np.abs((np.diff(base[:, 2]) + math.pi) % (2 * math.pi) - math.pi)
     moving = np.nonzero((np.hypot(step[:, 0], step[:, 1]) > BASE_STILL_M) | (step[:, 2] > BASE_STILL_RAD))[0]
     runs = [r for r in np.split(moving, np.nonzero(np.diff(moving) > 1)[0] + 1) if len(r) >= BASE_MIN_RUN]
-    start = int(runs[-1][-1]) + 1 if runs else 0      # step k moves frame k to k+1: k+1 is the first frame at rest
+    return int(runs[-1][-1]) + 1 if runs else 0      # step k moves frame k to k+1: k+1 is the first frame at rest
+
+
+def rotations(job):
+    """The pre-pass: each hand's base-frame rotations over the kept part of an episode, every 5th frame."""
+    src, _, ep, _, info, _, _ = job
+    size = int(info["chunks_size"])
+    t = pq.read_table(src / info["data_path"].format(episode_chunk=ep // size, episode_index=ep))
+    base = col(t, "observation.state.base_pose")
+    start = trim_start(base)
+    if len(t) - start < MIN_FRAMES:
+        return None
+    return {side: in_base(col(t, f"observation.state.{side}_ee_pose")[start::5], base[start::5])[1] for side in ("left", "right")}
+
+
+def convert(job):
+    src, out, ep, index, info, task, frame = job
+    size = int(info["chunks_size"])
+    t = pq.read_table(src / info["data_path"].format(episode_chunk=ep // size, episode_index=ep))
+    base = col(t, "observation.state.base_pose")
+    start = trim_start(base)
     n = len(t) - start
     if n < MIN_FRAMES:
         return {"episode": ep, "kept": False, "frames": n}
@@ -103,7 +125,7 @@ def convert(job):
     for side in ("left", "right"):
         pos, rotm = in_base(col(t, f"observation.state.{side}_ee_pose")[start:], base[start:])
         proprios[f"{side}_ee_pos"] = pos
-        proprios[f"{side}_ee_rotm"] = rotm
+        proprios[f"{side}_ee_rotm"] = (rotm.reshape(-1, 3, 3) @ np.asarray(frame[side])).reshape(-1, 9)
         proprios[f"{side}_gripper_pos"] = col(t, f"observation.state.{side}_gripper")[start:]
     episode = {"num_frames": n, "instructions": [task],
                "observations": observations,
@@ -127,9 +149,14 @@ def main():
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    jobs = [(src, out, e["episode_index"], i, info, (e.get("tasks") or [tasks[0]])[0]) for i, e in enumerate(eps)]
+    jobs = [(src, out, e["episode_index"], i, info, (e.get("tasks") or [tasks[0]])[0], None) for i, e in enumerate(eps)]
     with ProcessPoolExecutor(args.workers) as ex:
-        res = list(ex.map(convert, jobs))
+        rots = [r for r in ex.map(rotations, jobs) if r is not None]
+        frame = {side: Rotation.from_matrix(np.concatenate([r[side] for r in rots]).reshape(-1, 3, 3)).mean().as_matrix().T.tolist()
+                 for side in ("left", "right")}
+        json.dump({**frame, "note": "R @ P per hand, P = the transpose of the hand's mean base-frame orientation"},
+                  open(out / "frame.json", "w"), indent=1)
+        res = list(ex.map(convert, [j[:-1] + (frame,) for j in jobs]))
     kept = [r for r in res if r["kept"]]
     torso = np.median(np.asarray([r["torso"] for r in kept]), axis=0)
     json.dump({"torso": torso.tolist(), "note": "median final torso of the kept episodes; serve_xwam.py holds it"},

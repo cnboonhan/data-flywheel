@@ -1,6 +1,7 @@
 """A FastWAM (XPolicyLab's policy/FastWAM) checkpoint served over HTTP for eval_policy_behavior.py --joint.
 
-    venv-fastwam/bin/python serve_fastwam.py --ckpt <checkpoint .pt> --stats <dataset_stats.json> [--dim 20] [--port 18300]
+    DIFFSYNTH_MODEL_BASE_PATH=$STATE/models/diffsynth DIFFSYNTH_SKIP_DOWNLOAD=true venv-fastwam/bin/python serve_fastwam.py \
+        --ckpt <checkpoint .pt> --stats <dataset_stats.json> --action-dit <ActionDiT .pt> [--dim 20] [--port 18300]
 
 POST /act takes an .npz of one observation (head_rgb, left_wrist_rgb, right_wrist_rgb: HxWx3 uint8; state: the joint
 vector lerobot_to_fastwam.py writes, left arm, left gripper, right arm, right gripper, torso; task: the instruction) and
@@ -26,6 +27,7 @@ sys.path[:0] = [str(FASTWAM), str(FASTWAM / "src")]
 p = argparse.ArgumentParser()
 p.add_argument("--ckpt", required=True)
 p.add_argument("--stats", required=True)
+p.add_argument("--action-dit", required=True)              # the backbone prep_fastwam.sbatch built (model.action_dit_pretrained_path)
 p.add_argument("--dim", type=int, default=20)
 p.add_argument("--task-config", default="robotwin_uncond_3cam_384_1e-4")
 p.add_argument("--replan", type=int, default=24)              # FastWAM's deploy default; the runner may execute fewer
@@ -53,7 +55,8 @@ def build():
     if GlobalHydra.instance().is_initialized():
         GlobalHydra.instance().clear()
     with initialize_config_dir(version_base="1.3", config_dir=str(FASTWAM / "configs")):
-        cfg = compose(config_name="sim_robotwin", overrides=[f"task={args.task_config}", "model.redirect_common_files=false"] + dim_overrides(args.dim))
+        cfg = compose(config_name="sim_robotwin", overrides=[f"task={args.task_config}", "model.redirect_common_files=false",
+                                                         f"model.action_dit_pretrained_path={args.action_dit}"] + dim_overrides(args.dim))
     horizon = int(cfg.data.train.num_frames) - 1
     policy = dp.WorldActionRobotWinPolicy(
         model_cfg=cfg.model, processor_cfg=cfg.data.train.processor, checkpoint_path=args.ckpt,

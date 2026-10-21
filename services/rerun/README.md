@@ -12,7 +12,12 @@ Rerun web viewer (`rerun --serve-web`, built from `Dockerfile`) at `https://reru
    https://rerun.$SERVICE_HOST:$CADDY_PORT/?url=https://rerun.$SERVICE_HOST:$CADDY_PORT/lerobot/$RERUN_RAW_TOKEN/<group>/<dataset>/<root>/episode_<n>.rrd
    ```
    For a dataset in the `processed` bucket, use `/lerobot-processed/` in place of `/lerobot/` (and `/processed/` in place of `/raw/` for a bag).
-4. To inspect a bag on your own machine without uploading it, convert it locally:
+4. Open a bag of 500 MB or more in the desktop viewer: the web viewer runs in the browser's ~4 GB and only partly loads it. Download it (its file link in Browse Data, or `aws s3 cp`), then open the file; the desktop viewer can't fetch the links above, as it doesn't trust the flywheel CA.
+   ```bash
+   pip install rerun-sdk==0.38.1
+   rerun <bag.mcap>
+   ```
+5. To inspect a bag on your own machine without uploading it, convert it locally:
    ```bash
    rerun --save out.rrd <bag.mcap>
    ```

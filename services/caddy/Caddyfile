@@ -163,6 +163,16 @@ https://fiftyone.{$SERVICE_HOST}:8443 {
 	reverse_proxy fiftyone:5151
 }
 
+# Viewers on other origins (Foxglove at app.foxglove.dev) read bags in byte ranges: CORS for GET and the Range
+# header, and an answer to the preflight. The path token still gates the file.
+(bag_cors) {
+	header Access-Control-Allow-Origin "*"
+	header Access-Control-Allow-Headers "Range"
+	header Access-Control-Expose-Headers "Accept-Ranges, Content-Length, Content-Range"
+	@preflight method OPTIONS
+	respond @preflight 204
+}
+
 # Rerun web viewer plus the raw files it imports itself, e.g. MCAP bags
 # (?url=https://rerun.<host>:8443/raw/<token>/<group>/<dataset>/<path>.mcap).
 https://rerun.{$SERVICE_HOST}:8443 {
@@ -173,6 +183,7 @@ https://rerun.{$SERVICE_HOST}:8443 {
 		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/raw/" + {env.RERUN_RAW_TOKEN} + "/")`
 	}
 	handle @raw_token {
+		import bag_cors
 		uri path_regexp ^/raw/[^/]+ ""
 		root * /raw
 		file_server
@@ -192,6 +203,7 @@ https://rerun.{$SERVICE_HOST}:8443 {
 		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/processed/" + {env.RERUN_RAW_TOKEN} + "/")`
 	}
 	handle @processed_token {
+		import bag_cors
 		uri path_regexp ^/processed/[^/]+ ""
 		root * /processed
 		file_server
