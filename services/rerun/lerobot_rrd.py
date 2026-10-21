@@ -1,9 +1,11 @@
 """LeRobot episodes (v3, or v2.x: one parquet and one video per camera per episode) as Rerun recordings, for Rerun's
 web viewer: it opens one file by URL, not a LeRobot folder.
 
-    GET /lerobot/<group>/<dataset>/<root>/episode_<N>.rrd     (Caddy strips its path token first)
+    GET /lerobot/<group>/<dataset>/<root>/episode_<N>.rrd             a dataset in the raw bucket
+    GET /lerobot-processed/<path>/<root>/episode_<N>.rrd              one in the processed bucket
+    (Caddy strips its path token first)
 
-Reads /raw/<group>/<dataset>/<root> (read-only): the episode's row in meta/episodes (meta/episodes.jsonl in v2.x),
+Reads /raw/<group>/<dataset>/<root> or /processed/<path>/<root> (read-only): the episode's row in meta/episodes (meta/episodes.jsonl in v2.x),
 its frames in data/, and each camera's span of the chunk video (v2.x: the episode's own video), as its own H.264 file.
 Writes the recording to /cache once and serves it from there after: the cameras as videos, every observation.state*
 and action* feature as plots (one per named joint), the task as text, all on a `time` timeline from the episode's
@@ -27,9 +29,13 @@ import pyarrow.parquet as pq
 import rerun as rr
 
 RAW = os.environ.get("RAW_ROOT", "/raw")
+PROCESSED = os.environ.get("PROCESSED_ROOT", "/processed")
 CACHE = os.environ.get("CACHE_DIR", "/cache")
 CACHE_GB = float(os.environ.get("CACHE_GB", "20"))   # ~4 MB a 450-frame, 6-camera episode: thousands fit; untuned
-PATH = re.compile(r"^/lerobot/(?P<root>[A-Za-z0-9._/+-]+)/episode_(?P<ep>\d+)\.rrd$")
+PATH = re.compile(r"^/(?P<kind>lerobot|lerobot-processed)/(?P<root>[A-Za-z0-9._/+-]+)/episode_(?P<ep>\d+)\.rrd$")
+# per URL prefix: the bucket's mount, and its recordings' folder in the cache (raw's at the top, as before; PATH never
+# matches '@', so processed's can't collide with a raw dataset)
+BUCKETS = {"lerobot": (RAW, ""), "lerobot-processed": (PROCESSED, "@processed")}
 _locks, _locks_guard = {}, threading.Lock()
 
 
@@ -61,7 +67,7 @@ def cut(src, start, end, dst):
                    check=True)   # crf 23, keyframe every 2 s at 25 fps: viewer-grade, small; untuned
 
 
-def build(root, ep, out):
+def build(root, ep, out, rec_id):
     info = json.load(open(f"{root}/meta/info.json"))
     v2 = str(info.get("codebase_version", "")).lstrip("v").startswith("2")
     chunk = ep // int(info.get("chunks_size", 1000))
@@ -74,7 +80,7 @@ def build(root, ep, out):
     data = data.filter(pc.equal(data["episode_index"], ep))
     t = np.asarray(data["timestamp"].to_numpy(), dtype=np.float64)
     t = t - t[0]
-    rec = rr.RecordingStream("lerobot", recording_id=f"{os.path.relpath(root, RAW)}/episode_{ep}")
+    rec = rr.RecordingStream("lerobot", recording_id=rec_id)
     rec.save(out)
     task = row.get("tasks")
     rec.log("task", rr.TextDocument("\n".join(task) if isinstance(task, list) else str(task)), static=True)
@@ -120,18 +126,19 @@ def trim_cache():
             os.remove(f)
 
 
-def recording(rel, ep):
-    root = os.path.realpath(os.path.join(RAW, rel))
-    if not root.startswith(os.path.realpath(RAW) + "/") or not os.path.exists(f"{root}/meta/info.json"):
+def recording(kind, rel, ep):
+    base, cache_dir = BUCKETS[kind]
+    root = os.path.realpath(os.path.join(base, rel))
+    if not root.startswith(os.path.realpath(base) + "/") or not os.path.exists(f"{root}/meta/info.json"):
         raise FileNotFoundError(rel)
-    out = os.path.join(CACHE, rel, f"episode_{ep}.rrd")
+    out = os.path.join(CACHE, cache_dir, rel, f"episode_{ep}.rrd")
     with _locks_guard:
         lock = _locks.setdefault(out, threading.Lock())
     with lock:   # one build per episode; later requests wait for it and read the cache
         if not os.path.exists(out):
             os.makedirs(os.path.dirname(out), exist_ok=True)
             part = out + ".part"
-            build(root, ep, part)
+            build(root, ep, part, f"{'processed/' if cache_dir else ''}{rel}/episode_{ep}")
             os.replace(part, out)
             trim_cache()
         os.utime(out)   # newest first in trim_cache
@@ -146,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
         if not m:
             return self.reply(404, b"not a LeRobot episode path", "text/plain")
         try:
-            path = recording(m["root"], int(m["ep"]))
+            path = recording(m["kind"], m["root"], int(m["ep"]))
         except FileNotFoundError as e:
             return self.reply(404, str(e).encode(), "text/plain")
         except Exception as e:   # noqa: BLE001  report, keep serving

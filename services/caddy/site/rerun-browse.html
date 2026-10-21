@@ -1,12 +1,18 @@
 <!doctype html>
-{{- /* Caddy file_server browse template for rerun.<host>/browse/ (Caddyfile): the raw bucket as folders, each bag and
-       LeRobot v2.x episode linked into the Rerun viewer with the path token (RERUN_RAW_TOKEN), so nobody types it. */ -}}
+{{- /* Caddy file_server browse template for rerun.<host>/browse/ (Caddyfile): the raw and processed buckets as folders,
+       each bag and LeRobot v2.x episode linked into the Rerun viewer with the path token (RERUN_RAW_TOKEN), so nobody
+       types it. */ -}}
 {{- $token := env "RERUN_RAW_TOKEN" -}}
 {{- $base := printf "https://%s" .Req.Host -}}
 {{- $dir := trimPrefix "/browse" .Path | trimSuffix "/" -}}
+{{- /* <bucket>/<path>: bags are served at /<bucket>/<token>/<path>, episodes built at /lerobot/<token>/<root> (raw)
+       or /lerobot-processed/<token>/<root> (processed) */ -}}
+{{- $bucket := regexFind "^/[^/]+" $dir | trimPrefix "/" -}}
+{{- $inbucket := trimPrefix (printf "/%s" $bucket) $dir -}}
+{{- $episodes := "lerobot" }}{{ if eq $bucket "processed" }}{{ $episodes = "lerobot-processed" }}{{ end -}}
 {{- /* a LeRobot v2.x chunk folder (<root>/data/chunk-NNN): its episode_N.parquet files become episode links */ -}}
 {{- $root := "" -}}
-{{- if regexMatch "/data/chunk-[0-9]+$" $dir }}{{ $root = regexReplaceAll "/data/chunk-[0-9]+$" $dir "" }}{{ end -}}
+{{- if regexMatch "/data/chunk-[0-9]+$" $inbucket }}{{ $root = regexReplaceAll "/data/chunk-[0-9]+$" $inbucket "" }}{{ end -}}
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -31,21 +37,21 @@
 </head>
 <body>
 <main>
-<h1>raw{{ $dir }}/</h1>
+<h1>{{ if $dir }}{{ trimPrefix "/" $dir }}/{{ else }}Buckets{{ end }}</h1>
 <p class="hint">Bags (.mcap, .bag) and LeRobot v2.x episodes (under <code>data/chunk-*</code>) open in Rerun. LeRobot v3 files hold many episodes each: open those from FiftyOne's <code>rerun_url</code>.</p>
 <table>
 {{- if .CanGoUp }}
 <tr><td class="name"><a href="../">../</a></td><td class="size"></td><td class="time"></td></tr>
 {{- end }}
 {{- range .Items }}
-{{- $path := printf "%s/%s" $dir .Name }}
+{{- $path := printf "%s/%s" $inbucket .Name }}
 <tr>
   <td class="name">
     <a href="{{ html .URL }}">{{ html .Name }}</a>
-    {{- if and $token (not .IsDir) (or (hasSuffix ".mcap" .Name) (hasSuffix ".bag" .Name)) }}
-    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/raw/%s%s" $base $token $path) }}">open in Rerun</a>
+    {{- if and $token $bucket (not .IsDir) (or (hasSuffix ".mcap" .Name) (hasSuffix ".bag" .Name)) }}
+    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s" $base $bucket $token $path) }}">open in Rerun</a>
     {{- else if and $token $root (not .IsDir) (regexMatch "^episode_[0-9]+\\.parquet$" .Name) }}
-    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/lerobot/%s%s/episode_%d.rrd" $base $token $root (regexFind "[0-9]+" .Name | atoi)) }}">open in Rerun</a>
+    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s/episode_%d.rrd" $base $episodes $token $root (regexFind "[0-9]+" .Name | atoi)) }}">open in Rerun</a>
     {{- end }}
   </td>
   <td class="size">{{ if not .IsDir }}{{ .HumanSize }}{{ end }}</td>

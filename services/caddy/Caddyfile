@@ -186,6 +186,24 @@ https://rerun.{$SERVICE_HOST}:8443 {
 		uri path_regexp ^/lerobot/[^/]+ /lerobot
 		reverse_proxy rerun-lerobot:8080
 	}
+	# The same two for the processed bucket: /processed/<token>/<path> bags, /lerobot-processed/<token>/... episodes
+	@processed_token {
+		path *.mcap *.bag
+		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/processed/" + {env.RERUN_RAW_TOKEN} + "/")`
+	}
+	handle @processed_token {
+		uri path_regexp ^/processed/[^/]+ ""
+		root * /processed
+		file_server
+	}
+	@lerobot_processed_token {
+		path *.rrd
+		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/lerobot-processed/" + {env.RERUN_RAW_TOKEN} + "/")`
+	}
+	handle @lerobot_processed_token {
+		uri path_regexp ^/lerobot-processed/[^/]+ /lerobot-processed
+		reverse_proxy rerun-lerobot:8080
+	}
 	# route keeps the written order: Caddy otherwise runs file_server before the
 	# imported SSO check, which left the files readable without a login.
 	handle /raw/* {
@@ -196,13 +214,22 @@ https://rerun.{$SERVICE_HOST}:8443 {
 			file_server
 		}
 	}
-	# The raw bucket as folders, bags and LeRobot v2.x episodes linked into the viewer (site/rerun-browse.html)
+	handle /processed/* {
+		route {
+			import sso
+			uri strip_prefix /processed
+			root * /processed
+			file_server
+		}
+	}
+	# The raw and processed buckets as folders, bags and LeRobot v2.x episodes linked into the viewer
+	# (site/rerun-browse.html)
 	redir /browse /browse/
 	handle /browse/* {
 		route {
 			import sso
 			uri strip_prefix /browse
-			root * /raw
+			root * /buckets
 			file_server {
 				browse /srv/rerun-browse.html
 				hide .*

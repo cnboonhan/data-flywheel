@@ -36,6 +36,9 @@ services:
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
       - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro   # raw files Rerun imports by URL, served on rerun.<host>/raw/
+      - ${STATE_DIR}/versitygw/buckets/processed:/processed:ro   # the same for the processed bucket, on rerun.<host>/processed/
+      - ${STATE_DIR}/versitygw/buckets/raw:/buckets/raw:ro   # both buckets under one folder for rerun.<host>/browse/
+      - ${STATE_DIR}/versitygw/buckets/processed:/buckets/processed:ro
     depends_on: [mlflow, grafana, loki, versitygw, gitea, keycloak, oauth2-proxy]
 
   versitygw:
@@ -264,7 +267,7 @@ services:
     environment:
       HOME: /tmp
 
-  # LeRobot episodes as Rerun recordings, built on request from the raw bucket (rerun/lerobot_rrd.py): the viewer opens
+  # LeRobot episodes as Rerun recordings, built on request from the raw or processed bucket (rerun/lerobot_rrd.py): the viewer opens
   # files by URL, not LeRobot folders. Caddy routes rerun.<host>/lerobot/<token>/... here.
   rerun-lerobot:
     <<: *common
@@ -277,6 +280,7 @@ services:
       CACHE_GB: "20"   # recordings kept, newest first (~8 MB a HiFi-UMI episode); untuned
     volumes:
       - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro
+      - ${STATE_DIR}/versitygw/buckets/processed:/processed:ro
       - ${STATE_DIR}/rerun-cache:/cache
 
   # Triton runs on its own node (TRITON_NODE): triton/compose.yml, started by ctl.sh up; Caddy and Prometheus reach it there.
