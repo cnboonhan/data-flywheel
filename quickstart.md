@@ -99,6 +99,8 @@ aws s3 cp ./file s3://raw/<dest>/file                            # one file
 ### MLflow: runs and models
 
 ```bash
+export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow   # if section 1 isn't in your shell
+export MLFLOW_TRACKING_USERNAME=<your name> MLFLOW_TRACKING_PASSWORD=<your MLflow token> MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 mlflow experiments search                                        # experiments and their IDs
 mlflow runs list --experiment-id <id>                            # runs of one experiment
 uv run --with mlflow-skinny python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry

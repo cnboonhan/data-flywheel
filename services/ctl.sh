@@ -328,6 +328,16 @@ mlflow_token() {
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 }
 
+# A Gitea access token for a user, creating their Gitea account first if they haven't signed in yet: Gitea links it to
+# their Keycloak login at first sign-in (ACCOUNT_LINKING=auto, same username).
+gitea_token() {
+  local name=$1 email=$2 g=("${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini admin user)
+  "${g[@]}" list | awk 'NR > 1 {print $2}' | grep -qx "$name" \
+    || "${g[@]}" create --username "$name" --email "${email:-$name@flywheel.invalid}" --random-password --must-change-password=false >/dev/null \
+    || return 1
+  "${g[@]}" generate-access-token --username "$name" --token-name "flywheel-$(date -u +%Y%m%d%H%M%S)" --scopes write:repository,read:user --raw
+}
+
 # Environments (RoboDojo eval env, policy envs) are built by the Gitea workflow setup-envs, which runs
 # gitea/setup/*.sh in a job container on this node. `up` dispatches it when an env is missing
 # or was built for another checkout or STATE_DIR (each installer writes both paths to <env>/.flywheel-setup);
@@ -430,11 +440,12 @@ user_add() {
   if "${kc[@]}" get users -r flywheel -q "username=$name" --fields username 2>/dev/null | grep -q "\"$name\""; then
     echo "keycloak: $name exists"
   else
-    if [[ -n $email ]]; then
-      "${kc[@]}" create users -r flywheel -s "username=$name" -s "email=$email" -s enabled=true -s emailVerified=true >/dev/null
-    else   # Keycloak's profile form at first login asks for the email
-      "${kc[@]}" create users -r flywheel -s "username=$name" -s enabled=true -s 'requiredActions=["UPDATE_PROFILE"]' >/dev/null
-    fi
+    # A complete profile (email, first and last name) from the start: Keycloak refuses the password login the tokens
+    # below are minted with ("Account is not fully set up") while any is missing or a required action is pending.
+    # Without an email the account gets a placeholder (.invalid never delivers) and, after the tokens, the profile
+    # form at first login.
+    "${kc[@]}" create users -r flywheel -s "username=$name" -s "email=${email:-$name@flywheel.invalid}" \
+      -s "firstName=$name" -s "lastName=$name" -s enabled=true -s "emailVerified=$([[ -n $email ]] && echo true || echo false)" >/dev/null
     "${kc[@]}" set-password -r flywheel --username "$name" --new-password "$pw"
     echo "keycloak: created $name"
   fi
@@ -455,6 +466,14 @@ user_add() {
   else
     echo "mlflow: no token minted (sign in at /mlflow with Keycloak; Profile > Tokens issues one)"
   fi
+  if tok=$(gitea_token "$name" "$email" 2>/dev/null) && [[ -n $tok ]]; then
+    echo "gitea: access token $tok   (scopes write:repository,read:user: the pipelines API; shown once)"
+  else
+    echo "gitea: no token minted (sign in at /gitea with Keycloak; Settings > Applications issues one)"
+  fi
+  if [[ -n ${LOKI_PUSH_TOKEN:-} ]]; then
+    echo "loki: push token $LOKI_PUSH_TOKEN   (shared by every pusher, push only: Authorization: Bearer <token>)"
+  fi
 
   local secret; secret=$(openssl rand -hex 20)   # 40 chars, the length of an AWS secret key
   if docker compose --project-name flywheel exec -T -e ROOT_ACCESS_KEY_ID="$ADMIN_USER" -e ROOT_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" versitygw \
@@ -463,6 +482,9 @@ user_add() {
     apply_s3_policies
   else
     echo "s3: $name exists (or create failed); secret unchanged"
+  fi
+  if [[ -z $email ]] && "${kc[@]}" get "users/$uid" -r flywheel --fields email 2>/dev/null | grep -q '@flywheel.invalid'; then
+    "${kc[@]}" update "users/$uid" -r flywheel -s 'requiredActions=["UPDATE_PROFILE"]'   # the real email at first login
   fi
   echo "password: $pw   (Keycloak: every web UI, including MLflow)"
 }
