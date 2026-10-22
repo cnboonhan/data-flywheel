@@ -49,9 +49,9 @@
   <td class="name">
     <a href="{{ html .URL }}">{{ html .Name }}</a>
     {{- if and $token $bucket (not .IsDir) (or (hasSuffix ".mcap" .Name) (hasSuffix ".bag" .Name)) }}
-    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s" $base $bucket $token $path) }}">open in Rerun</a>
+    <a class="open" target="_blank" rel="noopener" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s" $base $bucket $token $path) }}">open in Rerun</a>
     {{- else if and $token $root (not .IsDir) (regexMatch "^episode_[0-9]+\\.parquet$" .Name) }}
-    <a class="open" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s/episode_%d.rrd" $base $episodes $token $root (regexFind "[0-9]+" .Name | atoi)) }}">open in Rerun</a>
+    <a class="open" target="_blank" rel="noopener" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s/episode_%d.rrd" $base $episodes $token $root (regexFind "[0-9]+" .Name | atoi)) }}">open in Rerun</a>
     {{- end }}
   </td>
   <td class="size">{{ if not .IsDir }}{{ .HumanSize }}{{ end }}</td>

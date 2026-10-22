@@ -7,7 +7,7 @@ web viewer: it opens one file by URL, not a LeRobot folder.
 
 Reads /raw/<group>/<dataset>/<root> or /processed/<path>/<root> (read-only): the episode's row in meta/episodes (meta/episodes.jsonl in v2.x),
 its frames in data/, and each camera's span of the chunk video (v2.x: the episode's own video), as its own H.264 file.
-Writes the recording to /cache once and serves it from there after: the cameras as videos, every observation.state*
+Writes the recording to /cache once and serves it from there after: the cameras as videos, every observation.state*, state.*
 and action* feature as plots (one per named joint), the task as text, all on a `time` timeline from the episode's
 start. The cache keeps the newest recordings within CACHE_GB.
 """
@@ -85,8 +85,10 @@ def build(root, ep, out, rec_id):
     task = row.get("tasks")
     rec.log("task", rr.TextDocument("\n".join(task) if isinstance(task, list) else str(task)), static=True)
     time = rr.TimeColumn("time", duration=t)
-    keys = [k for k, f in info["features"].items() if (k.startswith("observation.state") or k.startswith("action"))
-            and f.get("dtype") in ("float32", "float64") and k in data.column_names]   # v2.x splits them (state.left_arm, ...)
+    # Galaxea's v2.x collections split them into state.* (state.left_arm, state.leader_right_ee_pose, ...)
+    keys = [k for k, f in info["features"].items()
+            if k.startswith(("observation.state", "action", "state."))
+            and f.get("dtype") in ("float32", "float64") and k in data.column_names]
     for key in keys:
         vals = np.stack(data[key].to_numpy(zero_copy_only=False)).astype(np.float64)
         vals = vals.reshape(len(vals), -1)      # a one-value feature may be stored as a plain scalar
