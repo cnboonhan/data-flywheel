@@ -24,9 +24,13 @@ or from code, after the scene has loaded:
 """
 import math
 import random
+import sys
 from pathlib import Path
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "latch_door"))
+import latch  # noqa: E402  (doors whose asset carries the lever joint)
 
 HANDLES_ROOT = "/World/flywheel_door_handles"
 _doors = []            # one dict per sprung hinge, read every physics step
@@ -171,6 +175,7 @@ def add_handle(door, cfg):
 
     if built:
         drive = pxr.UsdPhysics.DriveAPI(stage.GetPrimAtPath(f"{path}/joint"), "angular")
+    door["latched"] = True
     door["handle"] = {"path": path, "drive": drive, "R_rel0": R_rel, "leaf": leaf, "angle": 0.0, "rest": float(cfg["preload_deg"]),
                       "unlatch": math.radians(cfg["unlatch_deg"]), "band": cfg["latch_band"],
                       "k": cfg["latch_stiffness"], "d": cfg["latch_damping"]}
@@ -263,6 +268,9 @@ def press(door, degrees):
 
 def _step(dt):
     for door in _doors:
+        if door.get("asset_handle"):          # a door whose asset has the lever joint (assets/latch_door)
+            latch.step_door(door)
+            continue
         view, dofs = door["view"], door["dofs"]
         q = view.get_joint_positions(joint_indices=dofs)
         qd = view.get_joint_velocities(joint_indices=dofs)
@@ -272,11 +280,14 @@ def _step(dt):
         door["open"] = abs(float(q[0, 0]) - door["closed"])
         if h is not None:
             h["angle"] = handle_angle(h)
-            door["latched"] = abs(float(q[0, 0]) - door["closed"]) < h["band"] and h["angle"] > -h["unlatch"]
+            # held until the lever releases it (see latch.step_door); the band is only where it catches again
+            if door.get("latched", True):
+                if h["angle"] <= -h["unlatch"]:
+                    door["latched"], door["released"] = False, True     # unlatched by the lever, not merely still open
+            elif door["open"] < h["band"] and h["angle"] > -h["unlatch"]:
+                door["latched"] = True
             if door["latched"]:
                 k, d = h["k"], h["d"]
-            elif door["open"] < h["band"] and h["angle"] <= -h["unlatch"]:
-                door["released"] = True     # unlatched by the lever, not merely still open
         view.set_joint_efforts(-k * (q - door["closed"]) - d * qd + door["push"], joint_indices=dofs)
 
 
@@ -314,6 +325,13 @@ def apply(scene, cfg, seed=0):
             continue
         k = rng.uniform(*cfg["stiffness"])
         tau = rng.uniform(*cfg["time_constant"])
+        if "j_handle" in obj.joints:          # the lever is the asset's own joint: latch.py drives both joints
+            door = latch.fit(obj, cfg, seed=seed, stiffness=k, time_constant=tau, subscribe=False)
+            _doors.append(door)
+            _subscribe()
+            sprung.append({"object": obj.name, "joint": "j_leaf", "stiffness": round(k, 3), "damping": round(door["d"], 3),
+                           "closed": round(door["closed"], 4), "handle": "j_handle"})
+            continue
         for name, joint in obj.joints.items():
             if joint.joint_type not in wanted:
                 continue

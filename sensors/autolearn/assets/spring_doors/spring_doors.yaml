@@ -36,5 +36,6 @@ handles:
   return_damping: 0.002     # N m s / deg on the lever's spring; untuned
   latch_band: 0.03          # rad from closed within which the latch catches; at 0.02 the closer's slow last
                             # approach (0.021 rad after 5.5 s) left the door just outside it
-  latch_stiffness: 2000.0   # N m / rad holding a latched door: ~40 N m to move it the full band; untuned
+  latch_stiffness: 2000.0   # N m / rad holding a latched door until the lever releases it (60 N m at the band's edge,
+                            # 200 at 0.1 rad: more than the arm sustains); untuned
   latch_damping: 200.0      # N m s / rad; untuned

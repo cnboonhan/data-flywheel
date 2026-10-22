@@ -183,6 +183,10 @@ services:
       GITEA__server__OFFLINE_MODE: "true"
       GITEA__server__LFS_START_SERVER: "true"
       GITEA__security__INSTALL_LOCK: "true"   # skip the web installer; everything is configured here
+      # Gitea marks a task that runs longer than this as failed (default 3h) while the runner keeps running it: dataset
+      # downloads of several TB take 10 h or more, so the status went red mid-download. Matches act_runner's 12h timeout
+      # with room for multi-TB datasets; untuned beyond that.
+      GITEA__actions__ENDLESS_TASK_TIMEOUT: 48h
       GITEA__database__DB_TYPE: sqlite3
       GITEA__database__PATH: /var/lib/gitea/data/gitea.db
       GITEA__actions__ENABLED: "true"

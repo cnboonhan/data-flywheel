@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Collect BEHAVIOR-1K demonstrations: run one ASPIRE policy on a range of task instances, one Isaac Sim process at a
 # time, until a number of successful episodes exist. Every run keeps ASPIRE's full artifacts (states and actions per
-# tick, three videos); behavior_to_lerobot.py turns the successful ones into a dataset.
+# tick, three videos); behavior_to_lerobot.py turns the successful ones into a dataset. Success is outcome.json's
+# task_success (the pickup witness) or, where a task's witness writes only protocol_success (the door tasks), that.
 #
 #   adapter/collect_behavior.sh <policy.py> <first seed> <last seed> [--target N] [--repeats R] [--suite turning_on_radio] [--out DIR] [--grace TICKS]
 #
@@ -59,7 +60,7 @@ for seed in $(seq "$first" "$last"); do
 import json, sys, os
 seed, rep, path, log = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
 o = json.load(open(path))
-rec = {"seed": seed, "repeat": rep, "run": os.path.dirname(path), "task_success": bool(o["task_success"]),
+rec = {"seed": seed, "repeat": rep, "run": os.path.dirname(path), "task_success": bool(o["task_success"] if o.get("task_success") is not None else o.get("protocol_success")),
        "steps": o["steps_executed"], "termination": o["termination_reason"], "wall_s": round(o["timing"]["wall_s"])}
 open(log, "a").write(json.dumps(rec) + "\n")
 print(rec, flush=True)

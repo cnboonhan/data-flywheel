@@ -1,8 +1,15 @@
-# Open house_single_floor's latching, self-closing front door from the entryway (opening_front_door, run_behavior.py) with
-# the Galaxea R1 Pro: find the lever with SAM3, drive in until it is in the right arm's reach, grasp the bar with the
-# fingers above and below it, press it down to free the latch, then pull the door open along its arc about the hinge.
-# The door swings towards the robot; the hinge is on the robot's right. Frames: everything is in odom (the base at
-# reset), x forward, y left, z up.
+# Open the latching, self-closing door (opening_door on door_room, run_behavior.py; assets/latch_door, door_room.yaml;
+# v13: a grasp retry on a miss, hops to 1.30 rad by the hand) with the Galaxea R1 Pro: find the lever with SAM3, drive in until it is in the
+# right arm's reach, pinch the bar diagonally (fingers front-top and back-bottom), press it 40 degrees to free the
+# latch, pull 16 degrees with the arm, then back the base along the handle's arc in 0.12 m hops, the hand holding the
+# lever, re-tensioning the arm between hops. The door swings towards the robot; the hinge is on the robot's right.
+# Frames: everything is in odom (the base at reset), x forward, y left, z up.
+# State after 13 versions on dev instances 36-43: the lever unlatches on 8 of 8 (the witness reads the lever at -45
+# degrees), the door reaches 0.37-0.83 rad on 7 of 8, none the 1.05 rad the task asks: the bar walks out of the
+# diagonal pinch towards the fingertips with each hop (gripper 0.47 -> 0.37 -> 0.31 -> 0.24 -> 0 over four hops), a
+# true hook (fingers fore and aft, the hand pointing along the bar) has no IK at the lever's height, and lifting the
+# hand against the lever's stop (v13) or pressing it down (v08) lost the bar sooner. Next: a hook on the leaf's free
+# edge once the door is 0.4 rad open (edge_quat, read_edge: untested, the hand pointing right), or the left arm.
 import math
 
 report = {"stage": "start"}
@@ -262,6 +269,29 @@ else:
     close_gripper(arm=ARM)
     report["grip_closed"] = grip_state()
     print("gripper closed; opening", grip_state(), "(0 closed .. 1 open) hand:", fmt(hand_pos()))
+    # MISS 0.1: the fingers closed on nothing (the 2 cm bar holds them at ~0.3): back off, read the lever again from
+    # here and grasp once more (door_room v12 seed 43: closed to 0.0 at the first try, the press then turned the lever
+    # with the knuckles but nothing held for the pull)
+    MISS = 0.1
+    if grip_state() < MISS:
+        set_gripper(GRIP_OPEN, arm=ARM)
+        hp = hand_pos()
+        a = [-math.sin(0.0), math.cos(0.0), 0.0] if mode == "along" else approach_vec(0.0, pitch)
+        reach("miss: back off", [hp[0] - 0.10 * a[0], hp[1] - 0.10 * a[1], hp[2] - 0.10 * a[2]], gripq, tol=0.02, steps=90)
+        lever3 = best_cloud(["door handle", "lever handle"])
+        if lever3 is not None:
+            L = lever3[2]
+            spindle_y, tip_y = L["hi"][1], L["lo"][1]
+            grip = [L["lo"][0], (spindle_y + tip_y) / 2.0, L["med"][2]]
+            bar_x, bar_z = L["lo"][0] + 0.012, L["med"][2]
+            print("lever re-read after miss", fmt(grip), "spindle y", round(spindle_y, 3), "tip y", round(tip_y, 3))
+        if mode == "along":
+            reach("regrasp", [bar_x, grip[1], bar_z], gripq, tol=0.008)
+        else:
+            reach("regrasp", [bar_x + 0.005 * a[0], grip[1], bar_z + 0.005 * a[2]], gripq, tol=0.008)
+        close_gripper(arm=ARM)
+        report["grip_closed"] = grip_state()
+        print("gripper closed again; opening", grip_state(), "hand:", fmt(hand_pos()))
 
 
     def hand_quat(th):
@@ -296,62 +326,42 @@ else:
         last_ok = deg
     report["pulled_deg"] = last_ok
 
-    # Block 5: swap to the free edge (edge_quat) and pull the leaf on along its arc, the base hopping back along it.
-    # The closer swings the door back meanwhile (from 0.25 rad into the latch band in 6-13 s), so the edge is read
-    # right before the hook move and the target sits EDGE_AHEAD closer to the frame than the read, where the edge
-    # will be by then; the fingers' 7 cm span (GRIP_OPEN) covers the rest.
-    open_gripper(arm=ARM)
-    hp = hand_pos()
-    thl = math.radians(last_ok)
-    am = approach_vec(thl, pitch) if mode == "diagonal" else [-math.sin(thl), math.cos(thl), 0.0]
-    reach("off lever", [hp[0] - 0.10 * am[0], hp[1] - 0.10 * am[1], hp[2] + 0.06], hand_quat(thl), tol=0.03, steps=60)
-    edge = read_edge()
-    print("edge read", fmt(edge) if edge else None, "face x", round(face_x, 3))
-    report["edge"] = fmt(edge) if edge else None
-    hooked = False
-    width = abs(free_y - H[1])
-    if edge is not None and face_x - edge[0] > 0.06:
-        EDGE_AHEAD, EDGE_IN, HOOK_Z = 0.02, 0.04, 0.95   # m: see above; 4 cm in from the edge; a height the arm reaches well
-        th_e = math.asin(min(1.0, max(0.0, (face_x - edge[0] - EDGE_AHEAD) / width)))
-        qe = edge_quat(th_e)
-        along = [-math.sin(th_e), math.cos(th_e)]      # along the leaf from the hinge
-        ex, ey = edge[0] + EDGE_AHEAD, edge[1]
-        set_gripper(GRIP_OPEN, arm=ARM)
-        reach("edge pre", [ex + 0.10 * along[0], ey + 0.10 * along[1], HOOK_Z], qe, tol=0.02, steps=120)
-        r = reach("edge hook", [ex - EDGE_IN * along[0], ey - EDGE_IN * along[1], HOOK_Z], qe, tol=0.015, steps=120)
-        close_gripper(arm=ARM)
-        report["edge_grip"] = grip_state()
-        print("edge gripper closed; opening", grip_state(), "(leaf ~0.4) hand:", fmt(hand_pos()))
-        hooked = grip_state() > 0.15
+    # Block 5: pull the door the rest of the way by backing the base along the handle's arc, the hand holding the
+    # pressed lever. A hop along the arc's tangent (perpendicular to the bar, whatever the door's angle) drags the door
+    # and the bar stays in the fingers (v11: one 0.2 m hop took the door from 0.28 to ~0.45 rad on 7 of 8 seeds); the
+    # hops of v06-v08 aimed the base at an offset point, part sideways, and slid the hand along the bar and off its tip.
+    # Between hops a short arm pull re-tensions the arm on the arc. The hand's own angle about the hinge is the door's.
+    # HOP 0.12 m (~8 degrees of door per hop), HAND_YAW_MAX 40 degrees (the wrist's comfortable turn, hand yaw then
+    # lags the door and the pinch twists a little); DONE 1.30 rad: the hand's angle about the estimated hinge runs
+    # ahead of the door's (door_room v12 seed 40: hand 67 degrees when the door was at 59, 1.02 rad, 0.03 short of the
+    # witness's 1.05), so the hops go on to 1.30 by the hand, ~1.15 at the door; 16 hops cover it; all untuned.
+    HOP, HAND_YAW_MAX, DONE = 0.12, math.radians(40.0), 1.30
+    radius = math.hypot(v0[0], v0[1])
     hops = 0
-    edge_deg = 0
-    if hooked:
-        start = int(math.degrees(th_e)) + 4
-        for deg in range(start, 80, 4):
-            th = math.radians(deg)
-            along = [-math.sin(th), math.cos(th)]
-            E = [H[0] + width * along[0], H[1] + width * along[1]]
-            tgt = [E[0] - EDGE_IN * along[0], E[1] - EDGE_IN * along[1], HOOK_Z]
-            bx, by, byaw = behavior.get_base_pose()
-            # the base stays REACH_X behind and 0.30 m to the left of the edge: out of the leaf's sweep
-            want = [tgt[0] - REACH_X, tgt[1] + 0.30]
-            if math.hypot(want[0] - bx, want[1] - by) > 0.06:
-                step = min(0.10, math.hypot(want[0] - bx, want[1] - by))
-                ang = math.atan2(want[1] - by, want[0] - bx)
-                r = behavior.navigate_to_pose(bx + step * math.cos(ang), by + step * math.sin(ang), 0.0, planner="servo", max_steps=80)
-                hops += 1
-                print("   hop", hops, "ok:", r.ok, "base:", fmt(behavior.get_base_pose()), "gripper", grip_state())
-            r = reach("edge pull " + str(deg), tgt, edge_quat(th), tol=0.02, steps=90)
-            print("   gripper", grip_state())
-            if not r.ok or grip_state() < 0.1:
-                break
-            edge_deg = deg
-    report["edge_deg"] = edge_deg
+    for k in range(16):
+        hp = hand_pos()
+        th_h = math.atan2(-(hp[0] - H[0]), hp[1] - H[1])
+        print("hop round", k, "door angle from the hand", round(math.degrees(th_h), 1), "deg, gripper", grip_state())
+        if th_h >= DONE or grip_state() < 0.1:
+            break
+        bx, by, byaw = behavior.get_base_pose()
+        r = behavior.navigate_to_pose(bx - HOP * math.cos(th_h), by - HOP * math.sin(th_h), 0.0, planner="servo", max_steps=100)
+        hops += 1
+        print("   hop", hops, "ok:", r.ok, "base:", fmt(behavior.get_base_pose()), "gripper", grip_state(), "hand:", fmt(hand_pos()))
+        if not r.ok:
+            break
+        hp = hand_pos()
+        th_h = math.atan2(-(hp[0] - H[0]), hp[1] - H[1])
+        th_n = th_h + math.radians(4.0)
+        tgt = [H[0] - radius * math.sin(th_n), H[1] + radius * math.cos(th_n), pressed[2]]
+        reach("re-tension " + str(k), tgt, hand_quat(min(th_n, HAND_YAW_MAX)), tol=0.03, steps=60)
+    hp = hand_pos()
+    report["door_from_hand_deg"] = round(math.degrees(math.atan2(-(hp[0] - H[0]), hp[1] - H[1])), 1)
     report["hops"] = hops
     report["stage"] = "pulled"
+    thl = min(math.atan2(-(hp[0] - H[0]), hp[1] - H[1]), HAND_YAW_MAX)
     open_gripper(arm=ARM)
     hp = hand_pos()
-    thl = math.radians(last_ok)
     am = [-math.sin(thl), math.cos(thl), 0.0] if mode == "along" else approach_vec(thl, pitch)
-    reach("back off", [hp[0] - 0.12 * am[0], hp[1] - 0.12 * am[1], hp[2] - 0.12 * am[2]], hand_quat(thl))
+    reach("back off", [hp[0] - 0.12 * am[0], hp[1] - 0.12 * am[1], hp[2] - 0.12 * am[2]], hand_quat(thl), tol=0.03, steps=60)
 print("report:", report)

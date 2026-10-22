@@ -14,7 +14,7 @@ Rerun web viewer (`rerun --serve-web`, built from `Dockerfile`) at `https://reru
    For a dataset in the `processed` bucket, use `/lerobot-processed/` in place of `/lerobot/` (and `/processed/` in place of `/raw/` for a bag).
 4. Open a bag of 500 MB or more in the desktop viewer: the web viewer runs in the browser's ~4 GB and only partly loads it. Download it (its file link in Browse Data, or `aws s3 cp`), then open the file; the desktop viewer can't fetch the links above, as it doesn't trust the flywheel CA.
    ```bash
-   pip install rerun-sdk==0.38.1
+   uv tool install rerun-sdk==0.38.1      # once; the viewer's version (quickstart: tools)
    rerun <bag.mcap>
    ```
 5. To inspect a bag on your own machine without uploading it, convert it locally:

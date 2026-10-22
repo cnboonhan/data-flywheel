@@ -32,6 +32,8 @@ ARMS = {"primary": "left", "secondary": "right"}
 p = argparse.ArgumentParser()
 p.add_argument("collect_dir", type=Path, help="a collect_behavior.sh output dir (collect.jsonl inside), or any dir of ASPIRE runs")
 p.add_argument("--out", type=Path, required=True)
+p.add_argument("--visuals", nargs="*", default=[], help="extra per-run cameras (media/videos/<name>.mp4, e.g. third_person) copied to "
+               "<out>/visuals/episode_<n>_<name>.mp4 for watching, not features")
 p.add_argument("--all", action="store_true", help="keep failed runs too")
 p.add_argument("--repo-id", default=None)
 p.add_argument("--format", choices=("flywheel", "galaxea"), default="flywheel",
@@ -51,7 +53,8 @@ kept = []
 for r in runs:
     o = json.loads((r / "outcome.json").read_text())
     whole = (r / "episode/whole_body.jsonl").exists()
-    if (args.all or o.get("task_success")) and (r / "episode/steps.jsonl").exists() and (r / "media/videos/head.mp4").exists() \
+    ok = o.get("task_success") if o.get("task_success") is not None else o.get("protocol_success")   # door witnesses write only the latter
+    if (args.all or ok) and (r / "episode/steps.jsonl").exists() and (r / "media/videos/head.mp4").exists() \
             and (whole or args.arms_only):
         kept.append(r)
 print(f"{len(kept)} of {len(runs)} runs" + ("" if args.all else " (successful)"), flush=True)
@@ -189,3 +192,16 @@ for r in kept:
     ds.save_episode()
     print(f"{r.parent.parent.name}/{r.parent.name}: {n} frames, {task!r}", flush=True)
 print(f"wrote {ds.num_episodes} episodes, {ds.num_frames} frames to {args.out}", flush=True)
+
+# the extra cameras, episode-numbered like the dataset (kept runs in order), outside the features
+if args.visuals:
+    vis = args.out / "visuals"
+    vis.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for ep, r in enumerate(kept):
+        for cam in args.visuals:
+            src = r / f"media/videos/{cam}.mp4"
+            if src.exists():
+                shutil.copy(src, vis / f"episode_{ep:06d}_{cam}.mp4")
+                copied += 1
+    print(f"visuals: {copied} videos copied to {vis}", flush=True)

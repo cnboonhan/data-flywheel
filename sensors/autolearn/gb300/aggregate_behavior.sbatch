@@ -15,7 +15,7 @@ dst=s3://raw/internal_datasets/autolearn-behavior/$suite/$policy
 cat "$src"/seeds_*/collect.jsonl > "$src/collect.jsonl"   # one log over every job, for the converter and the README
 echo "$(grep -c '"task_success": true' "$src/collect.jsonl") successes of $(wc -l < "$src/collect.jsonl") runs in $src"
 rm -rf "$out"
-"$STATE/venv-lerobot/bin/python" "$A/adapter/behavior_to_lerobot.py" "$src" --out "$out" --repo-id "autolearn-behavior/$suite"
+"$STATE/venv-lerobot/bin/python" "$A/adapter/behavior_to_lerobot.py" "$src" --out "$out" --repo-id "autolearn-behavior/$suite" --visuals third_person
 cp "$src/collect.jsonl" "$out/meta/collect.jsonl"   # which instance each episode came from, and the failures
 set -a; . /tier1/mistral/flywheel/flywheel.env; set +a
 AWS_ENDPOINT_URL=$S3_ENDPOINT_URL uvx --from awscli aws s3 sync --only-show-errors --delete "$out" "$dst"

@@ -73,12 +73,17 @@ Open `https://$SERVICE_HOST:$CADDY_PORT/` and sign in with your name and Keycloa
 
 ## 5. Use the stack from a shell
 
-Install the command-line tools once:
+Install the command-line tools once, with [uv](https://docs.astral.sh/uv/): each tool gets its own environment and lands on your `PATH`, nothing goes into your system Python.
 
 ```bash
-uv tool install awscli && uv tool install mlflow-skinny
-brew install tea          # Gitea's CLI; on Linux, take the binary from https://dl.gitea.com/tea/
+curl -LsSf https://astral.sh/uv/install.sh | sh    # uv itself, if `uv --version` fails; then open a new shell
+uv tool install awscli                             # aws: the S3 buckets
+uv tool install mlflow-skinny                      # mlflow: runs and the model registry
+uv tool install rerun-sdk==0.38.1                  # rerun: the desktop viewer at the stack's version, for large bags (services/rerun)
+brew install tea                                   # Gitea's CLI; on Linux, take the binary from https://dl.gitea.com/tea/
 ```
+
+`uv tool upgrade --all` updates them, except the pinned `rerun-sdk`, which should stay at the viewer's version. For a one-off command without installing, use `uvx`, e.g. `uvx --from awscli aws s3 ls s3://raw/`.
 
 ### S3: data in the buckets
 
@@ -96,13 +101,13 @@ aws s3 cp ./file s3://raw/<dest>/file                            # one file
 ```bash
 mlflow experiments search                                        # experiments and their IDs
 mlflow runs list --experiment-id <id>                            # runs of one experiment
-python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry
+uv run --with mlflow-skinny python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry
 mlflow artifacts download --artifact-uri models:/<model>/<version> --dst-path ./model      # a registered model
 mlflow artifacts download --artifact-uri models:/<model>@<alias> --dst-path ./model        # by alias (e.g. @dynamo: what Dynamo serves)
 mlflow artifacts download --artifact-uri runs:/<run id>/<path> --dst-path ./out            # a run's artifacts
 ```
 
-Registering, aliasing and logging go through the Python client (`mlflow.MlflowClient()`), which reads the same variables; see [mlflow/](services/mlflow/README.md) and, to serve a model, [triton/](services/triton/README.md).
+Registering, aliasing and logging go through the Python client (`mlflow.MlflowClient()`; in a script, `uv run --with mlflow-skinny python script.py`), which reads the same variables; see [mlflow/](services/mlflow/README.md) and, to serve a model, [triton/](services/triton/README.md).
 
 ### Gitea: pipelines
 

@@ -1,0 +1,4 @@
+# The opening_door task (adapter/run_behavior.py) on the door room (assets/door_room): the latching door asset
+# door_flylat_0 alone, closer and lever on its own joints (assets/latch_door/latch.py); spring_doors.yaml's settings.
+extends: spring_doors.yaml
+objects: [door_flylat_0]
