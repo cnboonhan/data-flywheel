@@ -1,6 +1,6 @@
 # Download a public Hugging Face dataset (or a subset) into s3://raw/open_datasets/<dest>/, through the S3 gateway.
 # Models: download-models-hf.yml (registers them in MLflow). Known datasets (repo, include, dest):
-#   OpenGalaxea/Galaxea-Open-World-Dataset  *  galaxea-open-world-r1lite
+#   OpenGalaxea/Galaxea-Open-World-Dataset  *  Galaxea-Open-World-Dataset
 #   simple-world-lab/HiFi-UMI-2K            *  HiFi-UMI-2K
 #   nvidia/PhysicalAI-Robotics-NuRec        nova_carter-wormhole/*.usdz,nova_carter-wormhole/occupancy_map.*,nova_carter-wormhole/training_trajectory*  nurec-nova_carter-wormhole   (gated)
 #   nvidia/PhysicalAI-Robotics-NuRec        zh_lounge/*  nurec-zh_lounge   (gated)

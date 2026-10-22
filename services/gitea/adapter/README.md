@@ -4,7 +4,7 @@ The Data Conversion stage. Converts raw datasets into XPolicyLab's xspark format
 
 | Workflow | Source → bench |
 |---|---|
-| [`galaxeaOpenWorldDataset_to_xpolicylab`](galaxeaOpenWorldDataset/) | `raw/open_datasets/galaxea-open-world-r1lite/lerobot/<task>.tar.gz` → `galaxeaOpenWorldDataset` |
+| [`galaxeaOpenWorldDataset_to_xpolicylab`](galaxeaOpenWorldDataset/) | `raw/open_datasets/Galaxea-Open-World-Dataset/lerobot/<task>.tar.gz` → `galaxeaOpenWorldDataset` |
 | [`robodojo_to_xpolicylab`](robodojo/) | `raw/open_datasets/robodojo/<task>/<env_cfg>/data/` (copy) → `RoboDojo` |
 | [`geniesim_to_xpolicylab`](geniesim/) | `raw/internal_datasets/geniesim/<task>/` (LeRobot v2.1 from [autolearn](../../../sensors/autolearn/README.md)'s `to_lerobot.py`) → `geniesim`; also runs locally with `--out <dir>` |
 
