@@ -13,6 +13,9 @@
 {{- /* a LeRobot v2.x chunk folder (<root>/data/chunk-NNN): its episode_N.parquet files become episode links */ -}}
 {{- $root := "" -}}
 {{- if regexMatch "/data/chunk-[0-9]+$" $inbucket }}{{ $root = regexReplaceAll "/data/chunk-[0-9]+$" $inbucket "" }}{{ end -}}
+{{- /* a LeRobot dataset folder (v2.x or v3: it holds meta/), or a chunk folder in one: link its dataset page */ -}}
+{{- $dataset := $root -}}
+{{- range .Items }}{{ if and .IsDir (eq (trimSuffix "/" .Name) "meta") $inbucket }}{{ $dataset = $inbucket }}{{ end }}{{ end -}}
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -32,13 +35,17 @@
   td.size, td.time { color: var(--muted); white-space: nowrap; text-align: right; }
   td.name { word-break: break-all; }
   a.open { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--pill); font-size: 12px; margin-left: 8px; }
+  p > a.open { margin-left: 0; }
   @media (max-width: 600px) { td.time { display: none; } }
 </style>
 </head>
 <body>
 <main>
 <h1>{{ if $dir }}{{ trimPrefix "/" $dir }}/{{ else }}Buckets{{ end }}</h1>
-<p class="hint">Bags (.mcap, .bag) and LeRobot v2.x episodes (under <code>data/chunk-*</code>) open in Rerun. LeRobot v3 files hold many episodes each: open those from FiftyOne's <code>rerun_url</code>.</p>
+<p class="hint">Bags (.mcap, .bag) and LeRobot v2.x episodes (under <code>data/chunk-*</code>) open in Rerun. A LeRobot dataset folder (v2.x or v3) links its dataset page: summary, episodes and tasks, each episode openable.</p>
+{{- if and $bucket $dataset }}
+<p><a class="open" href="/dataset/{{ $bucket }}{{ $dataset }}/">dataset page</a></p>
+{{- end }}
 <table>
 {{- if .CanGoUp }}
 <tr><td class="name"><a href="../">../</a></td><td class="size"></td><td class="time"></td></tr>

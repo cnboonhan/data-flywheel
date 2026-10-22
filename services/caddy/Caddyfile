@@ -234,6 +234,16 @@ https://rerun.{$SERVICE_HOST}:8443 {
 			file_server
 		}
 	}
+	# A LeRobot dataset's page (rerun-lerobot: summary and episodes from meta/, each linked into the viewer). Behind SSO;
+	# the links carry the path token, which only Caddy adds (header_up replaces any the client sent).
+	handle /dataset/* {
+		route {
+			import sso
+			reverse_proxy rerun-lerobot:8080 {
+				header_up X-Rerun-Token {env.RERUN_RAW_TOKEN}
+			}
+		}
+	}
 	# The raw and processed buckets as folders, bags and LeRobot v2.x episodes linked into the viewer
 	# (site/rerun-browse.html)
 	redir /browse /browse/

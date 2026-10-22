@@ -2,7 +2,7 @@
 
 Rerun web viewer (`rerun --serve-web`, built from `Dockerfile`) at `https://rerun.$SERVICE_HOST:$CADDY_PORT/`, behind SSO. The same origin serves the `raw` and `processed` buckets, read-only, at `/raw/` and `/processed/`.
 
-1. Browse the `raw` and `processed` buckets at `https://rerun.$SERVICE_HOST:$CADDY_PORT/browse/` (SSO). Each bag and LeRobot v2.x episode (under `data/chunk-*`) has an "open in Rerun" link carrying the token, so you don't build the links below by hand. LeRobot v3 files hold many episodes each: open those from FiftyOne.
+1. Browse the `raw` and `processed` buckets at `https://rerun.$SERVICE_HOST:$CADDY_PORT/browse/` (SSO). Each bag and LeRobot v2.x episode (under `data/chunk-*`) has an "open in Rerun" link carrying the token, so you don't build the links below by hand. A LeRobot dataset folder (v2.x or v3) links its **dataset page**, `https://rerun.$SERVICE_HOST:$CADDY_PORT/dataset/<raw|processed>/<path>/` (SSO): version, robot, frame rate, cameras, signals, and every episode with its task and length, filterable by task, each with an "open in Rerun" link. It reads the dataset's `meta/` on each visit, so a dataset is viewable as soon as it is in a bucket; nothing is ingested.
 2. Open a raw bag. FiftyOne's MCAP samples carry this link as `rerun_url`, so you can also click through from there.
    ```
    https://rerun.$SERVICE_HOST:$CADDY_PORT/?url=https://rerun.$SERVICE_HOST:$CADDY_PORT/raw/$RERUN_RAW_TOKEN/<group>/<dataset>/<path>.mcap
