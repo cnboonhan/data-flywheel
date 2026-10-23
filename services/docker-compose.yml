@@ -271,13 +271,13 @@ services:
     environment:
       HOME: /tmp
 
-  # LeRobot episodes as Rerun recordings, built on request from the raw or processed bucket (rerun/lerobot_rrd.py): the viewer opens
+  # LeRobot episodes as Rerun recordings, built on request from the raw or processed bucket (rerun/lerobot_recording_server.py): the viewer opens
   # files by URL, not LeRobot folders. Caddy routes rerun.<host>/lerobot/<token>/... here.
   rerun-lerobot:
     <<: *common
     build:
       context: ./rerun
-      dockerfile: Dockerfile.lerobot
+      dockerfile: Dockerfile.lerobot_recording_server
     image: flywheel-rerun-lerobot:0.38.1
     environment:
       HOME: /tmp

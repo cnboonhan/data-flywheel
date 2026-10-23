@@ -1,7 +1,7 @@
-# LeRobot episodes as Rerun recordings (lerobot_rrd.py): the viewer's SDK, ffmpeg to cut each camera's span of the
+# LeRobot episodes as Rerun recordings (lerobot_recording_server.py): the viewer's SDK, ffmpeg to cut each camera's span of the
 # chunk video, pyarrow for the parquet. Same Rerun version as the viewer, so its recordings always open there.
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir rerun-sdk==0.38.1 pyarrow==21.0.0 numpy && rerun analytics disable
-COPY lerobot_rrd.py /app/lerobot_rrd.py
-CMD ["python3", "/app/lerobot_rrd.py"]
+COPY lerobot_recording_server.py /app/lerobot_recording_server.py
+CMD ["python3", "/app/lerobot_recording_server.py"]
