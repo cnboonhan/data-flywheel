@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
-"""Serve MLflow registered model versions on Triton. Run by the Gitea workflow sync-triton.
+"""Serve a Triton model repository whose weights live in the MLflow registry. Run by the Gitea workflow sync-triton.
 
-Desired state is the deployment spec, models.yaml in the Gitea repo triton (the models.yaml beside this file
-is its seed): every entry names a registered model and version to serve, as a Triton model with the registered model's
-name and the MLflow version number as Triton version, and optionally its backend, GPU and vLLM engine arguments (SPEC_KEYS
-below). The weights must be registered in MLflow first (training runs; download-models-hf, by an admin). Each sync
+Desired state is the Gitea repo triton, a Triton model repository (Triton's own layout: <model>/config.pbtxt and
+<model>/<version>/ with the code; services/triton/models/ is its seed) without the weights: each config.pbtxt names
+them as the parameters mlflow_model and mlflow_version, a version an admin registered in MLflow. Each sync
 
-  1. packages new or changed versions into s3://triton/models/<name>/ (Triton's model repository), using the packager
-     for the run's `model` param (PACKAGERS below; a Hugging Face model registered by download-models-hf gets the
-     Python backend that HF_BACKENDS or the spec's `backend` names, else the vLLM packager), and removes models no longer
-     in the spec;
-  2. loads or unloads them in Triton (explicit model control) and runs one zero-input inference on each;
-  3. records the outcome where people look:
-       - Triton model config         parameters mlflow_model, mlflow_version, mlflow_run_id, model, embodiment, action,
-                                     mix, data_fingerprint, git_commit, spec, synced_at (GET /v2/models/<name>/config)
-       - s3://triton/sync/status.json   the current table; sync/log/<time>.json   every sync that changed something
+  1. copies new or changed models into s3://triton/models/<name>/ (the repository Triton reads), adding to each
+     config.pbtxt the parameters weights (the version's artifacts, read in place under /mlflow, which the server
+     mounts), mlflow_run_id and synced_at, and for a vLLM model setting model.json's "model" to the weights; a model
+     changes when its files or its MLflow version's run do. Models no longer in the repo are removed;
+  2. loads or unloads them in Triton (explicit model control) and checks each is ready (and, when all its required
+     inputs are numbers, answers one request of zeros);
+  3. records the outcome in s3://triton/sync/status.json (the current table) and sync/log/<time>.json (every sync that
+     changed something), and in each model's config (GET /v2/models/<name>/config).
 
-    python sync.py [--spec models.yaml] [--dry-run] [--force NAME ...]
+    python sync.py [--repo DIR] [--dry-run] [--force NAME ...]
     python sync.py --status          print what Triton has loaded and where each model came from
 
 Env: MLFLOW_TRACKING_URI/USERNAME/PASSWORD, S3_ENDPOINT_URL + AWS_* (the gateway), TRITON_URL (http://triton:8000),
-FLYWHEEL_ROOT (the checkout: serve_pi05.py and r1pro.py for π0.5, models/mlp for MLP), TRITON_SPEC (the spec, else --spec).
+TRITON_KEY (Triton's restricted APIs), TRITON_REPO (the model repository, else --repo).
 """
 
 import argparse
 import datetime
-import functools
+import hashlib
 import json
 import os
-import shlex
+import re
 import shutil
 import sys
 import tempfile
@@ -43,191 +41,68 @@ BUCKET = os.environ.get("TRITON_BUCKET", "triton")
 MODELS, SYNC = "models", "sync"   # the model repository Triton reads, and the sync's own records
 TRITON = os.environ.get("TRITON_URL", "http://triton:8000").rstrip("/")
 KEY = {"triton-key": os.environ["TRITON_KEY"]} if os.environ.get("TRITON_KEY") else {}   # Triton's restricted APIs
-ROOT = os.environ.get("FLYWHEEL_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 HERE = os.path.dirname(os.path.abspath(__file__))
 NOW = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")   # a model directory's name, Triton's model name
 
 
-# ---- packagers: (MLflow version, run, downloaded checkpoints dir, target model dir) -> Triton model ----------------
+# ---- the repository --------------------------------------------------------------------------------------------------
 
-def param_lines(params):
-    return [f'parameters {{ key: "{k}" value {{ string_value: {json.dumps(str(v))} }} }}' for k, v in params.items()]
-
-
-def pbtxt(backend, inputs, outputs, params, max_batch=8, platform=None):
-    """config.pbtxt; inputs/outputs: (name, TYPE, dims) without the batch dim. max_batch: the largest batch Triton's
-    dynamic batcher forms (8; untuned)."""
-    t = lambda kind, n, ty, d: f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ] }}'
-    lines = [f'platform: "{platform}"' if platform else f'backend: "{backend}"', f"max_batch_size: {max_batch}"]
-    lines += [t("input", *i) for i in inputs] + [t("output", *o) for o in outputs]
-    lines += ["dynamic_batching { }", 'instance_group [ { kind: KIND_GPU } ]']   # one instance on every GPU
-    return "\n".join(lines + param_lines(params)) + "\n"
+def param(cfg, key):
+    """A string parameter of a config.pbtxt, or None."""
+    m = re.search(r'parameters\s*\{\s*key:\s*"' + re.escape(key) + r'"\s*value\s*\{\s*string_value:\s*"([^"]*)"', cfg)
+    return m and m.group(1)
 
 
-PI05 = os.path.join(ROOT, "sensors", "autolearn", "adapter", "pi05")   # serve_pi05.py and r1pro.py (the openpi configs)
+def read_repo(path):
+    """{name: (model dir, config text, mlflow model, version)} for every model in the repository; exits on errors."""
+    out, errs = {}, []
+    for name in sorted(os.listdir(path)):
+        d = os.path.join(path, name)
+        if not os.path.isfile(os.path.join(d, "config.pbtxt")):
+            continue   # README.md, .git, ...
+        cfg = open(os.path.join(d, "config.pbtxt")).read()
+        model, version = param(cfg, "mlflow_model"), param(cfg, "mlflow_version")
+        if not NAME.fullmatch(name):
+            errs.append(f"{name}: not a valid model name")
+        if not model or not (version or "").isdigit():
+            errs.append(f"{name}: config.pbtxt needs the parameters mlflow_model and mlflow_version (a number)")
+        if param(cfg, "weights") is not None:
+            errs.append(f"{name}: config.pbtxt sets weights, which sync.py fills in")
+        if not any(v.isdigit() for v in os.listdir(d)):
+            errs.append(f"{name}: no version directory (<model>/1/)")
+        out[name] = (d, cfg, model, version)
+    if errs:
+        sys.exit(f"{path}: " + "; ".join(errs))
+    return out
 
 
-def package_pi05(mv, run, ckpt, dst, params, opts):
-    """A π0.5 checkpoint (openpi; a registered step directory with params/ and assets/) on backends/xpolicylab_pi05.py,
-    read in place from /mlflow. The training run names its openpi config (param `openpi_config`, one r1pro.py
-    registers) and may give the default instruction (param `prompt`); the state size comes from the checkpoint's norm
-    stats."""
-    if not mv.source.startswith("mlflow-artifacts:/"):
-        raise ValueError(f"source {mv.source} is not in the mlflow bucket")
-    config = run.data.params.get("openpi_config")
-    if not config:
-        raise ValueError("the training run has no param openpi_config")
-    with tempfile.TemporaryDirectory() as tmp:
-        assets = mlflow.artifacts.download_artifacts(artifact_uri=mv.source.rstrip("/") + "/assets", dst_path=tmp)
-        stats = [os.path.join(d, f) for d, _, fs in os.walk(assets) for f in fs if f == "norm_stats.json"]
-        if not stats:
-            raise ValueError("the checkpoint has no assets/<repo>/norm_stats.json")
-        dim = len(json.load(open(stats[0]))["norm_stats"]["state"]["mean"])
-    v = os.path.join(dst, mv.version)
-    os.makedirs(v)
-    shutil.copy(os.path.join(BACKENDS, "xpolicylab_pi05.py"), os.path.join(v, "model.py"))
-    for f in ("serve_pi05.py", "r1pro.py"):
-        shutil.copy(os.path.join(PI05, f), v)
-    img = lambda n: f'input {{ name: "{n}" data_type: TYPE_UINT8 dims: [ -1, -1, 3 ] }}'
-    lines = ['backend: "python"', "max_batch_size: 0", f'input {{ name: "state" data_type: TYPE_FP32 dims: [ {dim} ] }}',
-             img("cam_high"), img("cam_left_wrist"), img("cam_right_wrist"),
-             'input { name: "prompt" data_type: TYPE_STRING dims: [ 1 ] optional: true }',
-             f'output {{ name: "action" data_type: TYPE_FP32 dims: [ -1, {dim} ] }}']
-    pin = f", gpus: [ {int(opts['gpu'])} ]" if "gpu" in opts else ""   # without gpus: one instance on every GPU
-    lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU{pin} }} ]")
+def fingerprint(d, mv):
+    """The model directory's files and the MLflow version's run: a change to either reloads the model."""
+    h = hashlib.sha256(f"{mv.name} {mv.version} {mv.run_id}".encode())
+    for root, dirs, files in sorted(os.walk(d)):
+        dirs[:] = sorted(x for x in dirs if x != "__pycache__")
+        for f in sorted(files):
+            p = os.path.join(root, f)
+            h.update(os.path.relpath(p, d).encode() + open(p, "rb").read())
+    return h.hexdigest()[:12]
+
+
+def package(name, d, cfg, mv, dst):
+    """The model as Triton reads it: its files, config.pbtxt with the weights' path and provenance added."""
     weights = "/mlflow/" + mv.source.removeprefix("mlflow-artifacts:/").lstrip("/")
-    params = {**params, "weights": weights, "openpi_config": config, "prompt": run.data.params.get("prompt", "")}
-    return "\n".join(lines + param_lines(params)) + "\n"
-
-
-def package_mlp(mv, run, ckpt, dst, params, opts):
-    import torch
-    sys.path[:0] = [os.path.join(ROOT, "services", "slurm", "models", "mlp"), os.path.join(ROOT, "services", "slurm", "lib")]
-    from train import MLP
-    c = torch.load(os.path.join(ckpt, "final.pt"), map_location="cpu", weights_only=False)
-    sd = c["model"]
-    d_in, d_out = sd["net.0.weight"].shape[1], sd["net.4.weight"].shape[0]
-    mlp = MLP(d_in, d_out, c["args"]["hidden"])
-    mlp.load_state_dict(sd)
-
-    class Served(torch.nn.Module):   # normalisation inside the graph; [B, D] -> [B, 1, D] (a chunk of one)
-        def __init__(self):
-            super().__init__()
-            self.mlp = mlp
-            self.register_buffer("mean", torch.as_tensor(c["state_mean"]))
-            self.register_buffer("std", torch.as_tensor(c["state_std"]))
-
-        def forward(self, state):
-            return self.mlp((state - self.mean) / self.std).unsqueeze(1)
-
-    v = os.path.join(dst, mv.version)
-    os.makedirs(v)
-    # ONNX opset 18, a batch dimension up to 4096 and max_batch_size 256 in Triton: untuned.
-    torch.onnx.export(Served().eval(), (torch.zeros(1, d_in),), os.path.join(v, "model.onnx"),
-                      input_names=["state"], output_names=["action"], opset_version=18,
-                      dynamic_shapes={"state": {0: torch.export.Dim("batch", max=4096)}})
-    return pbtxt(None, [("state", "FP32", [d_in])], [("action", "FP32", [1, d_out])], params, max_batch=256,
-                 platform="onnxruntime_onnx")
-
-
-# vLLM engine arguments (model.json); the spec's `vllm` overrides them, its `gpu` the GPU.
-# Context 32k tokens, 90% of the GPU's memory (vLLM's default), at most 4 images per prompt, 32 sequences batched at
-# once: untuned. VLLM_GPU and PYTHON_GPU (below) place the models on the service node's GPUs: the vLLM model takes all
-# of GPU 1, the Python-backend models share GPU 2 (~71 GB together); which index is a choice, not tuned.
-VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_per_prompt": {"image": 4},
-               "max_num_seqs": 32}
-VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "2")   # one whole GPU (TRITON_GPU_C, index 2 inside) unless the spec's `gpu`
-
-
-def package_vllm(mv, run, ckpt, dst, params, opts):
-    """A Hugging Face LLM or VLM on the vLLM backend, as one instance on one whole GPU (vLLM's own batching; split
-    across GPUs the 122B hit NVLink errors). The weights are read in place from the mlflow bucket, which the server
-    mounts at /mlflow: copying hundreds of GB into the triton bucket would only double them."""
-    if not mv.source.startswith("mlflow-artifacts:/"):
-        raise ValueError(f"source {mv.source} is not in the mlflow bucket")
-    engine = {"model": "/mlflow/" + mv.source.removeprefix("mlflow-artifacts:/").lstrip("/"), **VLLM_ENGINE,
-              **opts.get("vllm", {})}
-    v = os.path.join(dst, mv.version)
-    os.makedirs(v)
-    json.dump(engine, open(os.path.join(v, "model.json"), "w"), indent=1)
-    gpu = int(opts.get("gpu", VLLM_GPU))
-    lines = ['backend: "vllm"', f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]"]
-    # vLLM's own metrics on Triton's metrics port (vllm:prompt_tokens_total, vllm:generation_tokens_total, time to first
-    # token, ... per model): the token usage Prometheus tracks
-    return "\n".join(lines + param_lines({"REPORT_CUSTOM_METRICS": "true", **params})) + "\n"
-
-
-# Python backends: <BACKENDS>/<name>.py (the Gitea repo triton's backends/, where they are edited; the backends/
-# beside this file are the seed), copied into a model as its model.py with _common.py. A file whose name doesn't start
-# with "_" is a backend for a Hugging Face model when it declares, as plain literals at module level: TRITON_INPUTS and
-# TRITON_OUTPUTS ((name, type, dims[, optional]) each), TRITON_SMOKE (the request smoke_test sends, "image" being a
-# 64x64 grey PNG) and TRITON_HF_REPOS (the Hugging Face repos it serves by default; the spec's `backend` picks it for any
-# other). sync.py reads those literals without running the file; the file itself runs only inside Triton. Each loads
-# its weights in place from /mlflow, as one instance on every GPU Triton sees (Triton spreads requests over them), or
-# on one GPU when the spec's `gpu` pins it, takes encoded images as BYTES and has no batch dimension.
-BACKENDS = HERE + "/backends"   # set from --backends
-PYTHON_IO, SMOKE, HF_BACKENDS = {}, {}, {}
-
-
-def load_backends(path):
-    """Fill PYTHON_IO, SMOKE and HF_BACKENDS from the backends' TRITON_* literals."""
-    import ast
-    import re
-    global BACKENDS
-    BACKENDS = path
-    for f in sorted(os.listdir(path)):
-        name = f.removesuffix(".py")
-        if not f.endswith(".py") or f.startswith("_") or not re.fullmatch(r"[a-z0-9_]+", name):
-            continue
-        consts = {}
-        for node in ast.parse(open(os.path.join(path, f)).read()).body:
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "").startswith("TRITON_"):
-                consts[node.targets[0].id] = ast.literal_eval(node.value)
-        if "TRITON_INPUTS" not in consts:   # a backend a packager uses for training runs (xpolicylab_pi05.py)
-            continue
-        PYTHON_IO[name] = (consts["TRITON_INPUTS"], consts["TRITON_OUTPUTS"])
-        SMOKE[name] = consts.get("TRITON_SMOKE", {})
-        HF_BACKENDS.update({r: name for r in consts.get("TRITON_HF_REPOS", [])})
-    PACKAGERS.update({b: functools.partial(package_python, b) for b in PYTHON_IO})
-    IN_PLACE.update(PYTHON_IO)
-
-
-def code_hash(kind):
-    """The hash of the code a model of this kind is packaged with: a changed backend repackages its models."""
-    import hashlib
-    files = {"Pi_05": ["xpolicylab_pi05.py"]}.get(kind) or ([f"{kind}.py", "_common.py"] if kind in PYTHON_IO else [])
-    h = hashlib.sha256()
-    for f in files:
-        h.update(open(os.path.join(BACKENDS, f), "rb").read())
-    return h.hexdigest()[:12] if files else ""
-
-
-def hf_kind(run, opts):
-    return opts.get("backend") or HF_BACKENDS.get(run.data.params.get("hf_repo", ""), "vllm")
-
-
-def package_python(backend, mv, run, ckpt, dst, params, opts):
-    """A Hugging Face model on its Python backend: model.py (+ _common.py), weights read in place from /mlflow."""
-    if not mv.source.startswith("mlflow-artifacts:/"):
-        raise ValueError(f"source {mv.source} is not in the mlflow bucket")
-    v = os.path.join(dst, mv.version)
-    os.makedirs(v)
-    shutil.copy(os.path.join(BACKENDS, f"{backend}.py"), os.path.join(v, "model.py"))
-    shutil.copy(os.path.join(BACKENDS, "_common.py"), v)
-    t = lambda kind, n, ty, d, opt=False: (f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ]'
-                                           + (" optional: true" if opt else "") + " }")
-    ins, outs = PYTHON_IO[backend]
-    lines = ['backend: "python"', "max_batch_size: 0"] + [t("input", *i) for i in ins] + [t("output", *o) for o in outs]
-    pin = f", gpus: [ {int(opts['gpu'])} ]" if "gpu" in opts else ""   # without gpus: one instance on every GPU
-    lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU{pin} }} ]")
-    in_place = lambda m: "/mlflow/" + m.source.removeprefix("mlflow-artifacts:/").lstrip("/")
-    params = {**params, "weights": in_place(mv), "hf_repo": run.data.params.get("hf_repo", "")}
-    return "\n".join(lines + param_lines(params)) + "\n"
-
-
-PACKAGERS = {"Pi_05": package_pi05, "MLP": package_mlp, "vllm": package_vllm}   # keyed by the training run's param `model`;
-                                                                            # load_backends adds the Python backends
-IN_PLACE = {"vllm", "Pi_05"}   # packagers that read the weights from /mlflow instead of downloading them (+ the Python backends)
+    shutil.copytree(d, dst, ignore=shutil.ignore_patterns("__pycache__"))
+    add = {"weights": weights, "mlflow_run_id": mv.run_id or "", "synced_at": NOW}
+    cfg = cfg.rstrip("\n") + "\n" + "\n".join(
+        f'parameters {{ key: "{k}" value {{ string_value: {json.dumps(v)} }} }}' for k, v in add.items()) + "\n"
+    open(os.path.join(dst, "config.pbtxt"), "w").write(cfg)
+    if re.search(r'^\s*backend:\s*"vllm"', cfg, re.M):   # vLLM's engine arguments: the weights are its "model"
+        for v in os.listdir(dst):
+            mj = os.path.join(dst, v, "model.json")
+            if os.path.isfile(mj):
+                engine = json.load(open(mj))
+                engine["model"] = weights
+                json.dump(engine, open(mj, "w"), indent=1)
 
 
 # ---- S3 ----------------------------------------------------------------------------------------------------------
@@ -282,7 +157,7 @@ def triton(path, body=None, method=None):
                                  method=method or ("POST" if body is not None else "GET"),
                                  headers={"Content-Type": "application/json", **KEY})
     try:
-        with urllib.request.urlopen(req, timeout=600) as r:   # a load answers once done: ~4 min for the 122B; untuned
+        with urllib.request.urlopen(req, timeout=600) as r:   # a load answers once done: ~4 min for a 122B; untuned
             raw = r.read()
             return r.status, json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
@@ -293,180 +168,85 @@ def triton(path, body=None, method=None):
             return e.code, {"error": raw.decode(errors="replace")}
 
 
+NUMERIC = {"FP32", "FP16", "BF16", "FP64", "INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32", "UINT64", "BOOL"}
+
+
 def smoke_test(name):
-    """One inference with zero inputs (images 64x64), or for a vLLM model a few generated tokens; returns an error
-    string or None."""
+    """The model is ready; when every required input is a number, it also answers one request of zeros (dims of -1 as
+    64; images 64x64), else readiness is the check (encoded images or text can't be zeros). An error string or None."""
+    code, out = triton(f"/v2/models/{name}/ready")
+    if code != 200:
+        return out.get("error", f"not ready (HTTP {code})")
     code, cfg = triton(f"/v2/models/{name}/config")
     if code != 200:
         return cfg.get("error", f"HTTP {code}")
     if cfg.get("backend") == "vllm":
         code, out = triton(f"/v2/models/{name}/generate",
                            {"text_input": "Hello", "sampling_parameters": json.dumps({"max_tokens": 4})})
-        if code != 200:
-            return out.get("error", f"HTTP {code}")
-        print(f"  {name}: generate ok, {out.get('text_output', '')!r}")
+        return None if code == 200 else out.get("error", f"HTTP {code}")
+    required = [i for i in cfg.get("input", []) if not i.get("optional")]
+    if any(i["data_type"].removeprefix("TYPE_") not in NUMERIC for i in required):
+        print(f"  {name}: ready (its inputs aren't numbers: no test request)")
         return None
-    kind = cfg.get("parameters", {}).get("model", {}).get("string_value")
-    if kind in SMOKE:
-        return smoke_python(name, kind)
     inputs = []
-    for i in cfg["input"]:
-        if i.get("optional"):   # zeros make no sense for every optional input (a prompt); leave them to their defaults
-            continue
+    for i in required:
         dims = [64 if d == -1 else int(d) for d in i["dims"]]
         n = 1
         for d in dims:
             n *= d
-        dtype = i["data_type"].removeprefix("TYPE_")
         batch = [1] if cfg.get("max_batch_size", 0) else []   # a model without batching takes its inputs as they are
-        inputs.append({"name": i["name"], "shape": [*batch, *dims], "datatype": dtype, "data": [0] * n})
+        inputs.append({"name": i["name"], "shape": [*batch, *dims], "datatype": i["data_type"].removeprefix("TYPE_"),
+                       "data": [0] * n})
     code, out = triton(f"/v2/models/{name}/infer", {"inputs": inputs})
     if code != 200:
         return out.get("error", f"HTTP {code}")
-    shape = out["outputs"][0]["shape"]
-    print(f"  {name}: inference ok, {out['outputs'][0]['name']} {shape}")
-    return None
-
-
-def smoke_python(name, kind):
-    """One small request to a Hugging Face Python-backend model (binary tensors, so tritonclient)."""
-    import io
-    import numpy as np
-    import tritonclient.http as th
-    from PIL import Image
-    buf = io.BytesIO()
-    Image.new("RGB", (64, 64), (128, 128, 128)).save(buf, format="PNG")
-    types = {n: t for n, t, *_ in PYTHON_IO[kind][0]}
-    np_type = {"STRING": object, "FP32": np.float32, "INT32": np.int32}
-    inputs = []
-    for n, v in SMOKE[kind].items():
-        a = np.array([buf.getvalue() if x == "image" else x.encode() if isinstance(x, str) else x for x in v],
-                     dtype=np_type[types[n]])
-        t = th.InferInput(n, list(a.shape), "BYTES" if types[n] == "STRING" else types[n])
-        t.set_data_from_numpy(a)
-        inputs.append(t)
-    try:   # 10 min as in triton(); untuned
-        out = th.InferenceServerClient(TRITON.split("://")[-1], network_timeout=600).infer(name, inputs, headers=dict(KEY))
-    except Exception as e:
-        return f"{type(e).__name__}: {e}"
-    first = PYTHON_IO[kind][1][0][0]
-    print(f"  {name}: inference ok, {first} {list(out.as_numpy(first).shape)}")
+    print(f"  {name}: inference ok, {out['outputs'][0]['name']} {out['outputs'][0]['shape']}")
     return None
 
 
 # ---- sync --------------------------------------------------------------------------------------------------------
 
-# What a spec entry may say: the registered model and version, and the packager's options. Whoever can push the spec
-# chooses what Triton loads, so nothing else is accepted (the backends are this directory's code, not the spec's).
-SPEC_KEYS = {"name", "version", "backend", "gpu", "vllm"}
-
-
-def read_spec(path):
-    import yaml
-    entries, errs = (yaml.safe_load(open(path)) or {}).get("models") or [], []
-    for e in entries:
-        n = e.get("name", "?")
-        if set(e) - SPEC_KEYS:
-            errs.append(f"{n}: unknown keys {sorted(set(e) - SPEC_KEYS)}")
-        if not str(e.get("version", "")).isdigit():
-            errs.append(f"{n}: version {e.get('version')!r} is not a model version number")
-        if "backend" in e and e["backend"] not in (*PYTHON_IO, "vllm"):
-            errs.append(f"{n}: backend {e['backend']!r} is not one of {', '.join([*PYTHON_IO, 'vllm'])}")
-        if "gpu" in e and not str(e["gpu"]).isdigit():
-            errs.append(f"{n}: gpu {e['gpu']!r} is not a GPU index")
-        if "vllm" in e and not isinstance(e["vllm"], dict):
-            errs.append(f"{n}: vllm must be a mapping of engine arguments")
-    if len({e.get("name") for e in entries}) != len(entries):
-        errs.append("a model is listed twice")
-    if errs:
-        sys.exit(f"{path}: " + "; ".join(errs))
-    return entries
-
-
-def desired(client, spec):
-    """{name: (ModelVersion, options)} for every model the spec lists."""
-    out = {}
-    for e in read_spec(spec):
-        try:
-            mv = client.get_model_version(e["name"], str(e["version"]))
-        except Exception as ex:
-            sys.exit(f"{e['name']} v{e['version']}: not in the MLflow registry ({ex}): register it first")
-        out[e["name"]] = (mv, {k: e[k] for k in ("backend", "gpu", "vllm") if k in e})
-    return out
-
-
-def last_status():
-    """{name: status row} from the previous sync's status.json, or {} before the first."""
-    try:
-        rows = json.loads(s3.get_object(Bucket=BUCKET, Key=f"{SYNC}/status.json")["Body"].read())["models"]
-    except Exception:
-        return {}
-    return {r["model"]: r for r in rows}
-
-
 def sync(args):
     client = mlflow.MlflowClient()
     ensure_bucket()
-    want, have, before = desired(client, args.spec), served(), last_status()
+    repo, have = read_repo(args.repo), served()
     changes, rows, status = [], [], []   # rows: (name, version, action) to bring up in Triton; status: what we report
 
     for name, prov in have.items():
-        if name not in want:
-            print(f"- {name} v{prov['mlflow_version']}: no longer in the spec, unloading")
+        if name not in repo:
+            print(f"- {name}: no longer in the repository, unloading")
             if not args.dry_run:
                 triton(f"/v2/repository/models/{name}/unload", {})
                 remove(name)
-            changes.append({"model": name, "version": prov["mlflow_version"], "action": "unload"})
+            changes.append({"model": name, "version": prov.get("mlflow_version"), "action": "unload"})
 
-    for name, (mv, opts) in sorted(want.items()):
-        prov = have.get(name)
-        run = client.get_run(mv.run_id) if mv.run_id else None
-        kind = run and (run.data.params.get("model") or (hf_kind(run, opts) if "hf_repo" in run.data.params else None))
-        # a changed option or backend code repackages the model, as a new version does
-        spec = json.dumps({**opts, **({"code": code_hash(kind)} if code_hash(kind) else {})}, sort_keys=True)
-        current = (prov and prov["mlflow_version"] == mv.version and prov["mlflow_run_id"] == mv.run_id
-                   and prov.get("spec", "{}") == spec)
-        if current and name not in args.force:
-            rows.append((name, mv.version, None))
+    for name, (d, cfg, model, version) in sorted(repo.items()):
+        try:
+            mv = client.get_model_version(model, version)
+        except Exception as e:
+            err = f"{model} v{version} is not in the MLflow registry ({type(e).__name__}): register it first"
+            print(f"! {name}: {err}")
+            status.append({"model": name, "version": version, "status": "failed", "error": err})
             continue
-        last = before.get(name, {})
-        if (not current and last.get("version") == mv.version and last.get("spec", "{}") == spec
-                and last.get("error", "").startswith("packaging") and name not in args.force):
-            status.append(last)
-            continue   # packaging failed before; retried only with --force (or a new version, options or code)
-        packager = PACKAGERS.get(kind)
-        if packager is None:
-            msg = f"no packager for model '{kind}' (have: {', '.join(PACKAGERS)})"
-            print(f"! {name} v{mv.version}: {msg}")
-            status.append({"model": name, "version": mv.version, "status": "unsupported", "error": msg})
+        if not mv.source.startswith("mlflow-artifacts:/"):
+            err = f"{model} v{version}: source {mv.source} is not in the mlflow bucket"
+            status.append({"model": name, "version": version, "status": "failed", "error": err})
             continue
-        print(f"+ {name} v{mv.version} ({kind}, run {mv.run_id}){' replaces v' + prov['mlflow_version'] if prov else ''}")
-        changes.append({"model": name, "version": mv.version, "action": "load", "replaces": prov and prov["mlflow_version"]})
+        fp = fingerprint(d, mv)
+        if have.get(name, {}).get("fingerprint") == fp and name not in args.force:
+            rows.append((name, version, None))
+            continue
+        print(f"+ {name}: {model} v{version} (run {mv.run_id}, files {fp})")
+        changes.append({"model": name, "version": version, "action": "load"})
         if args.dry_run:
             continue
-        p = run.data.params
-        params = {"mlflow_model": name, "mlflow_version": mv.version, "mlflow_run_id": mv.run_id, "model": kind,
-                  "embodiment": p.get("embodiment", ""), "action": p.get("action", ""), "mix": p.get("mix", ""),
-                  "data_fingerprint": p.get("data_fingerprint", ""), "git_commit": p.get("git_commit", ""), "spec": spec,
-                  "synced_at": NOW}
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                ckpt = None if kind in IN_PLACE else mlflow.artifacts.download_artifacts(   # read in place
-                    artifact_uri=mv.source, dst_path=os.path.join(tmp, "ckpt"))
-                dst = os.path.join(tmp, "repo")
-                os.makedirs(dst)
-                cfg = packager(mv, run, ckpt, dst, params, opts)
-                open(os.path.join(dst, "config.pbtxt"), "w").write(cfg)
-                json.dump(params, open(os.path.join(dst, "flywheel.json"), "w"), indent=1)
-                upload(dst, name)
-            rows.append((name, mv.version, "load"))
-        except Exception as e:
-            print(f"  packaging failed: {type(e).__name__}: {e}")
-            err = f"packaging: {type(e).__name__}: {e}"
-            status.append({"model": name, "version": mv.version, "spec": spec, "status": "failed", "error": err})
-            for c in changes:
-                if c["model"] == name:
-                    c["status"], c["error"] = "failed", err
+        with tempfile.TemporaryDirectory() as tmp:
+            dst = os.path.join(tmp, name)
+            package(name, d, cfg, mv, dst)
+            json.dump({"mlflow_model": model, "mlflow_version": version, "mlflow_run_id": mv.run_id, "fingerprint": fp,
+                       "synced_at": NOW}, open(os.path.join(dst, "flywheel.json"), "w"), indent=1)
+            upload(dst, name)
+        rows.append((name, version, "load"))
 
     if args.dry_run:
         return
@@ -476,7 +256,7 @@ def sync(args):
             code, cfg = triton(f"/v2/models/{name}/config")
             if code == 200 and cfg.get("backend") == "vllm":
                 # Triton loads the new copy before it drops the old one, and a vLLM model's share of its GPU leaves no
-                # room for two: unload first (the model is down until the new copy is ready, ~4 min for the 122B)
+                # room for two: unload first (the model is down until the new copy is ready, ~4 min for a 122B)
                 triton(f"/v2/repository/models/{name}/unload", {})
                 for _ in range(60):   # wait up to 5 min (tries x 5 s) for the old engine to free its GPU memory
                     if triton(f"/v2/models/{name}/ready")[0] != 200:
@@ -485,12 +265,10 @@ def sync(args):
                 time.sleep(15)   # the engine process exits after Triton marks the model unloaded; untuned
             code, out = triton(f"/v2/repository/models/{name}/load", {})
             err = None if code == 200 else out.get("error", f"HTTP {code}")
-        else:
-            code, _ = triton(f"/v2/models/{name}/ready")
-            if code != 200:   # in the repository but not loaded (e.g. Triton restarted and failed it): try again
-                code, out = triton(f"/v2/repository/models/{name}/load", {})
-                err = None if code == 200 else out.get("error", f"HTTP {code}")
-                action = "reload"
+        elif triton(f"/v2/models/{name}/ready")[0] != 200:   # in the repository but not loaded (e.g. Triton restarted)
+            code, out = triton(f"/v2/repository/models/{name}/load", {})
+            err = None if code == 200 else out.get("error", f"HTTP {code}")
+            action = "reload"
         err = err or smoke_test(name)
         state = "failed" if err else "ready"
         if action or err:
@@ -502,7 +280,7 @@ def sync(args):
             if c["model"] == name and c["action"] in ("load", "reload"):
                 c["status"], c["error"] = state, err or ""
 
-    put_json(f"{SYNC}/status.json", {"synced_at": NOW, "spec": args.spec, "models": status})
+    put_json(f"{SYNC}/status.json", {"synced_at": NOW, "models": status})
     if changes:
         put_json(f"{SYNC}/log/{NOW}.json", {"synced_at": NOW, "changes": changes})
     print(f"{len(status)} model(s) served, {len(changes)} change(s)")
@@ -514,26 +292,22 @@ def show_status():
     code, index = triton("/v2/repository/index", {})
     if code != 200:
         sys.exit(f"Triton: HTTP {code} {index}")
-    print(f"{'model':48} {'ver':>4} {'state':12} {'mlflow version':>14}  run / embodiment / mix")
+    print(f"{'model':48} {'ver':>4} {'state':12} {'mlflow version':>14}  run")
     for m in index:
         code, cfg = triton(f"/v2/models/{m['name']}/config") if m.get("state") == "READY" else (0, {})
         p = {k: v["string_value"] for k, v in cfg.get("parameters", {}).items()}
         print(f"{m['name']:48} {m.get('version', ''):>4} {m.get('state', ''):12} {p.get('mlflow_version', '-'):>14}  "
-              f"{p.get('mlflow_run_id', '-')} / {p.get('embodiment', '-')} / {p.get('mix', '-')}"
-              + (f"  ({m['reason']})" if m.get("reason") else ""))
+              f"{p.get('mlflow_run_id', '-')}" + (f"  ({m['reason']})" if m.get("reason") else ""))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--spec", default=os.environ.get("TRITON_SPEC", os.path.join(HERE, "models.yaml")),
-                    help="the deployment spec (the Gitea repo triton's models.yaml; default $TRITON_SPEC, else the seed)")
-    ap.add_argument("--backends", default=os.environ.get("TRITON_BACKENDS", os.path.join(HERE, "backends")),
-                    help="the Python backends (the Gitea repo triton's backends/; default $TRITON_BACKENDS, else the seed)")
+    ap.add_argument("--repo", default=os.environ.get("TRITON_REPO", os.path.join(HERE, "models")),
+                    help="the model repository (the Gitea repo triton; default $TRITON_REPO, else the seed)")
     ap.add_argument("--dry-run", action="store_true", help="report what would change, touch nothing")
-    ap.add_argument("--force", nargs="*", default=[], help="repackage and reload these models even if unchanged")
+    ap.add_argument("--force", nargs="*", default=[], help="reload these models even if unchanged")
     ap.add_argument("--status", action="store_true", help="print Triton's loaded models with their MLflow source")
     args = ap.parse_args()
-    load_backends(args.backends)
     show_status() if args.status else sync(args)
 
 

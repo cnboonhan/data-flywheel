@@ -18,15 +18,6 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # _common.py sits next to model.py
 from _common import get, image, png, respond, scalar, setup, text
 
-# What sync.py reads (as literals, without running this file): the model's Triton inputs and outputs (name, type, dims,
-# optional), the request its smoke test sends ("image": a 64x64 grey PNG; 2 steps keep it quick, it checks the model
-# runs, not how well), and the Hugging Face repos this backend serves by default.
-TRITON_INPUTS = [("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
-                 ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True)]
-TRITON_OUTPUTS = [("image", "STRING", [1])]
-TRITON_SMOKE = {"images": ["image"], "prompt": ["Keep the image as it is."], "steps": [2]}
-TRITON_HF_REPOS = ["Qwen/Qwen-Image-Edit-2511"]
-
 
 class TritonPythonModel:
     def initialize(self, args):

@@ -9,7 +9,7 @@
 # and numpy, which the image's can't share. It is built as sensors/autolearn/gb300/setup_pi05.sh builds the cluster's:
 # openpi's uv.lock exported (with the lerobot group) and installed as is, minus torchcodec (no Linux arm64 wheels), then
 # openpi and openpi-client themselves. The openpi source is the build context `openpi` (compose.yml). The backend
-# (backends/xpolicylab_pi05.py) runs each checkpoint in it as a child process, without the image's dist-packages on
+# (a π0.5 model's 1/model.py) runs each checkpoint in it as a child process, without the image's dist-packages on
 # LD_LIBRARY_PATH (else the venv's torch loads the image's libtorch, built for Python 3.12).
 FROM nvcr.io/nvidia/tritonserver:26.08-py3 AS standard
 FROM nvcr.io/nvidia/tritonserver:26.08-vllm-python-py3

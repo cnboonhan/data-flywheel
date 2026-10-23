@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server for image models and robot policies in the MLflow registry (now: `Qwen-Image-Edit-2511`), as the Gitea repo `triton`'s `models.yaml` lists them, at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, no token). It has `TRITON_NODE` to itself; Kimi K3 is on [Dynamo](../dynamo/README.md) (OpenAI API).
+Triton Inference Server for image models and robot policies in the MLflow registry (now: `Qwen-Image-Edit-2511`), as the Gitea repo `triton`, a Triton model repository, lists them, at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, no token). It has `TRITON_NODE` to itself; Kimi K3 is on [Dynamo](../dynamo/README.md) (OpenAI API).
 
 ## Example usage
 
@@ -46,18 +46,18 @@ Expect an image edit at 1024×1024 in ~16 s.
            mlflow.log_artifacts(f"{step_dir}/{d}", f"checkpoint/{d}")
    mlflow.register_model(f"runs:/{run.info.run_id}/checkpoint", "Pi05.r1pro.picking_up_cup")
    ```
-2. List the version in the spec, `models.yaml` in the Gitea repo `triton` (`https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/triton`), and push to `main`; remove an entry to unload it. Optional per model: `backend`, `gpu`, `vllm` (engine arguments); [`models.yaml`](models.yaml) explains them.
-   ```yaml
-   models:
-     - {name: Pi05.r1pro.picking_up_cup, version: 1}
+2. Add the model to the Gitea repo `triton` (`https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/triton`), which is a [Triton model repository](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/model_repository.html) without the weights: a directory named as clients will call the model, with Triton's [`config.pbtxt`](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/model_configuration.html) and a version directory `1/` holding the backend's code (or, for vLLM, `model.json`). Name the weights in the config, and push to `main`; remove the directory to unload it. Copy a model like it from [`models/`](models/) (the seed).
    ```
-3. The push runs the Gitea workflow `sync-triton` in the admin's `pipelines` repo, through the repo's webhook (`gitea_ci/sync-triton.yml`; an admin can dispatch it by hand with `force` or `dry_run`, [how](../gitea/README.md)): it packages, loads and test-runs what changed. The outcome is in the run's log and `s3://triton/sync/status.json` (`ready`, `failed`, `unsupported`, with the error).
+   parameters { key: "mlflow_model" value { string_value: "Pi05.r1pro.picking_up_cup" } }
+   parameters { key: "mlflow_version" value { string_value: "1" } }
+   ```
+3. The push runs the Gitea workflow `sync-triton` in the admin's `pipelines` repo, through the repo's webhook (`gitea_ci/sync-triton.yml`; an admin can dispatch it by hand with `force` or `dry_run`, [how](../gitea/README.md)): it copies what changed into `s3://triton/models/`, adding the parameter `weights` (the version's artifacts, read in place under `/mlflow`), loads it and checks it answers. The outcome is in the run's log and `s3://triton/sync/status.json` (`ready` or `failed`, with the error).
 
 **Notes**
 - **Who may deploy:** the admins, and the accounts `services/ctl.sh user add <name> --deployer` makes (Gitea only, no Keycloak, a random password printed once): they may push the repos `dynamo` and `triton` and nothing else, so they choose which registered versions are served and with which flags, but registering weights in MLflow stays an admin's job. The repos run no workflows themselves; their webhooks start the admin's syncs (`services/ctl.sh up` makes repos, webhooks and tokens).
-- Runs on three GPUs of `TRITON_NODE` (`TRITON_GPU_A`..`C`, all shared): an image model gets an instance on each, unless the spec pins it to one with `gpu`; a vLLM model takes one whole GPU (`TRITON_VLLM_GPU`; split across GPUs the 122B hit NVLink errors). GPU 0 there isn't ours; keep GPU-heavy Slurm jobs off the node (`--exclude=$TRITON_NODE`).
+- Runs on three GPUs of `TRITON_NODE` (`TRITON_GPU_A`..`C`, all shared): a model with `instance_group [ { kind: KIND_GPU } ]` gets an instance on each, `gpus: [ N ]` pins it to one; a vLLM model takes one whole GPU (`TRITON_VLLM_GPU`; split across GPUs the 122B hit NVLink errors). GPU 0 there isn't ours; keep GPU-heavy Slurm jobs off the node (`--exclude=$TRITON_NODE`).
 - Loading, unloading and settings aren't reachable from outside: `sync-triton` does them, and Caddy adds the key Triton requires.
-- **Backends** are edited in the Gitea repo `triton`, `backends/<name>.py` (the `backends/` here are the seed): a Python backend declares its inputs, outputs, smoke-test request and Hugging Face repos as `TRITON_*` literals at its top (see `qwen_image_edit.py`), which `sync.py` reads without running the file. A pushed change to a backend repackages and reloads the models that use it. Backend code runs inside Triton, so whoever can push to the repo runs code there. A model type with no backend needs a `package_<model>` in `sync.py`; others are reported `unsupported`.
+- **Backend code** lives in each model's version directory in the repo (a Python backend's `1/model.py` and what it imports); a pushed change to a model's files reloads it. It runs inside Triton, so whoever can push to the repo runs code there. A model whose weights must sit in its version directory (ONNX, TensorRT plans) isn't supported: weights are always read in place from MLflow.
 - After editing `Dockerfile`, rebuild on the node: `services/ctl.sh triton build`, then recreate the server: dispatch the Gitea workflow `triton-up` (`gitea_ci/triton-up.yml`; input `dry_run` shows what it would recreate), or run `services/ctl.sh triton up -d`. The same after changing its GPUs or flags (`compose.yml`, `.env`). Logs: `services/ctl.sh triton logs -f`. Then copy the image to `SERVICE_NODE`, where the runner starts the `sync-triton` job in it (13 GB, a few minutes):
   ```bash
   ssh $TRITON_NODE "bash -lc 'docker save flywheel-triton:26.08 | ssh $SERVICE_NODE \"bash -lc \\\"docker load\\\"\"'"

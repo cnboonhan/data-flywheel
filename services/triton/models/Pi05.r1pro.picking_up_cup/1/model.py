@@ -1,6 +1,6 @@
-"""Triton Python backend for a π0.5 checkpoint (XPolicyLab's policy/Pi_05: openpi, JAX), copied in as
-<model>/<version>/model.py by sync.py with serve_pi05.py and r1pro.py (sensors/autolearn/adapter/pi05/: the HTTP
-server and the openpi configs it registers).
+"""Triton Python backend for a π0.5 checkpoint (XPolicyLab's policy/Pi_05: openpi, JAX), beside serve_pi05.py and
+r1pro.py in this version directory (copies of sensors/autolearn/adapter/pi05/'s: the HTTP server and the openpi configs
+it registers; update them together).
 
 openpi runs in the image's own venv (/opt/venv-pi05, Dockerfile), not Triton's Python, so each instance starts
 serve_pi05.py there as a child process on its GPU and forwards requests to it on 127.0.0.1. Stateless: one request =
@@ -12,7 +12,8 @@ one observation, the response is the whole action chunk.
              cam_right_wrist  UINT8 [H, W, 3]
              prompt           BYTES [1]          optional, default the run's `prompt` param
     output   action           FP32  [H, D]       the predicted chunk, absolute joint targets
-Parameters (sync.py): weights (the checkpoint step directory, in place under /mlflow), openpi_config, prompt.
+Parameters (config.pbtxt): openpi_config, prompt; sync.py adds weights (the checkpoint step directory, in place under
+/mlflow).
 """
 
 import io
