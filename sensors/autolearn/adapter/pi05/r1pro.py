@@ -3,7 +3,7 @@
 openpi looks configs up in openpi.training.config._CONFIGS_DICT; register() adds the ones here to it, so openpi's own
 scripts (train.py, compute_norm_stats.py) and policy loader run them without changes to the submodule.
 
-The data is to_lerobot_v30.py's: one 20-value joint vector for state and action, left arm (7), left gripper (1, 0 closed
+The data is to_lerobot.py's: one 20-value joint vector for state and action, left arm (7), left gripper (1, 0 closed
 .. 1 open), right arm (7), right gripper (1), torso (4), and three cameras cam_high, cam_left_wrist, cam_right_wrist.
 The model sees them as π0.5's base_0_rgb, left_wrist_0_rgb, right_wrist_0_rgb, the same slots as Aloha's.
 """

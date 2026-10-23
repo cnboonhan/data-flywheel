@@ -24,12 +24,13 @@ Code lives here in git; everything it downloads or produces lives in this folder
 | `genie_sim/` | [Genie Sim 3.x](https://github.com/AgibotTech/genie_sim) (upstream submodule, MPL-2.0): Isaac Sim 5.1 scenes, task generation, benchmark, data collection |
 | `adapter/` | Genie Sim and BEHAVIOR-1K as ASPIRE environments: `geniesim_adapter.py` (the benchmark's policy socket as ASPIRE's `EnvironmentAdapter`), `ik.py` (PyRoki IK on any URDF), `run_geniesim.py` (a program per episode; `--record` keeps every tick through `record.py`), `run_behavior.py` (`cap-harness` with PyRoki in place of cuRobo, a post-success grace, the whole-body record, and extra pickup tasks: `picking_up_cup`), `collect_behavior.sh` (a policy over many instances until N successes), `to_lerobot.py` and `behavior_to_lerobot.py` (recordings and runs into LeRobot v2.1 datasets) |
 | `adapter/programs/` | `wave.py` (lift, close, open: the smoke test), `pick_block.py` (hand-written pick), `place_relative.py` (learned pick-and-place), `pick_radio_r1pro.py` (learned R1 Pro radio pickup on BEHAVIOR-1K) |
+| `adapter/pi05/` | π0.5 on the R1 Pro: `r1pro.py` (openpi configs, registered by `run.py`), `to_lerobot.py` (dataset), `norm_stats.py`, `serve_pi05.py` (checkpoint over HTTP), `eval_behavior.py` (an episode against the server) |
 | `adapter/probes/` | calibration and diagnostic programs and scripts, listed in [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | `assets/` | scene changes applied on load, beside upstream's assets: `spring_doors/` (door closers on BEHAVIOR-1K's hinged doors, so the robot has to hold a door open; `BEHAVIOR_SPRING_DOORS=<yaml>` for `run_behavior.py`, tuning in the yaml); `latch_door/` (our own latching door as a BEHAVIOR asset, `door/flylat` in dataset `flywheel-assets`: `make_latch_door.py` writes the URDF, `import_latch_door.py` imports it with OmniGibson's pipeline, `latch.py` drives its closer, latch and lever); `door_room/` (a BEHAVIOR scene of the latching door in a wall, floor and two rooms, `scene_model="door_room"` with `dataset_name="flywheel-assets"`: `make_room_assets.py` imports the floor and walls, `build_door_room.py` writes the scene json and layout maps, `door_room_task.py` registers the `opening_door` BDDL activity, `sample_door_room_task.py` samples and saves its instance) |
 | `adapter/tasks/` | benchmark tasks added beside upstream ([README](adapter/tasks/README.md)): a generated layout on the pack's Gaussian-splat laboratory, installed by `install.sh` without editing the submodule |
 | `hooks/sitecustomize.py` | on `PYTHONPATH` inside the container: turns Isaac Sim's crash reporter off and registers the tasks in `adapter/tasks/` in the benchmark's code tables |
 | `cap-harness-sandboxed.sh`, `cap-harness-behavior.sh`, `cap-harness-geniesim.sh` | ASPIRE's `cap-harness`, the BEHAVIOR runner and the Genie Sim runner inside bubblewrap with the user's credentials hidden; agent-written programs run only through these |
-| `gb300/` | the GB300 nodes: Genie Sim's rendering benchmark (`render_bench.py` + `.sbatch`); BEHAVIOR-1K collection as Slurm jobs (`collect_parallel.sh`, `collect_behavior.sbatch`, `aggregate_behavior.sbatch`, `run_behavior.sh`, `behavior.env`) |
+| `gb300/` | the GB300 nodes: Genie Sim's rendering benchmark (`render_bench.py` + `.sbatch`); BEHAVIOR-1K collection as Slurm jobs (`collect_parallel.sh`, `collect_behavior.sbatch`, `aggregate_behavior.sbatch`, `run_behavior.sh`, `behavior.env`); π0.5 (`setup_pi05.sh`, `train_pi05.sbatch`, `eval_pi05.sbatch`, `eval_parallel.sh`) |
 | planned: [`services/gitea/autolearn/`](../../services/gitea/README.md) | the Gitea workflows: scene building (plan stage 1), `autolearn-cycle` (stage 6); [`geniesim_to_xpolicylab`](../../services/gitea/adapter/README.md) exists |
 
 | Gitignored state | Contents |
@@ -215,39 +216,25 @@ flowchart LR
 - Policies run without the bubblewrap sandbox (the nodes have none): collect with reviewed programs only, never a campaign's agent-written ones.
 - Isaac's caches go to node-local `/tmp/$USER/{behavior-appdata,home}-gpu<N>` and every run gets its own IPC namespace and `/dev/shm` (`run_behavior.sh`): with caches in the NFS home or two runs sharing IPC, concurrent runs hang after "app ready" or fail to load kitchen materials. A cold scene load is ~5 min, ~1.5 min once the GPU's cache is warm; a run that hangs is ended after `BEHAVIOR_RUN_TIMEOUT` (1800 s).
 
-**Train GalaxeaVLA on it.** GalaxeaVLA (XPolicyLab's `policy/GalaxeaVLA`, Galaxea's G0 models) is built for the R1 Pro and takes its whole body; its weights are under the non-commercial G0 Plus Community License. Convert in its key layout, then fine-tune G0 Tiny with this repo's data and task configs on a GB300 node:
+**Train and evaluate π0.5 on the cup collection (GB300).** π0.5 (openpi, XPolicyLab's `policy/Pi_05`; Apache-2.0 code, Gemma-terms weights) trains from the 501 `picking_up_cup` demonstrations in joint space (20 values: arms, grippers, torso) and runs on 22 held-out instances (`$STATE/eval/galaxea/heldout_seeds.txt`), each starting parked where the scripted policy parked (`collect/behavior/picking_up_cup/pick_cup_heldout`). The code is in `adapter/pi05/`.
 
-```bash
-aspire/.venv-lerobot/bin/python adapter/behavior_to_lerobot.py aspire/outputs/collect/behavior/turning_on_radio/lift \
-    --format galaxea --out aspire/outputs/datasets/galaxea_turning_on_radio
-cd ../../eval/system1/RoboDojo/XPolicyLab/policy/GalaxeaVLA && bash install.sh
-GALAXEA_DATASET_DIR=<dataset> GALAXEA_PRETRAINED_CKPT=<G0Tiny_260120> GALAXEA_PALIGEMMA_PATH=<SmolVLM2-500M-Video-Instruct> \
-GALAXEA_TASK_CONFIG=r1pro_sim/g0tiny_behavior \
-  bash train.sh behavior radio r1pro joint 0 0 "hydra.searchpath=[file://$PWD/../../../../../../sensors/autolearn/adapter/galaxea]"
-```
+1. Set up the venv and the base checkpoint: `gb300/setup_pi05.sh`.
+2. Convert the dataset and compute its norm stats:
+   ```bash
+   S=/tier1/mistral/flywheel/autolearn
+   HF_LEROBOT_HOME=$S/pi05/lerobot $S/venv-pi05/bin/python adapter/pi05/to_lerobot.py <behavior_to_lerobot dataset> \
+       --out $S/pi05/lerobot/r1pro_picking_up_cup
+   cd adapter/pi05 && HF_LEROBOT_HOME=$S/pi05/lerobot $S/venv-pi05/bin/python norm_stats.py pi05_r1pro_picking_up_cup
+   ```
+3. Train: `sbatch gb300/train_pi05.sbatch <run>`. Checkpoints go to `$S/pi05/checkpoints/pi05_r1pro_picking_up_cup/<run>/<step>/`.
+4. Evaluate, split over several GPUs (`adapter/pi05/serve_pi05.py` serves the checkpoint, `adapter/pi05/eval_behavior.py` drives the simulator). The jobs share the label's `results.jsonl`; the same command again fills in what is missing:
+   ```bash
+   gb300/eval_parallel.sh 6 gb300/eval_pi05.sbatch <label> <checkpoint step dir> \
+       $S/collect/behavior/picking_up_cup/pick_cup_heldout -- $(cat $S/eval/galaxea/heldout_seeds.txt)
+   ```
 
-The weights come through the `download-models-hf` workflow (`OpenGalaxea/G0-VLA` with include `G0Tiny_260120/*`, and `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`). The galaxea layout: `observation.images.{head,left_wrist,right_wrist}_rgb`, state and action `{left,right}_ee_pose` (base frame, x y z qx qy qz qw; the action is the next frame's pose), `{left,right}_gripper` (0 closed … 100 open), `torso` (joints; targets as action), and `action.chassis.velocities` (vx vy 0 0 0 wz) — [`adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml`](adapter/galaxea/data/r1pro_sim/eef_torso_chassis.yaml), which differs from upstream's `r1pro/eef_torso` by the chassis, 512×512 cameras, and keeping each episode's drive (`ee_start_moving_thresh: 0`).
-
-**Train and evaluate policies on the cup collection (GB300).** Four policies train from the 501 `picking_up_cup` demonstrations and run on the same 22 held-out instances (`$STATE/eval/galaxea/heldout_seeds.txt`), each starting parked at the counter where the scripted policy parked (`collect/behavior/picking_up_cup/pick_cup_heldout`). `adapter/eval_galaxea_behavior.py` drives the simulator and asks a policy server over HTTP for action chunks: `--space ee` (hand poses, through IK) or `--space joint` (20 joints: arms, grippers, torso). Set up each one once, then submit:
-
-| Policy | Kind, actions | Licence | Set up | Convert, train | Serve, evaluate |
-|---|---|---|---|---|---|
-| G0 Tiny (GalaxeaVLA) | VLA, ee | G0 Plus Community (non-commercial) | `setup.sh galaxea` | `behavior_to_lerobot.py --format galaxea`, `gb300/train_galaxea.sbatch` | `adapter/galaxea/serve_galaxea.py`, `gb300/eval_galaxea.sbatch` |
-| π0.5 (openpi) | VLA, joint | Apache-2.0 code, Gemma terms weights | `gb300/setup_pi05.sh` | `adapter/pi05/to_lerobot_v30.py`, `norm_stats.py`, `gb300/train_pi05.sbatch` | `adapter/pi05/serve_pi05.py`, `gb300/eval_pi05.sbatch` |
-| FastWAM | WAM, joint | MIT; Wan2.2 Apache-2.0 | `setup.sh fastwam` | `adapter/lerobot_to_fastwam.py`, `gb300/prep_fastwam.sbatch`, `gb300/train_fastwam.sbatch` | `adapter/fastwam/serve_fastwam.py`, `gb300/eval_fastwam.sbatch` |
-| X-WAM | WAM, ee (torso held) | Apache-2.0 | `gb300/setup_xwam.sh` | `adapter/xwam/lerobot_to_xwam.py`, `gb300/train_xwam.sbatch` | `adapter/xwam/serve_xwam.py`, `gb300/eval_xwam.sbatch` |
-
-Split an evaluation over several GPUs; the jobs share the label's `results.jsonl`, and the same command again fills in what is missing:
-
-```bash
-S=/tier1/mistral/flywheel/autolearn
-sensors/autolearn/gb300/eval_parallel.sh 6 sensors/autolearn/gb300/eval_pi05.sbatch <label> <checkpoint> \
-    $S/collect/behavior/picking_up_cup/pick_cup_heldout -- $(cat $S/eval/galaxea/heldout_seeds.txt)
-```
-
-- The scripted policy succeeds on 12 of the 22; every pretrained model zero-shot on 0; G0 Tiny fine-tuned on 5. Single instances vary between runs of the same sampled policy, so compare counts, not instances.
-- FastWAM trains in fp32 weights under DeepSpeed ZeRO stage 0: under ZeRO-1 a weight turns NaN after the first step, and in bf16 its losses climb (comments in `train_fastwam.sbatch`). X-WAM runs ZeRO stage 0 too, at its own precision.
-- Checkpoints, datasets and results stay under `$STATE` (`galaxea/`, `pi05/`, `fastwam/`, `xwam/`, `eval/<policy>/<label>/`), never in the submodules.
+- Expect the scripted policy on 12 of the 22, the base model on 0, fine-tuned π0.5 on ~8. Single instances vary between runs of the same sampled policy, so compare counts, not instances.
+- Checkpoints, datasets and results stay under `$STATE` (`pi05/`, `eval/pi05/<label>/`), never in the submodules.
 
 ### ASPIRE on LIBERO
 

@@ -1,7 +1,6 @@
 #!/bin/bash
 # Evaluate a π0.5 checkpoint on BEHAVIOR-1K picking_up_cup instances (the grasp at the counter) on one GB300 GPU:
-# adapter/pi05/serve_pi05.py and adapter/eval_galaxea_behavior.py --space joint side by side, one simulator process per
-# instance, as gb300/eval_galaxea.sbatch.
+# adapter/pi05/serve_pi05.py and adapter/pi05/eval_behavior.py side by side, one simulator process per instance.
 #   sbatch sensors/autolearn/gb300/eval_pi05.sbatch <label> <ckpt> <start dir> <seed> [<seed> ...]
 # <ckpt> is a training step directory ($STATE/pi05/checkpoints/<config>/<run>/<step>) or, for the base model, the
 # pi05_base directory under $STATE/models/openpi. <start dir> holds the scripted policy's runs on these instances.
@@ -35,7 +34,7 @@ for seed in "$@"; do
   grep -q "\"seed\": $seed," "$out/results.jsonl" 2>/dev/null && continue   # a rerun resumes
   cd "$A/aspire"
   timeout -k 30 1800 unshare --user --map-root-user --ipc --mount -- bash -c 'mount -t tmpfs -o size=32g tmpfs /dev/shm && exec "$0" "$@"' \
-    "$STATE/venv-behavior/bin/python" "$A/adapter/eval_galaxea_behavior.py" --space joint --seed "$seed" --start "$res" \
+    "$STATE/venv-behavior/bin/python" "$A/adapter/pi05/eval_behavior.py" --seed "$seed" --start "$res" \
     --server "http://127.0.0.1:$port" --out "$out/results.jsonl" --label "$label" --video "$out/seed_$(printf '%04d' "$seed").mp4" \
     > "$out/seed_$(printf '%04d' "$seed").log" 2>&1 || echo "seed $seed: runner exited $?"
   tail -1 "$out/results.jsonl" 2>/dev/null

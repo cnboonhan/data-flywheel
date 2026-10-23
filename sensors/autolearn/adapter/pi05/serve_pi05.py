@@ -1,10 +1,10 @@
-"""A π0.5 (openpi, XPolicyLab's policy/Pi_05) checkpoint served over HTTP for eval_galaxea_behavior.py --space joint.
+"""A π0.5 (openpi, XPolicyLab's policy/Pi_05) checkpoint served over HTTP for eval_behavior.py.
 
     venv-pi05/bin/python serve_pi05.py --ckpt <checkpoint step dir, or pi05_base's> [--config pi05_r1pro_picking_up_cup] [--port 18400]
 
 POST /act takes an .npz of one observation (head_rgb, left_wrist_rgb, right_wrist_rgb: HxWx3 uint8; state: the 20-value
 joint vector, left arm, left gripper, right arm, right gripper, torso; task: the instruction) and returns an .npz with
-`action`: the predicted chunk, horizon x 20, absolute joint targets. The same protocol as fastwam/serve_fastwam.py.
+`action`: the predicted chunk, horizon x 20, absolute joint targets.
 
 The policy is openpi's own (policy_config.create_trained_policy) with r1pro.py's transforms. A fine-tuned checkpoint
 carries its norm stats; the base checkpoint has none for the R1 Pro, so the config's (norm_stats.py's) are used, which

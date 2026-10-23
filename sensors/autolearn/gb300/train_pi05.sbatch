@@ -3,7 +3,7 @@
 # on one GB300 node, data-parallel over the GPUs Slurm allocates.
 #   sbatch sensors/autolearn/gb300/train_pi05.sbatch <run name> [openpi train flags...]
 #   e.g. a save test: sbatch ... savetest --num-train-steps 20 --save-interval 10 --log-interval 5 --overwrite
-# Needs gb300/setup_pi05.sh, the dataset from adapter/pi05/to_lerobot_v30.py and its stats from adapter/pi05/norm_stats.py.
+# Needs gb300/setup_pi05.sh, the dataset from adapter/pi05/to_lerobot.py and its stats from adapter/pi05/norm_stats.py.
 # The config is adapter/pi05/r1pro.py's, registered by adapter/pi05/run.py; checkpoints go to $STATE/pi05/checkpoints/
 # pi05_r1pro_picking_up_cup/<run name>/<step>/, not into the submodule.
 #SBATCH -p raus -N1 -n1 -c128 --gres=gpu:4 --mem=800G -t 24:00:00 -J pi05-train
