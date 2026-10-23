@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server for the image models, robot policies and one language model (`qwen3.5-122b-a10b`, on vLLM) in the MLflow registry, at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, no token). It has `TRITON_NODE` to itself; Kimi K3 is on [Dynamo](../dynamo/README.md) (OpenAI API).
+Triton Inference Server for image models and robot policies in the MLflow registry (now: `Qwen-Image-Edit-2511`), as the Gitea `pipelines` repo's `triton/models.yaml` lists them, at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, no token). It has `TRITON_NODE` to itself; Kimi K3 is on [Dynamo](../dynamo/README.md) (OpenAI API).
 
 ## Example usage
 
@@ -9,9 +9,7 @@ Set `TRITON_URL` and the CA as in the [quickstart](../../quickstart.md) (on the 
 ```bash
 curl --cacert $FLYWHEEL_CA https://$TRITON_URL/v2/health/ready -o /dev/null -w '%{http_code}\n'   # 200: up
 curl --cacert $FLYWHEEL_CA -X POST https://$TRITON_URL/v2/repository/index                     # models and state
-curl --cacert $FLYWHEEL_CA https://$TRITON_URL/v2/models/moge-3-vitg                          # its inputs and outputs
-curl --cacert $FLYWHEEL_CA https://$TRITON_URL/v2/models/Qwen3.5-122B-A10B/generate \
-  -d '{"text_input": "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n", "sampling_parameters": "{\"max_tokens\": 64}"}'   # the language model
+curl --cacert $FLYWHEEL_CA https://$TRITON_URL/v2/models/Qwen-Image-Edit-2511                 # its inputs and outputs
 ```
 
 Call a model from Python through `triton_endpoint.py` (`services/triton` on `sys.path`; `pip install tritonclient[http] numpy`): one `Endpoint(role, model)` per model, which `<ROLE>_ENDPOINT` can point at another model or Triton.
@@ -21,9 +19,6 @@ import numpy as np
 from triton_endpoint import Endpoint
 
 jpg = open("view.jpg", "rb").read()
-depth = Endpoint("DEPTH", "moge-3-vitg")
-distance = depth.infer({"image": [jpg], "fov_x": np.array([90.0], np.float32)}, ["distance"])["distance"]   # metres, [H, W]
-
 edit = Endpoint("EDIT", "Qwen-Image-Edit-2511")
 png = edit.infer({"images": [jpg], "prompt": [b"Remove the bucket."]}, ["image"])["image"][0]              # PNG bytes
 
@@ -36,15 +31,10 @@ action = policy.infer({"state": state[None].astype(np.float32),                 
 | Model | Inputs | Output |
 |---|---|---|
 | `Qwen-Image-Edit-2511` | `images` BYTES `[1-3]` (picture 1 first), `prompt` BYTES; optional `negative_prompt`, `steps` (40), `seed` (0), `true_cfg_scale` (4.0) | `image` BYTES (PNG) |
-| `moge-3-vitg` | `image` BYTES, `fov_x` FP32 (degrees; 0: equirectangular panorama); optional `view_size` (1024), `merge_width` (0: full) | `distance` FP32 `[H, W]` (m), `mask` BOOL |
-| `llmdet_large` | `image` BYTES, `labels` BYTES `[N]`; optional `box_threshold` (0.35), `text_threshold` (0.25), `nms` (0.7) | `boxes` FP32 `[K, 4]` (px), `scores`, `names` |
-| `sam2.1-hiera-large` | `image` BYTES, `boxes` FP32 `[K, 4]` (px) | `masks` BOOL `[K, H, W]` |
-| `TripoSG` | `image` BYTES (RGBA cutout of one object); optional `seed` (0), `steps` (50), `guidance` (7.0), `faces` (-1: all) | `mesh` BYTES (GLB, shape only, y up, within ±1) |
 | ACT policies | `state` FP32 `[B, D]`, one UINT8 `[B, H, W, 3]` per camera, named after it | `action` FP32 `[B, chunk, D]` |
 | MLP policies | `state` FP32 `[B, D]` | `action` FP32 `[B, 1, D]` |
-| `Qwen3.5-122B-A10B` (vLLM) | `text_input` (chat template applied), optional `image` (base64), `sampling_parameters` (JSON string) | `text_output` |
 
-Expect an image edit at 1024×1024 in ~16 s, MoGe in ~0.6 s per 1024 px view (a 4096×2048 panorama ~110 s), LLMDet and SAM under a second, TripoSG ~12 s, an ACT call ~40 ms.
+Expect an image edit at 1024×1024 in ~16 s, an ACT call ~40 ms.
 
 ## Serve a model
 
@@ -59,9 +49,8 @@ Expect an image edit at 1024×1024 in ~16 s, MoGe in ~0.6 s per 1024 px view (a 
 **Notes**
 - Runs on three GPUs of `TRITON_NODE` (`TRITON_GPU_A`..`C`, all shared): an image model gets an instance on each, unless the spec pins it to one with `gpu`; a vLLM model takes one whole GPU (`TRITON_VLLM_GPU`; split across GPUs the 122B hit NVLink errors). GPU 0 there isn't ours; keep GPU-heavy Slurm jobs off the node (`--exclude=$TRITON_NODE`).
 - Loading, unloading and settings aren't reachable from outside: `sync-triton` does them, and Caddy adds the key Triton requires.
-- A new model type needs a `package_<model>` in `sync.py` or a backend in `backends/` (inputs and outputs in `PYTHON_IO`); others are reported `unsupported`. After changing a backend, dispatch `sync-triton` with `force` set to the models it serves.
+- **Backends** are edited in the Gitea `pipelines` repo, `triton/backends/<name>.py` (the `backends/` here are the seed): a Python backend declares its inputs, outputs, smoke-test request and Hugging Face repos as `TRITON_*` literals at its top (see `qwen_image_edit.py`), which `sync.py` reads without running the file. A pushed change to a backend repackages and reloads the models that use it. Backend code runs inside Triton, so whoever can push to the repo runs code there. A model type with no backend needs a `package_<model>` in `sync.py`; others are reported `unsupported`.
 - After editing `Dockerfile`, rebuild on the node: `services/ctl.sh triton build`, then recreate the server: dispatch the Gitea workflow `triton-up` (`gitea_ci/triton-up.yml`; input `dry_run` shows what it would recreate), or run `services/ctl.sh triton up -d`. The same after changing its GPUs or flags (`compose.yml`, `.env`). Logs: `services/ctl.sh triton logs -f`. Then copy the image to `SERVICE_NODE`, where the runner starts the `sync-triton` job in it (13 GB, a few minutes):
   ```bash
   ssh $TRITON_NODE "bash -lc 'docker save flywheel-triton:26.08 | ssh $SERVICE_NODE \"bash -lc \\\"docker load\\\"\"'"
   ```
-- TripoSG skips background removal (its RMBG-1.4 is non-commercial): give it a cutout. Its yaw is close to the input's view but not exact, so fit it against the input.
