@@ -1,6 +1,6 @@
 # gitea
 
-Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives in the private repo `admin/pipelines`, which `ctl.sh up` seeds from the stage folders here.
+Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives in the private repo `admin/pipelines`, which `ctl.sh up` seeds from the stage folders here and from each service's own `services/<service>/gitea_ci/` (a workflow that drives one service, such as `sync-dynamo`, lives with that service).
 
 | Stage folder | Workflows |
 |---|---|
@@ -9,6 +9,7 @@ Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives
 | [adapter/](adapter/README.md) | Data Conversion: raw datasets into the training format (`processed/xpolicylab/`) |
 | [serve/](serve/README.md) | MLflow registry → Triton |
 | [clean/](clean/README.md), [mix/](mix/README.md) | Data Cleaning, Mixing (none yet) |
+| `services/<service>/gitea_ci/` | one service's own workflows, e.g. [`dynamo/gitea_ci/`](../dynamo/gitea_ci/), [`fiftyone/gitea_ci/`](../fiftyone/gitea_ci/) |
 
 ## Run a workflow
 
@@ -23,10 +24,10 @@ Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives
 
 ## Change or add a workflow
 
-1. Edit the workflow in its stage folder here (or add a new one there). Give it a file name no other stage uses: Gitea reads all workflows from one flat `.gitea/workflows/` folder.
+1. Edit the workflow in its stage folder here, or in its service's `gitea_ci/` folder for a workflow that drives one service (or add a new one there). Give it a file name no other workflow uses: Gitea reads all workflows from one flat `.gitea/workflows/` folder.
 2. Copy it into the pipelines checkout and push. Do this between runs, because a push cancels every workflow that is running.
    ```bash
-   cp services/gitea/<stage>/<workflow>.yml $STATE_DIR/pipelines/.gitea/workflows/
+   cp services/gitea/<stage>/<workflow>.yml $STATE_DIR/pipelines/.gitea/workflows/   # or services/<service>/gitea_ci/<workflow>.yml
    git -C $STATE_DIR/pipelines add .gitea/workflows && git -C $STATE_DIR/pipelines commit -m "<what changed>" && git -C $STATE_DIR/pipelines push
    ```
    `ctl.sh up` only adds files that are missing from the repo, so the repo's copy is the one that runs until you push yours.

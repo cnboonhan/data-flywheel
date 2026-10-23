@@ -1,6 +1,6 @@
 # fiftyone
 
-FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea workflow [`sync-fiftyone-raw`](../gitea/ingest/sync-fiftyone-raw.yml) mirrors `raw` when dispatched: each `raw/<group>/<name>/` becomes the dataset `raw/<group>/<name>`, with samples pointing at the raw files (nothing is converted or copied).
+FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea workflow [`sync-fiftyone-raw`](gitea_ci/sync-fiftyone-raw.yml) mirrors `raw` when dispatched: each `raw/<group>/<name>/` becomes the dataset `raw/<group>/<name>`, with samples pointing at the raw files (nothing is converted or copied).
 
 | Raw layout | Dataset |
 |---|---|

@@ -5,4 +5,4 @@ Model serving stage. Each workflow serves the registered models whose MLflow ali
 | Workflow | Alias | Serves on |
 |---|---|---|
 | `sync-triton` | `triton` | Triton: image models, robot policies ([triton/](../../triton/README.md#serve-a-model)) |
-| `sync-dynamo` | `dynamo` | Dynamo: language models ([dynamo/](../../dynamo/README.md#serve-swap-and-stop-models)) |
+| [`sync-dynamo`](../../dynamo/gitea_ci/sync-dynamo.yml) (kept with Dynamo, in `dynamo/gitea_ci/`) | `dynamo` | Dynamo: language models ([dynamo/](../../dynamo/README.md#serve-swap-and-stop-models)) |

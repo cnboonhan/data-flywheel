@@ -10,14 +10,16 @@ flowchart LR
   M["MLflow alias dynamo"] -.->|Gitea workflow sync-dynamo| T & S
 ```
 
-| Model (`model` in requests) | Placement | Notes |
-|---|---|---|
-| `glm-5.3` | the trays (`DYNAMO_HEAD` + `DYNAMO_WORKER`, 8 GPUs) | one tray model at a time |
-| `kimi-k3`, `inkling` | the trays | Kimi K3 with expert parallelism, ~50 tok/s ([Notes](#notes)) |
-| `glm-5.3-flash` | `DYNAMO_HEAD` (one tray, 4 GPUs) | images; not with a tray model |
-| `qwen3.5-122b-a10b` | `DYNAMO_NODE` GPU 3 | the sim tools' VLM |
-| `qwen3.6-27b`, `qwen3.8-27b` | `DYNAMO_NODE` GPU 2, beside Triton's image models | |
-| `qwen3.6-35b-a3b`, `qwen3-vl-8b`, `qwen3.8-flash-next` | `DYNAMO_NODE` GPU 1 | Flash-Next on vLLM 0.31's image |
+Served (`GET $LLM_URL/models` lists what answers now):
+
+| Model (`model` in requests) | Placement | Context | Notes |
+|---|---|---|---|
+| `kimi-k3` | the trays (`DYNAMO_HEAD` + `DYNAMO_WORKER`, 8 GPUs) | 256k | expert parallelism, ~50 tok/s ([Notes](#notes)) |
+| `qwen3.5-122b-a10b` | `DYNAMO_NODE` GPU 3 | 32k | the sim tools' VLM |
+| `qwen3.6-27b`, `qwen3.8-27b`, `qwen3-vl-30b-a3b` | `DYNAMO_NODE` GPU 2, beside Triton's image models | 32k | |
+| `qwen3.6-35b-a3b`, `qwen3-vl-8b`, `qwen3.8-flash-next` | `DYNAMO_NODE` GPU 1 | 32k | Flash-Next on vLLM 0.31's image |
+
+Configured in `models.yaml` but not served (no alias): `glm-5.3` and `inkling` (the trays, in place of Kimi K3: one tray model at a time), `glm-5.3-flash` (one tray, `DYNAMO_HEAD`, not beside a tray model). To serve one, set its alias ([below](#serve-swap-and-stop-models)).
 
 ## Use
 
@@ -25,16 +27,16 @@ flowchart LR
 2. Call it like any OpenAI endpoint; `GET /v1/models` lists what is served now:
    ```bash
    curl --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H 'Content-Type: application/json' \
-     -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'
+     -d '{"model": "kimi-k3", "messages": [{"role": "user", "content": "Hello"}]}'
    ```
    ```python
    import os
    from openai import OpenAI, DefaultHttpxClient
    llm = OpenAI(base_url=os.environ["LLM_URL"], api_key="none",   # no token needed
                 http_client=DefaultHttpxClient(verify=os.environ["FLYWHEEL_CA"]))   # the stack's CA
-   print(llm.chat.completions.create(model="glm-5.3", messages=[{"role": "user", "content": "Hello"}]).choices[0].message.content)
+   print(llm.chat.completions.create(model="kimi-k3", messages=[{"role": "user", "content": "Hello"}]).choices[0].message.content)
    ```
-   Images go in a message as `{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}` (Qwen models; at most 4 per request). Reasoning models return their reasoning in `message.reasoning_content`, and it counts towards `max_tokens`; turn it off with `"chat_template_kwargs": {"enable_thinking": false}`.
+   Images go in a message as `{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}` (every served model; at most 4 per request, except `qwen3-vl-8b` and `qwen3.8-flash-next`). Reasoning models return their reasoning in `message.reasoning_content`, and it counts towards `max_tokens`; turn it off with `"chat_template_kwargs": {"enable_thinking": false}`.
 3. Mark mission-critical requests with `X-Priority: critical` and `Authorization: Bearer $LLM_CRITICAL_TOKEN`: they run ahead of the others in the engine. Without that token the flag is ignored.
 
 A model that isn't served answers `503` with what is; one that is starting (minutes after a change) answers `503` until it's up.
@@ -44,10 +46,10 @@ A model that isn't served answers `503` with what is; one that is starting (minu
 1. Set the alias `dynamo` on the version to serve; remove it to stop serving that model. Moving it between two tray models swaps them.
    ```python
    c = mlflow.MlflowClient()
-   c.set_registered_model_alias("GLM-5.3", "dynamo", "1")
+   c.set_registered_model_alias("GLM-5.3", "dynamo", "1")     # swap the trays from Kimi K3 to GLM-5.3
    c.delete_registered_model_alias("Kimi-K3", "dynamo")
    ```
-2. Dispatch the Gitea workflow `sync-dynamo` ([how](../gitea/README.md)). It stops what lost its alias and starts what gained one; other models keep running. It ends when every served model answers: expect ~7 min for GLM-5.3 (~15 the first time, compiling kernels), a few minutes for the small models. Follow it in the run's log.
+2. Dispatch the Gitea workflow `sync-dynamo` (`gitea_ci/sync-dynamo.yml`; [how](../gitea/README.md)). It stops what lost its alias and starts what gained one; other models keep running. It ends when every served model answers: expect several minutes for a tray model (about twice that the first time, compiling kernels), a few minutes for the small ones. Follow it in the run's log.
 3. Or run the same from a shell: `services/ctl.sh dynamo up`.
 4. Check a model: `services/ctl.sh dynamo on <node> logs -f engine-<model>` (`dynamo logs` for `DYNAMO_HEAD`, `dynamo worker logs` for `DYNAMO_WORKER`), the gateway's `GET /health`, Grafana **Flywheel → Model usage**.
 

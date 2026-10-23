@@ -58,7 +58,7 @@ keep_off_gpu_memory() {
 # trays, or a node's GPUs). render: write each node's compose file from models.yaml and the aliases (dynamo/render.py).
 # up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
 # node's services up (unchanged ones keep running) and wait for each served model. The Gitea workflow sync-dynamo runs
-# up (gitea/serve/sync-dynamo.yml), with a key that may run nothing else (dynamo_sync_key).
+# up (dynamo/gitea_ci/sync-dynamo.yml), with a key that may run nothing else (dynamo_sync_key).
 dynamo() {
   local out="$STATE_DIR/dynamo"
   on() { local node=$1; shift
@@ -209,11 +209,11 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,adapter,clean,mix,serve}/*.yml gitea/adapter/*/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
+  for f in gitea/{setup,ingest,adapter,clean,mix,serve}/*.yml gitea/adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
-      gitea/*/*.yml|gitea/*/*/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory
+      gitea/*/*.yml|gitea/*/*/*.yml|*/gitea_ci/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory; <service>/gitea_ci/ holds a service's own
       gitea/setup/conda-shim/*) path="${f#gitea/}" ;;                # copied into the envs by install-robodojo.sh
       gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
       gitea/adapter/*/*) path="${f#gitea/}" ;;                        # adapter/<source>/<script> the adapter workflows run
