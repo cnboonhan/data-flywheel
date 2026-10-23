@@ -10,7 +10,7 @@
 #   services/ctl.sh dynamo render|up|down|<compose args>   the LLMs on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md)
 #   services/ctl.sh specs     make the Gitea spec repos dynamo and triton (what is served), their webhooks and tokens
 #   services/ctl.sh deployer add <name>   a Gitea-only account that may push those two repos (no Keycloak)
-#   services/ctl.sh user add <name> [...] | user list   a person in every service; every account and what it reaches
+#   services/ctl.sh user add <name> [...] | list | env <name> [...]   a person in every service; every account; their exports
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
 # over ssh; the repo and the state dir are on /tier1, so paths are the same.
@@ -605,6 +605,47 @@ for r in [("user", "keycloak (web UIs, mlflow)", "gitea", "s3")] + rows:
 PY
 }
 
+# The quickstart's section 1 (quickstart.md, "Export the environment") with this stack's host and a user's details filled
+# in, ready to paste: user_env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]. The account values sit at the top
+# as FLYWHEEL_* variables, as in the quickstart; a secret not given is left empty (they are shown once, at `user add`).
+# Keep it in step with the quickstart's block.
+user_env() {
+  local name=${1:?usage: ctl.sh user env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]}
+  cat <<ENV
+# Your account (empty: not known here, fill it in)
+export FLYWHEEL_USER=$name
+export FLYWHEEL_S3_SECRET=${2:-}      # your S3 secret
+export FLYWHEEL_MLFLOW_TOKEN=${3:-}   # your MLflow token
+export FLYWHEEL_GITEA_TOKEN=${4:-}    # your Gitea token
+export FLYWHEEL_LOKI_TOKEN=${LOKI_PUSH_TOKEN:-}     # the Loki push token, only if you push logs
+
+export SERVICE_NODE=$SERVICE_NODE SERVICE_HOST=$SERVICE_HOST CADDY_PORT=$CADDY_PORT
+export FLYWHEEL_CA=~/.flywheel/ca.crt
+
+# S3 (aws CLI, boto3)
+export AWS_ACCESS_KEY_ID=\$FLYWHEEL_USER AWS_SECRET_ACCESS_KEY=\$FLYWHEEL_S3_SECRET AWS_DEFAULT_REGION=${S3_REGION:-us-east-1}
+export AWS_ENDPOINT_URL=https://s3.\$SERVICE_HOST:\$CADDY_PORT AWS_CA_BUNDLE=\$FLYWHEEL_CA
+
+# MLflow (CLI, Python client); large artifacts go through the server, else they hang
+export MLFLOW_TRACKING_URI=https://\$SERVICE_HOST:\$CADDY_PORT/mlflow
+export MLFLOW_TRACKING_USERNAME=\$FLYWHEEL_USER MLFLOW_TRACKING_PASSWORD=\$FLYWHEEL_MLFLOW_TOKEN
+export MLFLOW_TRACKING_SERVER_CERT_PATH=\$FLYWHEEL_CA
+export MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD=false MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false
+
+# Gitea (pipelines; token from Gitea > Settings > Applications, scope repository read and write)
+export GITEA_URL=https://\$SERVICE_HOST:\$CADDY_PORT/gitea GITEA_TOKEN=\$FLYWHEEL_GITEA_TOKEN
+
+# Loki (only if you push logs)
+export LOKI_URL=https://\$SERVICE_HOST:\$CADDY_PORT/loki LOKI_TOKEN=\$FLYWHEEL_LOKI_TOKEN
+
+# Triton (image models; no token)
+export TRITON_URL=triton.\$SERVICE_HOST:\$CADDY_PORT
+
+# LLM gateway (the language models; OpenAI-compatible, no token)
+export LLM_URL=https://llm.\$SERVICE_HOST:\$CADDY_PORT/v1
+ENV
+}
+
 user_add() {
   # Random password: 18 bytes in base64 (24 chars) minus /+=, cut to 20 chars; length untuned.
   local name=${1:?name} email=${2:-} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
@@ -634,13 +675,15 @@ user_add() {
     echo "keycloak: added $name to group users"
   fi
 
-  local tok
+  local tok mltok= gttok= s3secret=
   if tok=$(mlflow_token "$name" "$pw" 2>/dev/null) && [[ -n $tok ]]; then
+    mltok=$tok
     echo "mlflow: access token $tok   (MLFLOW_TRACKING_USERNAME=$name MLFLOW_TRACKING_PASSWORD=<token>; shown once)"
   else
     echo "mlflow: no token minted (sign in at /mlflow with Keycloak; Profile > Tokens issues one)"
   fi
   if tok=$(gitea_token "$name" "$email" 2>/dev/null) && [[ -n $tok ]]; then
+    gttok=$tok
     echo "gitea: access token $tok   (scopes write:repository,read:user: the pipelines API; shown once)"
   else
     echo "gitea: no token minted (sign in at /gitea with Keycloak; Settings > Applications issues one)"
@@ -652,6 +695,7 @@ user_add() {
   local secret; secret=$(openssl rand -hex 20)   # 40 chars, the length of an AWS secret key
   if docker compose --project-name flywheel exec -T -e ROOT_ACCESS_KEY_ID="$ADMIN_USER" -e ROOT_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" versitygw \
        versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 create-user -a "$name" -s "$secret" -r user >/dev/null 2>&1; then
+    s3secret=$secret
     echo "s3: access key $name, secret $secret   (endpoint https://s3.$SERVICE_HOST:$CADDY_PORT; shown once)"
     apply_s3_policies
   else
@@ -661,13 +705,16 @@ user_add() {
     "${kc[@]}" update "users/$uid" -r flywheel -s 'requiredActions=["UPDATE_PROFILE"]'   # the real email at first login
   fi
   echo "password: $pw   (Keycloak: every web UI, including MLflow)"
+  echo; echo "# for the user's shell (quickstart section 1), with what was minted above:"
+  user_env "$name" "$s3secret" "$mltok" "$gttok"
 }
 
 if [[ $1 == user ]]; then
   case ${2:-} in
     add) user_add "${@:3}" ;;
     list) user_list ;;
-    *) echo "usage: ctl.sh user add <name> [<email> or - [password]] | user list" >&2; exit 2 ;;
+    env) user_env "${@:3}" ;;
+    *) echo "usage: ctl.sh user add <name> [<email> or - [password]] | user list | user env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]" >&2; exit 2 ;;
   esac
   exit
 fi
