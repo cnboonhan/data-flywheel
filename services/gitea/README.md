@@ -6,10 +6,10 @@ Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives
 |---|---|
 | [setup/](setup/README.md) | environments the Slurm jobs need (dispatched by `ctl.sh up`) |
 | [ingest/](ingest/README.md) | Upload and Sync: Hugging Face downloads, FiftyOne mirror of `raw` |
-| [adapter/](adapter/README.md) | Data Conversion: raw datasets into the training format (`processed/xpolicylab/`) |
-| [serve/](serve/README.md) | MLflow registry → Triton |
+| [xpolicylab_adapter/](xpolicylab_adapter/README.md) | Data Conversion: raw datasets into the training format (`processed/xpolicylab/`) |
+| [serve/](serve/README.md) | MLflow registry → Triton, Dynamo (the workflows live with each service, in `gitea_ci/`) |
 | [clean/](clean/README.md), [mix/](mix/README.md) | Data Cleaning, Mixing (none yet) |
-| `services/<service>/gitea_ci/` | one service's own workflows, e.g. [`dynamo/gitea_ci/`](../dynamo/gitea_ci/), [`fiftyone/gitea_ci/`](../fiftyone/gitea_ci/) |
+| `services/<service>/gitea_ci/` | one service's own workflows, e.g. [`dynamo/gitea_ci/`](../dynamo/gitea_ci/), [`fiftyone/gitea_ci/`](../fiftyone/gitea_ci/), [`triton/gitea_ci/`](../triton/gitea_ci/) |
 
 ## Run a workflow
 

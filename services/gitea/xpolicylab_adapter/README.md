@@ -1,4 +1,4 @@
-# adapter
+# xpolicylab_adapter
 
 The Data Conversion stage. Converts raw datasets into XPolicyLab's xspark format at `s3://processed/xpolicylab/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5`, the input of [train.sbatch](../../slurm/README.md).
 

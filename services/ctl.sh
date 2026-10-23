@@ -209,14 +209,14 @@ bootstrap_gitea() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,adapter,clean,mix,serve}/*.yml gitea/adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/adapter/*/*.py \
+  for f in gitea/{setup,ingest,xpolicylab_adapter,clean,mix,serve}/*.yml gitea/xpolicylab_adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/xpolicylab_adapter/*/*.py \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
       gitea/*/*.yml|gitea/*/*/*.yml|*/gitea_ci/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory; <service>/gitea_ci/ holds a service's own
       gitea/setup/conda-shim/*) path="${f#gitea/}" ;;                # copied into the envs by install-robodojo.sh
       gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
-      gitea/adapter/*/*) path="${f#gitea/}" ;;                        # adapter/<source>/<script> the adapter workflows run
+      gitea/xpolicylab_adapter/*/*) path="${f#gitea/}" ;;             # xpolicylab_adapter/<source>/<script> the adapter workflows run
       *) path="$f" ;;
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue

@@ -1,24 +1,25 @@
-# Adapter: Genie Sim recordings (LeRobot v2.1 written by sensors/autolearn/adapter/to_lerobot.py, uploaded to
-# raw/internal_datasets/geniesim/<task>/) -> XPolicyLab xspark in s3://processed/xpolicylab/geniesim/<task>/<env_cfg>/data/,
-# in the runner (CPU only): datasets read from the read-only /buckets mount, results written through the gateway.
-# A copy of galaxeaOpenWorldDataset_to_xpolicylab for this source (7-joint G2 arms, directories instead of archives).
-# Incremental: re-running converts only episodes not yet in each task's manifest.json.
-name: geniesim_to_xpolicylab
+# Adapter: Galaxea Open-World Dataset (Hugging Face OpenGalaxea/Galaxea-Open-World-Dataset,
+# raw/open_datasets/Galaxea-Open-World-Dataset/lerobot/<task>.tar.gz)
+# -> XPolicyLab xspark in s3://processed/xpolicylab/galaxeaOpenWorldDataset/<task>/<env_cfg>/data/, in the runner (CPU only):
+# archives read from the read-only /buckets mount, unpacked to the container's scratch, results written through the
+# gateway. One task takes ~15 min; a run stops at the 12 h runner timeout, and re-dispatching continues from there.
+# Incremental: re-running converts only new or changed archives and only episodes not yet in each task's manifest.json.
+name: galaxeaOpenWorldDataset_to_xpolicylab
 concurrency:
-  group: geniesim_to_xpolicylab
+  group: galaxeaOpenWorldDataset_to_xpolicylab
   cancel-in-progress: false
 on:
   workflow_dispatch:
     inputs:
       tasks:
-        description: "Glob of task names (dataset directory names); '*' = all. Converted, unchanged tasks are skipped"
+        description: "Glob of task names (archive names without .tar.gz); '*' = all 227. Converted, unchanged tasks are skipped"
         default: "*"
       limit:
         description: "Max episodes per task in the output (0 = all)"
         default: "0"
       env_cfg:
-        description: "XPolicyLab env_cfg_type the data is filed under (an embodiment with 7-joint arms)"
-        default: "agibot_g2"
+        description: "XPolicyLab env_cfg_type the data is filed under"
+        default: "arx_x5"
 
 jobs:
   convert:
@@ -46,5 +47,5 @@ jobs:
       - run: pip -q install h5py pyarrow pandas numpy opencv-python-headless av boto3
       - run: |
           mkdir -p /tmp/scratch
-          python adapter/geniesim/geniesim_to_xpolicylab.py --raw-dir /buckets/raw/internal_datasets/geniesim \
+          python xpolicylab_adapter/galaxeaOpenWorldDataset/galaxeaOpenWorldDataset_to_xpolicylab.py --raw-dir /buckets/raw/open_datasets/Galaxea-Open-World-Dataset/lerobot \
             --scratch /tmp/scratch --tasks "${{ inputs.tasks }}" --limit "${{ inputs.limit }}" --env-cfg "${{ inputs.env_cfg }}"
