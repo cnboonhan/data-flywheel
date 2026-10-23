@@ -1,7 +1,7 @@
 # What Dynamo serves (services/dynamo/README.md), on the two trays DYNAMO_HEAD + DYNAMO_WORKER only (TRITON_NODE is
 # Triton's): a vLLM engine over both trays' 8 GPUs (rank 0 on the head, rank 1 headless on the worker), one at a time.
-# This file in data-flywheel is the seed: the live copy is dynamo/models.yaml in the Gitea pipelines repo, and a push of
-# it runs sync-dynamo (the old engines stop and the new model cold-starts, minutes). A model with a `version` is served,
+# This file in data-flywheel is the seed: the live copy is models.yaml in the Gitea repo dynamo, and a push of it runs
+# sync-dynamo (the old engines stop and the new model cold-starts, minutes). A model with a `version` is served,
 # that version of its MLflow registered model; remove the version to stop it. The weights must be registered first
 # (download-models-hf, by an admin).
 #

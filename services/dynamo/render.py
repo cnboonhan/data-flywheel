@@ -1,10 +1,10 @@
 """Render the deployment spec (models.yaml) into one compose file per node, the gateways' model lists and the
 Prometheus targets.
 
-    python render.py OUT_DIR [SPEC]   (ctl.sh dynamo render: OUT_DIR = $STATE_DIR/dynamo, SPEC = the pipelines repo's
-                                       dynamo/models.yaml; default: the models.yaml beside this file, the seed)
+    python render.py OUT_DIR [SPEC]   (ctl.sh dynamo render: OUT_DIR = $STATE_DIR/dynamo, SPEC = the Gitea repo
+                                       dynamo's models.yaml; default: the models.yaml beside this file, the seed)
 
-The spec lives in the Gitea pipelines repo, so deploying is an edit there. A model is served when its entry has a
+The spec lives in the Gitea repo dynamo, so deploying is an edit there. A model is served when its entry has a
 `version`: that version of its MLflow registered model (the admin registers the weights, download-models-hf), read in
 place from the mlflow bucket. Its placement says where: `trays` (both of DYNAMO_HEAD's and DYNAMO_WORKER's 8 GPUs, rank
 0 on the head and rank 1 headless on the worker; one such model at a time) or a node and GPUs with a share of each GPU's

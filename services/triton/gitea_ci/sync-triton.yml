@@ -1,15 +1,13 @@
-# Serve models on Triton (services/triton/sync.py) as this repo's triton/models.yaml says, with the Python backends in
-# triton/backends/: every listed registered model version is packaged into s3://triton/models/ and loaded (again when
-# its options or backend changed); a model no longer listed is unloaded. The outcome goes to s3://triton/sync/
-# (status.json, log/) and each model's Triton config. Runs when triton/ is pushed, or on demand.
+# Serve models on Triton (services/triton/sync.py) as the Gitea repo triton's models.yaml says, with its Python backends
+# (backends/): every listed registered model version is packaged into s3://triton/models/ and loaded (again when its
+# options or backend changed); a model no longer listed is unloaded. The outcome goes to s3://triton/sync/ (status.json,
+# log/) and each model's Triton config. A push to the triton repo dispatches it (its webhook, ctl.sh bootstrap_specs),
+# or run it by hand.
 name: sync-triton
 concurrency:
   group: sync-triton
   cancel-in-progress: false
 on:
-  push:
-    branches: [main]
-    paths: ["triton/**"]
   workflow_dispatch:
     inputs:
       force:
@@ -43,18 +41,18 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"   # the job runs as root; don't leave root-owned __pycache__ in the checkout
     steps:
       - name: spec and backends
-        # this repo's triton/ (models.yaml, backends/) at the commit that started the run
+        # the triton repo's main (models.yaml, backends/), read with a read-only token, into ./triton
         env:
-          URL: ${{ github.api_url }}/repos/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
-          TOKEN: ${{ github.token }}
+          URL: ${{ github.api_url }}/repos/${{ github.repository_owner }}/triton/archive/main.tar.gz
+          TOKEN: ${{ secrets.SPEC_READ_TOKEN }}
         run: |
           python3 - <<'PY'
           import io, os, tarfile, urllib.request
           req = urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})
           with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(req).read())) as tar:
               for m in tar.getmembers():
-                  m.name = m.name.split("/", 1)[-1]
-                  if m.name.startswith("triton/") and (m.isfile() or m.isdir()):
+                  m.name = "triton/" + m.name.split("/", 1)[-1]
+                  if m.isfile() or m.isdir():
                       tar.extract(m, ".")
           PY
       - shell: bash

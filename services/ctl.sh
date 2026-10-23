@@ -8,6 +8,8 @@
 #   services/ctl.sh ps|logs|pull|config|<any compose args>
 #   services/ctl.sh triton <compose args>   Triton's own project on TRITON_NODE (ps, logs, build, ...)
 #   services/ctl.sh dynamo render|up|down|<compose args>   the LLMs on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md)
+#   services/ctl.sh specs     make the Gitea spec repos dynamo and triton (what is served), their webhooks and tokens
+#   services/ctl.sh deployer add <name>   a Gitea-only account that may push those two repos (no Keycloak)
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
 # over ssh; the repo and the state dir are on /tier1, so paths are the same.
@@ -29,7 +31,7 @@ SERVICE_ADDR=$(getent hosts "$SERVICE_NODE" | awk '{print $1; exit}')   # sync-d
 LLM_GATEWAY_ADDR=$(getent hosts "${DYNAMO_HEAD:-}" | awk '{print $1; exit}' || true); export LLM_GATEWAY_ADDR   # dynamo/
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-10: the usage block at the top of this file
+  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-12: the usage block at the top of this file
   exit 1
 fi
 
@@ -54,9 +56,9 @@ keep_off_gpu_memory() {
   docker update --cpuset-mems "$(IFS=,; echo "${mems[*]}")" $("${compose[@]}" ps -q) >/dev/null
 }
 
-# Dynamo (dynamo/README.md): serves what the spec, dynamo/models.yaml in the Gitea pipelines repo, gives a version, where
-# it places them (the trays, or a node's GPUs). render: pull the pipelines repo's checkout ($STATE_DIR/pipelines) and
-# write each node's compose file from its spec (dynamo/render.py).
+# Dynamo (dynamo/README.md): serves what the spec, models.yaml in the Gitea repo dynamo, gives a version, where it
+# places them (the trays, or a node's GPUs). render: pull that repo's clone ($STATE_DIR/specs/dynamo, bootstrap_specs)
+# and write each node's compose file from its spec (dynamo/render.py).
 # up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
 # node's services up (unchanged ones keep running) and wait for each served model. The Gitea workflow sync-dynamo runs
 # up (dynamo/gitea_ci/sync-dynamo.yml), with a key that may run nothing else (tools/bin/dynamo-up, FORCED_COMMANDS).
@@ -70,9 +72,9 @@ dynamo() {
   case ${1:-} in
     render)
       mkdir -p "$out/cache"
-      git -C "$STATE_DIR/pipelines" pull -q --ff-only || { echo "dynamo: can't update $STATE_DIR/pipelines (the spec's repo)" >&2; return 1; }
+      git -C "$STATE_DIR/specs/dynamo" pull -q --ff-only || { echo "dynamo: can't update $STATE_DIR/specs/dynamo (the spec's repo)" >&2; return 1; }
       (set -a; . "$STATE_DIR/flywheel.env"
-       uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out" "$STATE_DIR/pipelines/dynamo/models.yaml") || return 1
+       uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out" "$STATE_DIR/specs/dynamo/models.yaml") || return 1
       for m in $(q '" ".join(d["served"])'); do mkdir -p "$out/cache/$m"; done
       for node in $(q '" ".join(d["nodes"])'); do mkdir -p "$out/etcd-$node"; done ;;   # else dockerd makes them, root-owned
     up)
@@ -233,7 +235,6 @@ bootstrap_gitea() {
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
   for f in gitea/{setup,ingest,clean,mix,serve}/*.yml gitea/ingest/xpolicylab_adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/ingest/xpolicylab_adapter/*/*.py \
-           dynamo/models.yaml triton/models.yaml triton/backends/*.py \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
@@ -241,7 +242,6 @@ bootstrap_gitea() {
       gitea/setup/conda-shim/*) path="${f#gitea/}" ;;                # copied into the envs by install-robodojo.sh
       gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
       gitea/ingest/xpolicylab_adapter/*/*) path="${f#gitea/ingest/}" ;;   # xpolicylab_adapter/<source>/<script> the adapter workflows run
-      */models.yaml|triton/backends/*) path="$f" ;;                   # the deployment specs (dynamo/, triton/) and Triton's backends: edited there afterwards
       *) path="$f" ;;
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
@@ -249,6 +249,83 @@ bootstrap_gitea() {
       -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $path\"}" \
       "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null
   done
+}
+
+# The deployment specs, each in a repo of its own so that deployers can edit them without the pipelines repo's
+# workflows and secrets: dynamo (models.yaml) and triton (models.yaml, backends/). Actions are off in both, so nothing
+# pushed there runs with secrets; a push runs the pipelines repo's sync-dynamo / sync-triton through a webhook, with an
+# admin token the deployers can't read (webhooks are visible to repo admins only). Seeded once from this checkout
+# (dynamo/models.yaml, triton/models.yaml, triton/backends/); edited there afterwards. sync-triton reads the triton repo
+# with the read-only token SPEC_READ_TOKEN; ctl.sh dynamo reads the dynamo repo from its clone in $STATE_DIR/specs/.
+bootstrap_specs() {
+  local api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD" g=("${compose[@]}" exec -T gitea curl -fs)
+  local tokens="$STATE_DIR/gitea/spec-tokens" repo f path
+  json() { python3 -c 'import json,sys; print(json.dumps(dict(zip(sys.argv[1::2], sys.argv[2::2]))))' "$@"; }
+  for repo in dynamo triton; do
+    if ! "${g[@]}" -u "$auth" "$api/repos/$ADMIN_USER/$repo" >/dev/null 2>&1; then
+      "${g[@]}" -u "$auth" -H 'Content-Type: application/json' \
+        -d "{\"name\":\"$repo\",\"private\":true,\"auto_init\":true,\"default_branch\":\"main\",\"description\":\"What $repo serves (services/$repo/README.md): a push deploys it\"}" \
+        "$api/user/repos" >/dev/null
+    fi
+    "${g[@]}" -u "$auth" -X PATCH -H 'Content-Type: application/json' -d '{"has_actions":false}' "$api/repos/$ADMIN_USER/$repo" >/dev/null
+  done
+  for f in dynamo/models.yaml triton/models.yaml triton/backends/*.py; do
+    repo=${f%%/*} path=${f#*/}
+    "${g[@]}" -u "$auth" "$api/repos/$ADMIN_USER/$repo/contents/$path" >/dev/null 2>&1 && continue
+    "${g[@]}" -u "$auth" -H 'Content-Type: application/json' -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $path\"}" \
+      "$api/repos/$ADMIN_USER/$repo/contents/$path" >/dev/null
+  done
+  # admin tokens: spec-dispatch (write:repository, the webhooks' dispatch) and spec-read (read:repository, sync-triton);
+  # made again (the old one deleted) only when the file that keeps them is missing
+  if [[ ! -s $tokens ]]; then
+    local name tok
+    (umask 077; : > "$tokens")
+    for name in spec-dispatch:write:repository spec-read:read:repository; do
+      "${g[@]}" -u "$auth" -X DELETE "$api/users/$ADMIN_USER/tokens/${name%%:*}" >/dev/null 2>&1 || true
+      tok=$("${g[@]}" -u "$auth" -H 'Content-Type: application/json' -d "{\"name\":\"${name%%:*}\",\"scopes\":[\"${name#*:}\"]}" \
+              "$api/users/$ADMIN_USER/tokens" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha1"])')
+      echo "${name%%:*}=$tok" >> "$tokens"
+    done
+  fi
+  local dispatch read
+  dispatch=$(sed -n 's/^spec-dispatch=//p' "$tokens") read=$(sed -n 's/^spec-read=//p' "$tokens")
+  "${g[@]}" -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$(json data "$read")" \
+    "$api/repos/$ADMIN_USER/pipelines/actions/secrets/SPEC_READ_TOKEN" >/dev/null
+  # a push to main dispatches the pipelines repo's sync (the push event's own payload is the body: its `ref` is the
+  # branch, its other fields are ignored)
+  for repo in dynamo triton; do
+    local url="http://localhost:3000/gitea/api/v1/repos/$ADMIN_USER/pipelines/actions/workflows/sync-$repo.yml/dispatches"
+    "${g[@]}" -u "$auth" "$api/repos/$ADMIN_USER/$repo/hooks" | grep -qF "sync-$repo.yml" && continue
+    "${g[@]}" -u "$auth" -H 'Content-Type: application/json' -d "$(python3 -c 'import json,sys; print(json.dumps({"type": "gitea",
+        "config": {"url": sys.argv[1], "content_type": "json", "http_method": "post"}, "events": ["push"], "branch_filter": "main",
+        "authorization_header": "token " + sys.argv[2], "active": True}))' "$url" "$dispatch")" "$api/repos/$ADMIN_USER/$repo/hooks" >/dev/null
+  done
+  # the dynamo spec's clone, which ctl.sh dynamo render pulls (the pipelines repo's credentials)
+  local ca="$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt"
+  if [[ ! -d $STATE_DIR/specs/dynamo/.git ]]; then
+    git -c "http.sslCAInfo=$ca" -c "credential.helper=store --file=$STATE_DIR/.pipelines-credentials" \
+      clone -q "https://$SERVICE_HOST:$CADDY_PORT/gitea/$ADMIN_USER/dynamo.git" "$STATE_DIR/specs/dynamo"
+  fi
+  git -C "$STATE_DIR/specs/dynamo" config http.sslCAInfo "$ca"
+  git -C "$STATE_DIR/specs/dynamo" config credential.helper "store --file=$STATE_DIR/.pipelines-credentials"
+}
+
+# A deployer: a local Gitea account (no Keycloak), with a random password printed once, that may push the dynamo and
+# triton specs (bootstrap_specs) and nothing else, so it changes which registered models are served.
+deployer_add() {
+  local name=${1:?usage: ctl.sh deployer add <name>} api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  local pw; pw=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)
+  if gitea admin user list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "$name"; then
+    gitea admin user change-password --username "$name" --password "$pw" --must-change-password=false >/dev/null
+  else
+    gitea admin user create --username "$name" --password "$pw" --email "$name@flywheel.invalid" --must-change-password=false >/dev/null
+  fi
+  for repo in dynamo triton; do
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d '{"permission":"write"}' \
+      "$api/repos/$ADMIN_USER/$repo/collaborators/$name" >/dev/null
+  done
+  echo "gitea: $name, password $pw (shown once), may push $ADMIN_USER/dynamo and $ADMIN_USER/triton"
+  echo "       https://$SERVICE_HOST:$CADDY_PORT/gitea/$ADMIN_USER/dynamo  https://$SERVICE_HOST:$CADDY_PORT/gitea/$ADMIN_USER/triton"
 }
 
 # What jobs need besides the services: a checkout of the pipelines repo to edit workflows in, the MLflow
@@ -524,6 +601,20 @@ if [[ $1 == user ]]; then
   exit
 fi
 
+# The spec repos alone (bootstrap_specs, which `up` also runs): make what is missing.
+if [[ $1 == specs ]]; then
+  bootstrap_specs
+  exit
+fi
+
+if [[ $1 == deployer ]]; then
+  case ${2:-} in
+    add) deployer_add "${@:3}" ;;
+    *) echo "usage: ctl.sh deployer add <name>" >&2; exit 2 ;;
+  esac
+  exit
+fi
+
 if [[ $1 == up ]]; then
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
@@ -556,6 +647,7 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_keycloak
   bootstrap_mlflow
   bootstrap_jobs
+  bootstrap_specs
   apply_s3_policies
   "${compose[@]}" up -d "${@:2}"
   keep_off_gpu_memory

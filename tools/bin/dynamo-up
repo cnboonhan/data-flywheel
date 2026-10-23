@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Forced command of the sync-dynamo SSH key (Gitea secret DYNAMO_SSH_KEY; installed by ctl.sh up, FORCED_COMMANDS):
-# serve what the pipelines repo's dynamo/models.yaml says (services/dynamo/README.md). Whatever the client asked to run
+# serve what the Gitea repo dynamo's models.yaml says (services/dynamo/README.md). Whatever the client asked to run
 # ($SSH_ORIGINAL_COMMAND) is ignored, so the key can do this and nothing else.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)

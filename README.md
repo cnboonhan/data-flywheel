@@ -85,7 +85,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 | Inference / Model Optimizations | not built yet |
 | Distillation | not built yet |
 
-**Deploy:** each training run registers a model version (`<model>.<embodiment>.<mix>`). Listing it in the Gitea `pipelines` repo's `triton/models.yaml` serves it on Inference Compute, for the kinds Triton has a packager for (π0.5, MLP): [triton/](services/triton/README.md).
+**Deploy:** each training run registers a model version (`<model>.<embodiment>.<mix>`). Listing it in the Gitea repo `triton`'s `models.yaml` serves it on Inference Compute, for the kinds Triton has a packager for (π0.5, MLP): [triton/](services/triton/README.md).
 
 ### Evaluate
 

@@ -1,6 +1,6 @@
 # triton
 
-Triton Inference Server for image models and robot policies in the MLflow registry (now: `Qwen-Image-Edit-2511`), as the Gitea `pipelines` repo's `triton/models.yaml` lists them, at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, no token). It has `TRITON_NODE` to itself; Kimi K3 is on [Dynamo](../dynamo/README.md) (OpenAI API).
+Triton Inference Server for image models and robot policies in the MLflow registry (now: `Qwen-Image-Edit-2511`), as the Gitea repo `triton`'s `models.yaml` lists them, at `triton.$SERVICE_HOST:$CADDY_PORT` (HTTP and gRPC, no token). It has `TRITON_NODE` to itself; Kimi K3 is on [Dynamo](../dynamo/README.md) (OpenAI API).
 
 ## Example usage
 
@@ -46,17 +46,18 @@ Expect an image edit at 1024×1024 in ~16 s.
            mlflow.log_artifacts(f"{step_dir}/{d}", f"checkpoint/{d}")
    mlflow.register_model(f"runs:/{run.info.run_id}/checkpoint", "Pi05.r1pro.picking_up_cup")
    ```
-2. List the version in the spec, `triton/models.yaml` in the Gitea `pipelines` repo, and push to `main`; remove an entry to unload it. Optional per model: `backend`, `gpu`, `vllm` (engine arguments); [`models.yaml`](models.yaml) explains them.
+2. List the version in the spec, `models.yaml` in the Gitea repo `triton` (`https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/triton`), and push to `main`; remove an entry to unload it. Optional per model: `backend`, `gpu`, `vllm` (engine arguments); [`models.yaml`](models.yaml) explains them.
    ```yaml
    models:
      - {name: Pi05.r1pro.picking_up_cup, version: 1}
    ```
-3. The push runs the Gitea workflow `sync-triton` (`gitea_ci/sync-triton.yml`; dispatch it by hand with `force` or `dry_run`, [how](../gitea/README.md)): it packages, loads and test-runs what changed. The outcome is in the run's log and `s3://triton/sync/status.json` (`ready`, `failed`, `unsupported`, with the error).
+3. The push runs the Gitea workflow `sync-triton` in the admin's `pipelines` repo, through the repo's webhook (`gitea_ci/sync-triton.yml`; an admin can dispatch it by hand with `force` or `dry_run`, [how](../gitea/README.md)): it packages, loads and test-runs what changed. The outcome is in the run's log and `s3://triton/sync/status.json` (`ready`, `failed`, `unsupported`, with the error).
 
 **Notes**
+- **Who may deploy:** the admins, and the accounts `services/ctl.sh deployer add <name>` makes (Gitea only, no Keycloak, a random password printed once): they may push the repos `dynamo` and `triton` and nothing else, so they choose which registered versions are served and with which flags, but registering weights in MLflow stays an admin's job. The repos run no workflows themselves; their webhooks start the admin's syncs (`services/ctl.sh specs` makes repos, webhooks and tokens).
 - Runs on three GPUs of `TRITON_NODE` (`TRITON_GPU_A`..`C`, all shared): an image model gets an instance on each, unless the spec pins it to one with `gpu`; a vLLM model takes one whole GPU (`TRITON_VLLM_GPU`; split across GPUs the 122B hit NVLink errors). GPU 0 there isn't ours; keep GPU-heavy Slurm jobs off the node (`--exclude=$TRITON_NODE`).
 - Loading, unloading and settings aren't reachable from outside: `sync-triton` does them, and Caddy adds the key Triton requires.
-- **Backends** are edited in the Gitea `pipelines` repo, `triton/backends/<name>.py` (the `backends/` here are the seed): a Python backend declares its inputs, outputs, smoke-test request and Hugging Face repos as `TRITON_*` literals at its top (see `qwen_image_edit.py`), which `sync.py` reads without running the file. A pushed change to a backend repackages and reloads the models that use it. Backend code runs inside Triton, so whoever can push to the repo runs code there. A model type with no backend needs a `package_<model>` in `sync.py`; others are reported `unsupported`.
+- **Backends** are edited in the Gitea repo `triton`, `backends/<name>.py` (the `backends/` here are the seed): a Python backend declares its inputs, outputs, smoke-test request and Hugging Face repos as `TRITON_*` literals at its top (see `qwen_image_edit.py`), which `sync.py` reads without running the file. A pushed change to a backend repackages and reloads the models that use it. Backend code runs inside Triton, so whoever can push to the repo runs code there. A model type with no backend needs a `package_<model>` in `sync.py`; others are reported `unsupported`.
 - After editing `Dockerfile`, rebuild on the node: `services/ctl.sh triton build`, then recreate the server: dispatch the Gitea workflow `triton-up` (`gitea_ci/triton-up.yml`; input `dry_run` shows what it would recreate), or run `services/ctl.sh triton up -d`. The same after changing its GPUs or flags (`compose.yml`, `.env`). Logs: `services/ctl.sh triton logs -f`. Then copy the image to `SERVICE_NODE`, where the runner starts the `sync-triton` job in it (13 GB, a few minutes):
   ```bash
   ssh $TRITON_NODE "bash -lc 'docker save flywheel-triton:26.08 | ssh $SERVICE_NODE \"bash -lc \\\"docker load\\\"\"'"
