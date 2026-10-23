@@ -27,6 +27,22 @@ For programs that push data in:
 | `POST $HOST/loki/api/v1/push` | log lines ([loki/](../loki/README.md)) | `LOKI_PUSH_TOKEN` |
 | `PUT`, `POST`, `DELETE $HOST/pushgateway/metrics/job/...` | metrics, e.g. Slurm jobs ([prometheus/](../prometheus/README.md#slurm-jobs)) | `PUSHGATEWAY_TOKEN` |
 
+## Example usage
+
+In a browser, open `$HOST` and sign in once; every SSO page above then opens without asking again. From a shell (set the variables as in the [quickstart](../../quickstart.md)):
+
+```bash
+mkdir -p ~/.flywheel && curl -k https://$SERVICE_HOST:$CADDY_PORT/ca.crt -o ~/.flywheel/ca.crt   # once: the stack's CA
+export FLYWHEEL_CA=~/.flywheel/ca.crt
+
+curl --cacert $FLYWHEEL_CA https://$SERVICE_HOST:$CADDY_PORT/ -o /dev/null -w '%{http_code}\n'              # 200: the stack answers
+curl --cacert $FLYWHEEL_CA https://llm.$SERVICE_HOST:$CADDY_PORT/v1/models                                # the language models served now
+curl --cacert $FLYWHEEL_CA https://triton.$SERVICE_HOST:$CADDY_PORT/v2/health/ready -w '%{http_code}\n'   # 200: Triton is up
+aws s3 ls s3://raw/                                                                                       # the buckets, with your S3 keys
+```
+
+An SSO page fetched without a browser answers `302` to the sign-in: use the browser for those, and tokens or keys for the APIs.
+
 **Notes** (for operators)
 - `/fiftyone`, `/rerun` and `/s3` on `$HOST` redirect to their subdomains; `rerun.…/browse` and `/dataset` redirect to `/data`.
 - The landing page is a template (`site/index.html`): its model tables read `/status/models` (the LLM gateway's `/v1/models`) and `/status/load` (one fixed Prometheus query), and nothing else of the gateway or Prometheus is reachable without login. Hovering pops up the architecture diagram (`assets/`, at `/assets/`) or a role page (`assets/devroles/`, included by the template; `/assets/devroles/` itself answers 404).
