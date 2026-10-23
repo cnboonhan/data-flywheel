@@ -4,6 +4,9 @@ web viewer: it opens one file by URL, not a LeRobot folder.
     GET /lerobot/<group>/<dataset>/<root>/episode_<N>.rrd             a dataset in the raw bucket
     GET /lerobot-processed/<path>/<root>/episode_<N>.rrd              one in the processed bucket
     (Caddy strips its path token first)
+    GET /bag?bucket=<raw|processed>&path=<bag.mcap>                   a big ROS 2 bag: a page that converts it (mcap_recording.py)
+    GET /bag/status?bucket=...&path=...                               and shows progress, then opens the viewer on
+    GET /bag-rrd/<raw|processed>/<path to bag.mcap>.rrd               the recording (Caddy strips its path token first)
     GET /dataset/<raw|processed>/<path to root>                       a dataset's page: summary and episodes, each
     linked into the viewer (Browse Data's /data/dataset/..., behind SSO: services/browse). Caddy passes the path token
     (X-Rerun-Token), the viewer's host (X-Viewer-Host) and Browse Data's path (X-Browse-Base) for the links.
@@ -23,6 +26,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +36,8 @@ import pyarrow.compute as pc
 import pyarrow.dataset as pads
 import pyarrow.parquet as pq
 import rerun as rr
+
+import mcap_recording
 
 RAW = os.environ.get("RAW_ROOT", "/raw")
 PROCESSED = os.environ.get("PROCESSED_ROOT", "/processed")
@@ -43,6 +49,10 @@ PATH = re.compile(r"^/(?P<kind>lerobot|lerobot-processed)/(?P<root>[A-Za-z0-9._/
 BUCKETS = {"lerobot": (RAW, ""), "lerobot-processed": (PROCESSED, "@processed")}
 DATASET = re.compile(r"^/dataset/(?P<bucket>raw|processed)/(?P<root>[A-Za-z0-9._/+-]+?)/?$")
 KIND = {"raw": "lerobot", "processed": "lerobot-processed"}   # the bucket's episode URL prefix (PATH)
+BAG_RRD = re.compile(r"^/bag-rrd/(?P<bucket>raw|processed)/(?P<path>.+\.mcap)\.rrd$")
+BAG_BUILDS = threading.Semaphore(2)   # bags converted at once: each runs four ffmpeg encoders and a reader; untuned
+BAG_ROOT = {"raw": RAW, "processed": PROCESSED}
+_bags, _bags_guard = {}, threading.Lock()   # cache path -> job: state, read, total, started, error
 PAGE_ROWS = 2000   # episodes per dataset page: a 2000-row table still renders and filters at once; untuned
 _locks, _locks_guard = {}, threading.Lock()
 
@@ -223,6 +233,92 @@ document.getElementById('q').addEventListener('input', ev => {{
 </script></main></body></html>""".encode()
 
 
+def bag_paths(bucket, rel):
+    """(the bag inside its bucket, its recording's cache path), or FileNotFoundError."""
+    base = BAG_ROOT[bucket]
+    src = os.path.realpath(os.path.join(base, rel))
+    if not src.startswith(os.path.realpath(base) + "/") or not src.endswith(".mcap") or not os.path.isfile(src):
+        raise FileNotFoundError(rel)
+    return src, os.path.join(CACHE, "@bags", bucket, rel + ".rrd")
+
+
+def bag_status(bucket, rel):
+    """The bag's conversion: ready if its recording is cached, else the running job's progress; starts one if none."""
+    src, out = bag_paths(bucket, rel)
+    with _bags_guard:
+        job = _bags.get(out)
+        if job is None or job["state"] == "error" and job.get("retry"):
+            if os.path.exists(out):
+                os.utime(out)
+                return {"state": "ready"}
+            job = _bags[out] = {"state": "queued", "read": 0, "total": 0, "started": time.time(), "size": os.path.getsize(src)}
+            threading.Thread(target=convert_bag, args=(src, out, job), daemon=True).start()
+        elif job["state"] == "error":
+            job["retry"] = True   # the next poll starts it again
+        return dict(job, elapsed=time.time() - job["started"])
+
+
+def convert_bag(src, out, job):
+    with BAG_BUILDS:
+        job["state"], job["started"] = "converting", time.time()
+        try:
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            part = out + ".part"
+            mcap_recording.build(src, part, lambda read, total: job.update(read=read, total=total))
+            os.replace(part, out)
+            trim_cache()
+            job["state"] = "ready"
+        except Exception as e:   # noqa: BLE001  shown on the page; the next visit retries
+            job.update(state="error", error=f"{type(e).__name__}: {e}")
+
+
+def bag_page(bucket, rel, viewer_host, token):
+    """A page that converts a big bag (polling its status) and then opens the viewer on the recording."""
+    e = html.escape
+    q = urllib.parse.urlencode({"bucket": bucket, "path": rel})
+    rrd = f"https://{viewer_host}/bag-rrd/{token}/{bucket}/{urllib.parse.quote(rel)}.rrd"
+    viewer = f"https://{viewer_host}/?url={urllib.parse.quote(rrd, safe='')}"
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1">
+<title>{e(rel.split('/')[-1])}</title><style>
+:root {{ --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#e5e5ea; --bar:#0a64d6; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg:#161618; --fg:#f2f2f7; --muted:#98989f; --line:#2c2c2e; --bar:#6aa8ff; }} }}
+body {{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,sans-serif; }}
+main {{ max-width:720px; margin:0 auto; padding:32px 16px; }} h1 {{ font-size:17px; margin:0 0 4px; word-break:break-all; }}
+p {{ color:var(--muted); }} .track {{ height:10px; border-radius:5px; background:var(--line); overflow:hidden; margin:18px 0 8px; }}
+.fill {{ height:100%; width:0; background:var(--bar); transition:width .4s; }} #msg {{ color:var(--fg); }} a {{ color:var(--bar); }}
+</style></head><body><main>
+<h1>{e(rel)}</h1>
+<div class=track><div class=fill id=fill></div></div><div id=msg>Starting&hellip;</div>
+<p><a id=open href="{e(viewer)}" hidden>open in Rerun</a></p>
+<script>
+const fmt = s => s < 90 ? Math.round(s) + " s" : Math.round(s / 60) + " min";
+let failures = 0;
+async function poll() {{
+  const msg = document.getElementById("msg"), fill = document.getElementById("fill");
+  let j;
+  try {{   // relative to this page (/data/bag?...): /data/bag/status, which also starts the conversion
+    const r = await fetch({json.dumps("bag/status?" + q)}, {{cache: "no-store"}});   // a JS string: no HTML escaping in <script>
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    j = await r.json(); failures = 0;
+  }} catch (err) {{   // 5 in a row (~15 s): say so instead of looking stuck
+    if (++failures >= 5) msg.textContent = "Can't reach the converter (" + err.message + "); still retrying\u2026";
+    return setTimeout(poll, 3000);
+  }}
+  if (j.state === "ready") {{ fill.style.width = "100%"; msg.textContent = "Ready: opening the viewer\u2026"; document.getElementById("open").hidden = false; location.href = {json.dumps(viewer)}; return; }}
+  if (j.state === "error") {{ msg.textContent = "Conversion failed: " + j.error + " (reload to try again)"; return; }}
+  if (j.state === "queued") {{ msg.textContent = "Waiting for another conversion to finish (" + fmt(j.elapsed) + ")"; }}
+  else {{
+    const f = j.total ? j.read / j.total : 0, rate = j.elapsed > 0 ? f / j.elapsed : 0;
+    fill.style.width = (100 * f).toFixed(1) + "%";
+    msg.textContent = (f >= 1 ? "Encoding the last frames and writing the recording" : "Converting: " + Math.floor(100 * f) + "% of " + j.total.toLocaleString() + " messages")
+      + " \u00b7 " + fmt(j.elapsed) + " so far" + (f > 0.02 && f < 1 ? " \u00b7 about " + fmt((1 - f) / rate) + " left" : "");
+  }}
+  setTimeout(poll, 1000);
+}}
+poll();
+</script></main></body></html>"""
+
+
 def recording(kind, rel, ep):
     base, cache_dir = BUCKETS[kind]
     root = dataset_root(kind, rel)
@@ -245,6 +341,28 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             return self.reply(200, b"ok", "text/plain")
         url = urllib.parse.urlsplit(self.path)
+        qs = {k: v[0] for k, v in urllib.parse.parse_qs(url.query).items()}
+        if url.path in ("/bag", "/bag/status"):
+            try:
+                if qs.get("bucket") not in BAG_ROOT or not qs.get("path"):
+                    raise FileNotFoundError("give bucket and path")
+                if url.path == "/bag/status":
+                    return self.reply(200, json.dumps(bag_status(qs["bucket"], qs["path"])).encode(), "application/json")
+                src, _ = bag_paths(qs["bucket"], qs["path"])
+                body = bag_page(qs["bucket"], qs["path"], self.headers.get("X-Viewer-Host") or self.headers.get("Host", ""),
+                                self.headers.get("X-Rerun-Token", ""))
+                return self.reply(200, body.encode(), "text/html; charset=utf-8")
+            except FileNotFoundError as e:
+                return self.reply(404, f"not a .mcap bag in the bucket: {e}".encode(), "text/plain")
+        b = BAG_RRD.match(urllib.parse.unquote(url.path))
+        if b:
+            try:
+                _, out = bag_paths(b["bucket"], b["path"])
+            except FileNotFoundError as e:
+                return self.reply(404, f"no such bag: {e}".encode(), "text/plain")
+            if not os.path.exists(out):
+                return self.reply(404, b"not converted yet: open the bag's page in Browse Data", "text/plain")
+            return self.send_file(out)
         d = DATASET.match(urllib.parse.unquote(url.path))
         if d:
             try:
@@ -267,6 +385,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:   # noqa: BLE001  report, keep serving
             self.log_error("build failed for %s: %r", self.path, e)
             return self.reply(500, f"could not build the recording: {e}".encode(), "text/plain")
+        self.send_file(path)
+
+    def send_file(self, path):
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(os.path.getsize(path)))
