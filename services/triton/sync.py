@@ -318,7 +318,8 @@ def smoke_test(name):
         for d in dims:
             n *= d
         dtype = i["data_type"].removeprefix("TYPE_")
-        inputs.append({"name": i["name"], "shape": [1, *dims], "datatype": dtype, "data": [0] * n})
+        batch = [1] if cfg.get("max_batch_size", 0) else []   # a model without batching takes its inputs as they are
+        inputs.append({"name": i["name"], "shape": [*batch, *dims], "datatype": dtype, "data": [0] * n})
     code, out = triton(f"/v2/models/{name}/infer", {"inputs": inputs})
     if code != 200:
         return out.get("error", f"HTTP {code}")
