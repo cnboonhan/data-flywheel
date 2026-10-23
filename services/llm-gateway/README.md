@@ -28,7 +28,7 @@ It runs and updates with Dynamo: `ctl.sh dynamo up` (also run by the Gitea workf
 
 ```bash
 services/ctl.sh dynamo logs -f gateway                       # DYNAMO_HEAD's
-services/ctl.sh dynamo on <node> logs -f gateway             # another node's
+services/ctl.sh dynamo <node> logs -f gateway                # another node's
 ```
 
 ## Notes

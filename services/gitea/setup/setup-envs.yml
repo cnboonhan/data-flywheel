@@ -3,7 +3,7 @@
 # The job only logs in to the service node over ssh: the key (secret SETUP_SSH_KEY, set by ctl.sh up) may run
 # tools/bin/setup-envs and nothing else, which runs the installers there as the service account, so the envs work on
 # the GB300 nodes as built and nothing in the job's container touches the host. Dispatched by `services/ctl.sh up`
-# when an env is missing or was built for another checkout, and by `services/ctl.sh setup`. Each installer is
+# when an env is missing or was built for another checkout, and by `services/ctl.sh up --setup`. Each installer is
 # idempotent, so a re-run resumes.
 name: setup-envs
 concurrency:

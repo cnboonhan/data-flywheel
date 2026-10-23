@@ -7,7 +7,7 @@
 # conda shim the eval scripts need (they call `conda activate <env>`). Then fetches the sim assets into
 # $ROBODOJO_DIR/Assets and the RoboDojo data (sim + real, 2.1 TB) into s3://raw/open_datasets/. Resumable.
 # Run by the Gitea workflow setup-envs in a job container on the service node (dispatched by `ctl.sh up` /
-# `ctl.sh setup`), with $STATE_DIR, the checkout and ~/.local mounted at their host paths. By hand, on any node:
+# `ctl.sh up --setup`), with $STATE_DIR, the checkout and ~/.local mounted at their host paths. By hand, on any node:
 #   set -a; . $STATE_DIR/flywheel.env; set +a; bash install-robodojo.sh
 set -euo pipefail
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}

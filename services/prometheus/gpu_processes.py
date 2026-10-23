@@ -1,6 +1,6 @@
 """Who uses each GPU, and each node's CPU memory, for Prometheus: what the cluster's exporters can't say.
 
-    python3 gpu_processes.py            (ctl.sh monitor; its timer runs it every minute on SERVICE_NODE)
+    python3 gpu_processes.py            (ctl.sh monitor; the timer ctl.sh up installs runs it every minute on SERVICE_NODE)
 
 Over ssh (read-only) on every node in nodes.json, at once: nvidia-smi's processes per GPU, each process's user (for a root-owned container, whoever's `docker run` is still attached to it, when that is clear),
 its workload (its Docker container's name, else its Slurm job, else its script or command) and the memory it holds on

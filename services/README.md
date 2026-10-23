@@ -34,7 +34,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
    services/ctl.sh restart <service>          # after editing a bind-mounted config (Caddyfile, loki.yml)
    services/ctl.sh up --build                 # after editing mlflow/, rerun/ or triton/Dockerfile
    services/ctl.sh up --force-recreate        # after git deleted and recreated files under services/
-   services/ctl.sh setup                      # rebuild the Slurm-side envs (Gitea setup-envs); up does it when needed
+   services/ctl.sh up --setup                 # also rebuild the Slurm-side envs (Gitea setup-envs); up does it when needed
    services/ctl.sh down
    ```
 
@@ -75,7 +75,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
    Without an email, Keycloak asks the user for it at first login.
 2. Give someone only the right to change what is served (no Keycloak account): a Gitea account that may push the spec repos `dynamo` and `triton`, password printed once ([dynamo/](dynamo/README.md), [triton/](triton/README.md)).
    ```bash
-   services/ctl.sh deployer add <name>
+   services/ctl.sh user add <name> --deployer
    ```
 3. Print a user's quickstart exports (section 1, the host and their name filled in; secrets given as arguments, else left as `<...>`), which `user add` also prints with what it minted:
    ```bash
