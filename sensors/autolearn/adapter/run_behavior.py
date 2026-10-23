@@ -233,6 +233,18 @@ EXTRA_TASKS = (
         scene_model="door_room",
         load_room_types=("corridor", "entryway"),
     ),
+    # the same door from the other side: the robot starts in the entryway, so the leaf swings away from it (a push
+    # door), and goes through into the corridor
+    BehaviorTaskMetadata(
+        task_name="pushing_through_door",
+        activity_name="opening_door",
+        language="push the door open and go through it",
+        target_scope="door.n.01_1",
+        target_prompt="door handle",
+        support_prompt="door",
+        scene_model="door_room",
+        load_room_types=("corridor", "entryway"),
+    ),
 )
 _registry_init = BehaviorTaskRegistry.__init__
 BehaviorTaskRegistry.__init__ = lambda self, tasks=BEHAVIOR_TASKS + EXTRA_TASKS: _registry_init(self, tasks)
@@ -260,10 +272,20 @@ DOOR_TASKS = {
                      "frame": {"face": (-0.02, 0.446), "swing": (-1.0, 0.0), "along": (0.0, 1.0)}},
     # going through: success once the base is `through_m` past the door's plane on the entryway side (the frame's face
     # x, against the swing) after the latch was released by the lever; the door may close behind. 0.6 m: the base
-    # (~0.6 m long) is wholly past the leaf's sweep; untuned
+    # (~0.6 m long) is wholly past the leaf's sweep; untuned. require_push False (the user's call): how the door is
+    # held open is the program's business; whether a hand held it at the crossing is logged (push_at_crossing)
     "going_through_door": {"door": "door_flylat_0", "joint": "j_leaf", "z": 0.0, "open_rad": 1.05, "through_m": 0.6,
-                           "standoff": (0.65, 0.85), "lateral": (0.05, 0.25), "yaw_deg": 8.0,
+                           "standoff": (0.65, 0.85), "lateral": (0.05, 0.25), "yaw_deg": 8.0, "require_push": False,
                            "frame": {"face": (-0.02, 0.446), "swing": (-1.0, 0.0), "along": (0.0, 1.0)}},
+    # the push door: the frame's face is the entryway face (+x), `swing` the robot's side (+x) and `opens` the side
+    # the leaf swings to (-x, away from the robot). The start is `standoff` out from that face and `lateral` along the
+    # leaf from its free edge: -0.35..-0.15 m puts the base 0.1-0.3 m in from the free edge, the lever (0.065 m in)
+    # on the robot's right (it faces -x, its right is +y) for the right hand; untuned. Success: through_m into the
+    # corridor after the lever released the latch, upright, the leaf never on the base; a hand pushing on the leaf at
+    # the crossing is logged, not required.
+    "pushing_through_door": {"door": "door_flylat_0", "joint": "j_leaf", "z": 0.0, "open_rad": 1.05, "through_m": 0.6,
+                             "standoff": (0.65, 0.85), "lateral": (-0.35, -0.15), "yaw_deg": 8.0, "require_push": False,
+                             "frame": {"face": (0.02, 0.446), "swing": (1.0, 0.0), "along": (0.0, 1.0), "opens": (-1.0, 0.0)}},
 }
 DOOR_ROOM = "door_room"      # the scene whose activity and instance come from assets/door_room, not BEHAVIOR's data
 
@@ -378,10 +400,17 @@ class DoorWitness:
     # Contact: the leaf (a segment from the hinge, half-thickness HALF_T) may never come within MARGIN of the base's
     # footprint (its root link's box); a hit fails the episode. 10/30 degrees, 5/15 cm, 3 cm margin: untuned.
     UPRIGHT_DEG, FALL_DEG, DZ_OK, DZ_FALL, HALF_T, MARGIN = 10.0, 30.0, 0.05, 0.15, 0.02, 0.03
-    LEVER_R, OFF, LEVER_Z, HAND_TOL, HANDOVER_TICKS, GRIP_ON = 0.77, 0.08, 1.0, 0.08, 5, (0.008, 0.09)
-    # GRIP_ON: the finger gap (both finger joints summed, m) of a gripper closed on something: 0.1 open, ~0.0 on nothing,
-    # ~0.02 on the 2 cm bar, ~0.04 on the 4 cm leaf; the sum, because a held bar sits off-centre (fingers 0.009 and
-    # 0.042 on v04's lever) and a per-finger range read that as empty
+    # the push brace: the left hand's end-effector point within BRACE_FACE 0.06 m of the far face (a closed gripper's
+    # fingers ~1.5 cm either side of it, plus slack), BRACE_ALONG 0.5-0.95 m from the hinge (near the free edge),
+    # the door closing by no more than CLOSE_EPS 0.0005 rad a tick (the closer's ~0.3 rad/s is 0.01 a tick) for
+    # BRACE_TICKS 15 ticks (0.5 s); untuned
+    BRACE_FACE, BRACE_ALONG, CLOSE_EPS, BRACE_TICKS = 0.06, (0.5, 0.95), 0.0005, 15
+    GRIP_SETTLE = 0.0005   # m a tick: fingers closing run at ~0.008 a tick (0.25 m/s, 30 Hz); untuned
+    LEVER_R, OFF, LEVER_Z, HAND_TOL, HANDOVER_TICKS, GRIP_ON = 0.77, 0.08, 1.0, 0.08, 5, (0.008, 0.062)
+    # GRIP_ON: the finger gap (both finger joints summed, m) of a gripper closed on something: 0.1 open, 0.07 at the
+    # programs' pre-grasp opening (0.7), ~0.0 on nothing, 0.02-0.05 on the 2 cm bar (off-centre: fingers 0.009 and
+    # 0.042 on v04's lever, 0.022 and 0.0 on v18's far lever); the sum, because a per-finger range read an off-centre
+    # bar as empty. v17's 0.09 bound took a half-open hand next to the bar for a hold.
 
     def hands(self, hinge, u, n, pos, yaw):
         """Per hand: distance to the far bar, to the near bar, to the leaf, and whether the gripper is closed on
@@ -398,16 +427,25 @@ class DoorWitness:
             except Exception:
                 e = np.asarray(robot.get_eef_position(robot.arm_names[0 if arm == "primary" else -1]), dtype=float)
             g = q[lay.grippers[og_arm]]      # the layout keys grippers by side ("left"/"right")
-            on = bool(self.GRIP_ON[0] < float(np.sum(g)) < self.GRIP_ON[1])
+            # closed on something: the finger gap inside GRIP_ON and settled (moving under GRIP_SETTLE a tick: a
+            # gripper closing on nothing passes through the range for a few ticks, which v17's witness took for a hold)
+            gap = float(np.sum(g))
+            prev = self.gap_prev.get(arm)
+            self.gap_prev[arm] = gap
+            on = bool(self.GRIP_ON[0] < gap < self.GRIP_ON[1] and prev is not None and abs(gap - prev) < self.GRIP_SETTLE)
             # distance to the leaf's segment (in the plane), at hand height
             w = e[:2] - hinge
             d = float(np.clip(np.dot(w, u), 0.0, 0.9))
             leaf = float(np.hypot(*(w - d * u)))
+            # signed distance from the far face (positive on its side), and how far along the leaf the hand is
+            face = float(np.dot(w, n)) - self.HALF_T
             out[arm] = {"far": float(np.linalg.norm(e - far)), "near": float(np.linalg.norm(e - near)), "leaf": leaf,
+                        "far_face": face, "along": float(np.dot(w, u)),
                         "on": on, "z": float(e[2])}
         return out
 
-    def __init__(self, task_name, door, open_rad, debounce=5, trace=None, adapter=None, through=None, frame=None):
+    def __init__(self, task_name, door, open_rad, debounce=5, trace=None, adapter=None, through=None, frame=None,
+                 require_push=True, push_hands=("primary",)):
         self.task_name, self.door, self.open_rad, self.debounce = task_name, door, open_rad, debounce
         self.ticks, self.streak, self.success_step = 0, 0, None
         self.max_open, self.min_lever, self.first_release = 0.0, 0.0, None
@@ -415,12 +453,14 @@ class DoorWitness:
         self.frame, self.z0, self.half = frame, None, None     # the door's 2-D frame in world (DOOR_TASKS), start height, base half-extents
         self.box_off = (0.0, 0.0)          # the footprint box's centre from the robot's position, in the base frame
         self.max_tilt, self.fell, self.hit, self.hit_step, self.fell_step = 0.0, False, False, None, None
-        # the hand-over, for going_through_door: `braced` once the left gripper has closed on the leaf (its edge or the
-        # near lever), `handover` once the right gripper has been closed on the FAR lever's bar for HANDOVER_TICKS
+        # the hand-over, for going_through_door: `braced` once the left hand alone has pushed the door open on its far
+        # face (BRACE_*), `handover` once the right gripper has been closed on the FAR lever's bar for HANDOVER_TICKS
         # ticks after that; both from the eef positions against the door's geometry (assets/latch_door): levers
         # LEVER_R 0.77 m from the hinge, OFF 0.08 m off the leaf's plane, LEVER_Z 1.0 m up, within HAND_TOL 0.08 m
         # (the end-effector point sits 3-6 cm off a bar it holds: v06 traces)
         self.braced_step, self.handover_step, self.far_streak, self.hand_err = None, None, 0, None
+        self.brace_streak = 0
+        self.gap_prev = {}              # each gripper's finger gap last tick
         # through: (plane_x, swing_x, metres) for going_through_door: the base's distance past the door's plane in world,
         # against the swing (swing_x -1: the entryway is +x); None for opening_door
         self.through, self.max_through = through, None
@@ -430,6 +470,10 @@ class DoorWitness:
         # captured in a StringIO), logged per tick in door.jsonl
         self.stage, self.stdout_pos = None, 0
         self.cross_step, self.far_at_cross = None, None     # the tick the base crossed the door plane; right hand to far bar then
+        self.push_at_cross, self.left_at_cross = None, None  # the left fist still pushing the door open at the crossing
+        # require_push: success needs the brace and the push at the crossing (going_through_door); push_hands: the hands
+        # whose push at the crossing is checked (pushing_through_door: either, logged only)
+        self.require_push, self.push_hands = require_push, push_hands
 
     def body(self):
         """Tilt (deg), height, planar pose and whether the leaf touches the base footprint, this tick."""
@@ -459,6 +503,7 @@ class DoorWitness:
             if st is not None:
                 f, sw, a = (np.asarray(self.frame[k], dtype=float) for k in ("face", "swing", "along"))
                 hinge = f - sw * self.HALF_T - a * 0.9
+                sw = np.asarray(self.frame.get("opens", sw), dtype=float)    # the side the leaf swings to
                 th = st["open_rad"]
                 u = a * np.cos(th) + sw * np.sin(th)
                 n = -sw * np.cos(th) + a * np.sin(th)        # the far face's outward normal, turning with the leaf
@@ -535,11 +580,15 @@ class DoorWitness:
         self.read_stage()
         if hn is not None:
             left, right = hn["primary"], hn["secondary"]
-            # braced: the left holds the door ALONE (closed on the leaf, its edge or the near lever, the right hand off
-            # the door), the evidence that the hands switched
+            # braced: the left hand ALONE holds the door open by pushing on its far face (the side that opens it), no
+            # grasp: the hand within BRACE_FACE of the far face on its side, between BRACE_ALONG along the leaf, near
+            # the levers' height, the right hand off the door, and the door not closing (opening rate >= -CLOSE_EPS)
+            # for BRACE_TICKS ticks in a row: the evidence that the hands switched and the left held the door
             right_free = not right["on"] or min(right["far"], right["near"], right["leaf"]) > self.HAND_TOL + self.HALF_T
-            if self.braced_step is None and left["on"] and right_free and abs(left["z"] - self.LEVER_Z) < 0.4 \
-                    and (left["leaf"] < self.HAND_TOL + self.HALF_T or left["near"] < self.HAND_TOL):
+            pushing = (-0.01 <= left["far_face"] <= self.BRACE_FACE and self.BRACE_ALONG[0] <= left["along"] <= self.BRACE_ALONG[1]
+                       and abs(left["z"] - self.LEVER_Z) < 0.4 and right_free and st["open_rad"] - self.last_open >= -self.CLOSE_EPS)
+            self.brace_streak = self.brace_streak + 1 if pushing else 0
+            if self.braced_step is None and self.brace_streak >= self.BRACE_TICKS:
                 self.braced_step = self.ticks
             self.far_streak = self.far_streak + 1 if (right["on"] and right["far"] < self.HAND_TOL) else 0
             # the hand-over counts only before the base's centre crosses the door plane (the robot goes through holding
@@ -549,11 +598,19 @@ class DoorWitness:
                 self.handover_step = self.ticks
         if through is not None:
             self.max_through = max(self.max_through, through) if self.max_through is not None else through
-            # the crossing: the first tick the base's centre is past the door plane; the right hand must be at the far
-            # lever then (trailing on it, its grip may be loosened to slide), within HAND_TOL + 2 cm of the bar
+            # the crossing: the first tick the base's centre is past the door plane; the left fist must still be
+            # pushing the door open then (on the far face within BRACE_FACE, anywhere along the leaf, the door not
+            # closing): the door was held open by the hand, not left to swing, while the base went through
             if self.cross_step is None and through > 0.0:
                 self.cross_step = self.ticks
                 self.far_at_cross = None if hn is None else round(hn["secondary"]["far"], 3)
+                self.push_at_cross = False
+                for hand in self.push_hands:
+                    lh = None if hn is None else hn[hand]
+                    self.push_at_cross = self.push_at_cross or (lh is not None and -0.01 <= lh["far_face"] <= self.BRACE_FACE
+                        and 0.02 <= lh["along"] <= self.BRACE_ALONG[1] and st["open_rad"] - self.last_open >= -self.CLOSE_EPS)
+                lh = None if hn is None else hn["primary"]
+                self.left_at_cross = None if lh is None else {"far_face_m": round(lh["far_face"], 3), "along_m": round(lh["along"], 3)}
         if self.trace is not None:
             try:
                 g = {}
@@ -583,8 +640,12 @@ class DoorWitness:
         # state play no part: by the end the lever is let go and the latch may have caught again
         released = self.first_release is not None
         if self.through is not None:
-            good = released and through is not None and through >= self.through[2] and self.handover_step is not None \
-                and self.far_at_cross is not None and self.far_at_cross < self.HAND_TOL + 0.02
+            # (the user dropped the right hand's far-lever hand-over: the left fist braces the door and keeps pushing
+            # it open through the crossing; handover is still recorded, not required)
+            good = released and through is not None and through >= self.through[2]
+            if self.require_push:
+                good = good and self.braced_step is not None and self.cross_step is not None \
+                    and self.braced_step < self.cross_step and bool(self.push_at_cross)
         else:
             good = released and st["open_rad"] >= self.open_rad
         self.streak = self.streak + 1 if (good and upright) else 0
@@ -600,7 +661,7 @@ class DoorWitness:
             checks["through"] = (self.max_through or 0.0) >= self.through[2]
             checks["braced"] = self.braced_step is not None
             checks["handover"] = self.handover_step is not None
-            checks["far_lever_at_crossing"] = self.far_at_cross is not None and self.far_at_cross < self.HAND_TOL + 0.02
+            checks["push_at_crossing"] = bool(self.push_at_cross)
             checks["through_after_release"] = self.success
         else:
             checks["opened_after_release"] = self.success
@@ -609,6 +670,7 @@ class DoorWitness:
                 "fell": self.fell, "fell_step": self.fell_step, "door_hit_base": self.hit, "door_hit_base_step": self.hit_step,
                 "braced_step": self.braced_step, "handover_step": self.handover_step,
                 "cross_step": self.cross_step, "right_far_lever_dist_at_cross_m": self.far_at_cross,
+                "left_at_cross": self.left_at_cross,
                 "max_tilt_deg": round(self.max_tilt, 2), "base_half_m": None if self.half is None else [round(v, 3) for v in self.half],
                 "base_box_offset_m": [round(float(v), 3) for v in self.box_off],
                 "max_through_m": None if self.max_through is None else round(self.max_through, 3),
@@ -631,7 +693,8 @@ def bind_door_witness(self, evaluator):
         if spec.get("through_m") and spec.get("frame"):
             through = (float(spec["frame"]["face"][0]), float(spec["frame"]["swing"][0]), float(spec["through_m"]))
         door = DoorWitness(self._metadata.task_name, spec["door"], spec["open_rad"], trace=trace, adapter=self, through=through,
-                           frame=spec.get("frame"))
+                           frame=spec.get("frame"), require_push=spec.get("require_push", True),
+                           push_hands=("primary", "secondary"))
         # cap_harness.run writes protocol.json (and protocol_success) from its own reference to the pickup witness
         evaluator.evidence = door.evidence
         evaluator = door
