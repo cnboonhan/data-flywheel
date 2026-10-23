@@ -203,20 +203,20 @@ bootstrap_gitea() {
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
   for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
            "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID" \
-           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=0" \
+           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=1" \
            "DYNAMO_SSH_HOST=$SERVICE_ADDR" "DYNAMO_SSH_USER=$USER" "DYNAMO_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)"; do   # Triton's one GPU is 0 inside it
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
-  for f in gitea/{setup,ingest,xpolicylab_adapter,clean,mix,serve}/*.yml gitea/xpolicylab_adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/xpolicylab_adapter/*/*.py \
+  for f in gitea/{setup,ingest,clean,mix,serve}/*.yml gitea/ingest/xpolicylab_adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/ingest/xpolicylab_adapter/*/*.py \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
       gitea/*/*.yml|gitea/*/*/*.yml|*/gitea_ci/*.yml) path=".gitea/workflows/$(basename "$f")" ;;   # Gitea reads workflows from a flat directory; <service>/gitea_ci/ holds a service's own
       gitea/setup/conda-shim/*) path="${f#gitea/}" ;;                # copied into the envs by install-robodojo.sh
       gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
-      gitea/xpolicylab_adapter/*/*) path="${f#gitea/}" ;;             # xpolicylab_adapter/<source>/<script> the adapter workflows run
+      gitea/ingest/xpolicylab_adapter/*/*) path="${f#gitea/ingest/}" ;;   # xpolicylab_adapter/<source>/<script> the adapter workflows run
       *) path="$f" ;;
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue

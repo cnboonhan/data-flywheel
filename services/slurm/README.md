@@ -50,7 +50,7 @@ slurm/
 
 ## Embodiments
 
-**Add a robot:** copy `embodiments/_example.yaml` to `embodiments/<robot>.yaml`, and add an adapter that writes its data ([xpolicylab_adapter/](../gitea/xpolicylab_adapter/README.md)). Models and robots don't touch each other.
+**Add a robot:** copy `embodiments/_example.yaml` to `embodiments/<robot>.yaml`, and add an adapter that writes its data ([xpolicylab_adapter/](../gitea/ingest/xpolicylab_adapter/README.md)). Models and robots don't touch each other.
 
 | Key | Meaning |
 |---|---|

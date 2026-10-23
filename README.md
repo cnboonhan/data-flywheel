@@ -72,7 +72,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 | Box | Here |
 |---|---|
 | Data Cleaning | stage folder [clean/](services/gitea/clean/README.md); no workflows yet |
-| Data Conversion | adapter workflows write `s3://processed/xpolicylab/` in XPolicyLab's format: [xpolicylab_adapter/](services/gitea/xpolicylab_adapter/README.md) |
+| Data Conversion | adapter workflows write `s3://processed/xpolicylab/` in XPolicyLab's format: [xpolicylab_adapter/](services/gitea/ingest/xpolicylab_adapter/README.md) |
 | Data Mixing | named mixes at training time (`train.sbatch --mix`, recorded with a data fingerprint); [mix/](services/gitea/mix/README.md) has no workflows yet |
 
 **Architecture Experiments:** every model trained on one robot and mix lands in one MLflow experiment, `train/<embodiment>/<mix>`, for side-by-side comparison.

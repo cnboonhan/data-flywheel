@@ -1,6 +1,6 @@
 # ingest
 
-Upload and Sync: brings data and models into the store.
+Upload and Sync: brings data and models into the store. Data Conversion lives here too: [`xpolicylab_adapter/`](xpolicylab_adapter/README.md) turns raw datasets into XPolicyLab's training format in `processed/xpolicylab/`, one workflow per source.
 
 | Workflow | Does |
 |---|---|

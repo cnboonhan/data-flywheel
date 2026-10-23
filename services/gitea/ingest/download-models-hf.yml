@@ -1,10 +1,6 @@
 # Download a model from the Hugging Face hub and register it in the MLflow model registry
 # (artifacts in the mlflow bucket, experiment hf-models, version tagged with the hub commit).
 # Known models (repo, repo_type, include, name):
-#   nvidia/Cosmos-Reason2-2B                model    *                           cosmos-reason2-2b   (gated)
-#   OpenWAM/OpenWAM-Alpha-Sim-RoboDojo      model    *                           openwam-sim-robodojo
-#   OpenWAM/OpenWAM-Alpha-Sim-RoboTwin-Full model    *                           openwam-sim-robotwin-full
-#   RoboDojo-Benchmark/RoboDojo             dataset  ckpt/RoboDojo/GR00T_N17/*   robodojo-gr00t_n17
 #   Qwen/Qwen3.5-122B-A10B                  model    *                           Qwen3.5-122B-A10B   (234 GB; Dynamo)
 #   Qwen/Qwen-Image-Edit-2511               model    *                           Qwen-Image-Edit-2511   (58 GB; Triton Python backend)
 #   Ruicheng/moge-3-vitg                    model    *                           moge-3-vitg            (Triton Python backend)
@@ -32,8 +28,9 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: "Hugging Face repo id"
-        default: "OpenWAM/OpenWAM-Alpha-Sim-RoboDojo"
+        description: "Hugging Face repo id (known ones in the header)"
+        required: true
+        default: ""
       repo_type:
         description: "model, or dataset for checkpoints that live in dataset repos"
         default: "model"
@@ -61,9 +58,8 @@ jobs:
           #!/usr/bin/env python
           """Download a model from the Hugging Face hub and register it in the MLflow model registry.
 
-              python register_hf_model.py --repo nvidia/Cosmos-Reason2-2B
-              python register_hf_model.py --repo RoboDojo-Benchmark/RoboDojo --repo-type dataset \
-                  --include 'ckpt/RoboDojo/GR00T_N17/*' --name robodojo-gr00t_n17
+              python register_hf_model.py --repo Qwen/Qwen3-VL-8B-Instruct
+              python register_hf_model.py --repo OpenGalaxea/G0-VLA --include 'G0Tiny_260120/*' --name G0Tiny_260120
 
           The snapshot (optionally filtered by --include globs) becomes the artifacts of a run in experiment
           `hf-models` (stored in the mlflow bucket), and a new version of registered model --name pointing at them,
