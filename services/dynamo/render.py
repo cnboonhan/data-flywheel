@@ -1,7 +1,7 @@
 """Render the deployment spec (models.yaml) into one compose file per node, the gateways' model lists and the
 Prometheus targets.
 
-    python render.py OUT_DIR [SPEC]   (ctl.sh dynamo render: OUT_DIR = $STATE_DIR/dynamo, SPEC = the Gitea repo
+    python render.py OUT_DIR [SPEC]   (ctl.sh dynamo up: OUT_DIR = $STATE_DIR/dynamo, SPEC = the Gitea repo
                                        dynamo's models.yaml; default: the models.yaml beside this file, the seed)
 
 The spec lives in the Gitea repo dynamo, so deploying is an edit there. A model is served when its entry has a
@@ -245,7 +245,7 @@ sd = [{"targets": [f"{addr(sv['node'])}:{GATEWAY_PORT}"],
       for n, sv in served.items() for part in ("frontend", "engine")]
 sd += [{"targets": [f"{addr(node)}:{GATEWAY_PORT}"], "labels": {"part": "gateway"}}   # the other nodes' gateways (served models,
        for node in sorted(local) if node != HEAD]                                    # requests); the head's is job llm-gateway
-# Prometheus's live targets only when rendering the live config (ctl.sh dynamo render/up); a test render elsewhere keeps
+# Prometheus's live targets only when rendering the live config (ctl.sh dynamo up); a test render elsewhere keeps
 # its copy beside its other files, so it can't change what Prometheus scrapes.
 live = os.path.realpath(out) == os.path.realpath(os.path.join(state, "dynamo"))
 sd_dir = os.path.join(state, "prometheus-sd") if live else out

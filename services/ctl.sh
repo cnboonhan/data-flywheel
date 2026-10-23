@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Run `docker compose` for the Store stack on the service node.
 #
-#   services/ctl.sh up        start (or update) the stack
-#   services/ctl.sh down      stop it
-#   services/ctl.sh setup     (re)build the Slurm-side environments (Gitea workflow setup-envs)
-#   services/ctl.sh s3-policies  re-apply the S3 bucket policies (after editing S3_SCOPED_USERS below)
-#   services/ctl.sh ps|logs|pull|config|<any compose args>
-#   services/ctl.sh triton <compose args>   Triton's own project on TRITON_NODE (ps, logs, build, ...)
-#   services/ctl.sh dynamo render|up|down|<compose args>   the LLMs on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md)
-#   services/ctl.sh specs     make the Gitea spec repos dynamo and triton (what is served), their webhooks and tokens
-#   services/ctl.sh deployer add <name>   a Gitea-only account that may push those two repos (no Keycloak)
-#   services/ctl.sh user add <name> [...] | list | env <name> [...]   a person in every service; every account; their exports
+#   services/ctl.sh up [--setup]   start or update everything: the services and their setup, the Gitea spec repos, the
+#                                   S3 policies, Triton, the GPU monitor timer, the Slurm-side environments (--setup:
+#                                   rebuild those even when current)
+#   services/ctl.sh down           stop the stack
+#   services/ctl.sh user add <name> [<email> or - [password]]   a person in every service, with their exports
+#   services/ctl.sh user add <name> --deployer   a Gitea-only account that may push the spec repos dynamo and triton
+#   services/ctl.sh user list | env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]   every account; their exports
+#   services/ctl.sh dynamo up|down  serve what the spec repo dynamo says; stop it (dynamo/README.md)
+#   services/ctl.sh dynamo [<node>] <compose args>   compose for Dynamo on a node (default DYNAMO_HEAD): ps, logs, ...
+#   services/ctl.sh triton <compose args>   Triton's own project on TRITON_NODE: build, up -d, logs, ...
+#   services/ctl.sh ps|logs|pull|config|<any compose args>   the stack's compose
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
 # over ssh; the repo and the state dir are on /tier1, so paths are the same.
@@ -32,7 +33,7 @@ SERVICE_ADDR=$(getent hosts "$SERVICE_NODE" | awk '{print $1; exit}')   # sync-d
 LLM_GATEWAY_ADDR=$(getent hosts "${DYNAMO_HEAD:-}" | awk '{print $1; exit}' || true); export LLM_GATEWAY_ADDR   # dynamo/
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-13: the usage block at the top of this file
+  awk 'NR > 1 && /^#/ {sub(/^# ?/, ""); print; next} NR > 1 {exit}' "$0"   # the usage block at the top of this file
   exit 1
 fi
 
@@ -104,10 +105,10 @@ dynamo() {
         until ssh "${sv[0]}" "curl -fs http://127.0.0.1:${sv[1]}/health" >/dev/null 2>&1; do
           for node in "${sv[0]}" $([[ ${sv[2]} == True ]] && echo "$DYNAMO_WORKER"); do
             [[ $(ssh "$node" "bash -lc 'docker inspect -f {{.State.Running}} flywheel-dynamo-engine-$m-1'") == true ]] ||
-              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; return 1; }
+              { echo "dynamo: engine-$m exited on $node (ctl.sh dynamo $node logs engine-$m)" >&2; return 1; }
             # a worker that dies leaves its container up and the other rank waiting forever
             ! ssh "$node" "bash -lc 'docker logs flywheel-dynamo-engine-$m-1 2>&1 | grep -q -E \"WorkerProc hit an exception|EngineCore encountered a fatal error\"'" ||
-              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo on $node logs engine-$m)" >&2; return 1; }
+              { echo "dynamo: engine-$m failed on $node (ctl.sh dynamo $node logs engine-$m)" >&2; return 1; }
           done
           sleep 10
         done
@@ -115,12 +116,8 @@ dynamo() {
       done ;;
     down)
       for node in $(q '" ".join(d["nodes"])'); do on "$node" down --remove-orphans; done ;;
-    on)      # compose on one node: ctl.sh dynamo on <node> ps|logs|...
-      on "${@:2}" ;;
-    worker)
-      on "$DYNAMO_WORKER" "${@:2}" ;;
-    *)
-      on "$DYNAMO_HEAD" "$@" ;;
+    *)       # compose on a node (a name that resolves), else on the head: ctl.sh dynamo [<node>] ps|logs|...
+      if getent hosts "$1" >/dev/null 2>&1; then on "$@"; else on "$DYNAMO_HEAD" "$@"; fi ;;
   esac
 }
 
@@ -301,7 +298,7 @@ bootstrap_specs() {
         "config": {"url": sys.argv[1], "content_type": "json", "http_method": "post"}, "events": ["push"], "branch_filter": "main",
         "authorization_header": "token " + sys.argv[2], "active": True}))' "$url" "$dispatch")" "$api/repos/$ADMIN_USER/$repo/hooks" >/dev/null
   done
-  # the dynamo spec's clone, which ctl.sh dynamo render pulls (the pipelines repo's credentials)
+  # the dynamo spec's clone, which ctl.sh dynamo up pulls (the pipelines repo's credentials)
   local ca="$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt"
   if [[ ! -d $STATE_DIR/specs/dynamo/.git ]]; then
     git -c "http.sslCAInfo=$ca" -c "credential.helper=store --file=$STATE_DIR/.pipelines-credentials" \
@@ -311,10 +308,10 @@ bootstrap_specs() {
   git -C "$STATE_DIR/specs/dynamo" config credential.helper "store --file=$STATE_DIR/.pipelines-credentials"
 }
 
-# A deployer: a local Gitea account (no Keycloak), with a random password printed once, that may push the dynamo and
+# A deployer (`user add <name> --deployer`): a local Gitea account (no Keycloak), with a random password printed once, that may push the dynamo and
 # triton specs (bootstrap_specs) and nothing else, so it changes which registered models are served.
 deployer_add() {
-  local name=${1:?usage: ctl.sh deployer add <name>} api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  local name=${1:?usage: ctl.sh user add <name> --deployer} api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
   local pw; pw=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)
   if gitea admin user list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "$name"; then
     gitea admin user change-password --username "$name" --password "$pw" --must-change-password=false >/dev/null
@@ -441,10 +438,36 @@ gitea_token() {
   "${g[@]}" generate-access-token --username "$name" --token-name "flywheel-$(date -u +%Y%m%d%H%M%S)" --scopes write:repository,read:user --raw
 }
 
+# The systemd user timer that runs `ctl.sh monitor` every minute on this node (linger on, so it runs while no one is
+# logged in); rewritten on every `up`.
+monitor_timer() {
+  mkdir -p ~/.config/systemd/user
+  cat > ~/.config/systemd/user/flywheel-gpu-processes.service <<UNIT
+[Unit]
+Description=Push who uses each GPU to Prometheus
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -lc 'flock -n -E 0 $STATE_DIR/gpu-processes.lock $here/ctl.sh monitor'
+UNIT
+  cat > ~/.config/systemd/user/flywheel-gpu-processes.timer <<'TIMER'
+[Unit]
+Description=Push who uses each GPU to Prometheus
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
+TIMER
+  loginctl enable-linger && systemctl --user daemon-reload && systemctl --user enable --now flywheel-gpu-processes.timer >/dev/null
+}
+
 # Environments (RoboDojo eval env, policy envs) are built by the Gitea workflow setup-envs, which runs
 # gitea/setup/*.sh in a job container on this node. `up` dispatches it when an env is missing
 # or was built for another checkout or STATE_DIR (each installer writes both paths to <env>/.flywheel-setup);
-# `ctl.sh setup` dispatches it unconditionally. Follow the run in Gitea > Actions.
+# `up --setup` dispatches it unconditionally. Follow the run in Gitea > Actions.
 setup_envs() {
   local force=${1:-} project api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD" e stale=()
   project=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
@@ -481,7 +504,7 @@ bootstrap_grafana() {
 # S3 access: every gateway user (role `user`, from `user add`) reads and writes the shared buckets below, except the
 # scoped users in S3_SCOPED_USERS, who read and write (list, get, put, delete) only under their one prefix, and nothing
 # else. Everything else (mlflow, triton) has no policy, so only the root key (ADMIN_USER) reaches it. Rewritten on every
-# `up`, `user add` and `s3-policies`.
+# `up` and `user add`.
 S3_SHARED_BUCKETS="raw processed"
 S3_SCOPED_USERS="mistral_galaxea_1=raw/internal_datasets/h2rc/mistral"   # <user>=<bucket>/<prefix>, space-separated
 apply_s3_policies() {
@@ -711,29 +734,17 @@ user_add() {
 
 if [[ $1 == user ]]; then
   case ${2:-} in
-    add) user_add "${@:3}" ;;
+    add) if [[ " ${*:3} " == *" --deployer "* ]]; then deployer_add "$3"; else user_add "${@:3}"; fi ;;
     list) user_list ;;
     env) user_env "${@:3}" ;;
-    *) echo "usage: ctl.sh user add <name> [<email> or - [password]] | user list | user env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]" >&2; exit 2 ;;
-  esac
-  exit
-fi
-
-# The spec repos alone (bootstrap_specs, which `up` also runs): make what is missing.
-if [[ $1 == specs ]]; then
-  bootstrap_specs
-  exit
-fi
-
-if [[ $1 == deployer ]]; then
-  case ${2:-} in
-    add) deployer_add "${@:3}" ;;
-    *) echo "usage: ctl.sh deployer add <name>" >&2; exit 2 ;;
+    *) echo "usage: ctl.sh user add <name> [<email> or - [password]] | user add <name> --deployer | user list | user env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]" >&2; exit 2 ;;
   esac
   exit
 fi
 
 if [[ $1 == up ]]; then
+  upargs=() setup=
+  for a in "${@:2}"; do [[ $a == --setup ]] && setup=force || upargs+=("$a"); done   # --setup: rebuild the envs
   # The state directories must exist with the right owner before the bind
   # mounts are created, otherwise dockerd makes them as root.
   for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone prometheus prometheus-sd slurm-exporter rerun-cache keycloak/db keycloak/import keycloak/login-background versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
@@ -759,7 +770,7 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
     for _ in $(seq 1 60); do [[ -f $ca ]] && break; sleep 1; done   # up to 1 min, untuned
     [[ -f $ca ]] || { echo "caddy did not create its CA at $ca" >&2; exit 1; }
   fi
-  "${compose[@]}" up -d "${@:2}" $("${compose[@]}" config --services | grep -vx act_runner)
+  "${compose[@]}" up -d "${upargs[@]}" $("${compose[@]}" config --services | grep -vx act_runner)
   bootstrap_gitea
   bootstrap_grafana
   bootstrap_keycloak
@@ -767,46 +778,22 @@ print(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), t
   bootstrap_jobs
   bootstrap_specs
   apply_s3_policies
-  "${compose[@]}" up -d "${@:2}"
+  "${compose[@]}" up -d "${upargs[@]}"
   keep_off_gpu_memory
   # Triton on its node, and where Prometheus finds its metrics.
   mkdir -p "$STATE_DIR/prometheus-sd"
   printf '[{"targets": ["%s:8102"], "labels": {"node": "%s"}}]\n' "$TRITON_ADDR" "$TRITON_NODE" > "$STATE_DIR/prometheus-sd/triton.json"
   printf '[{"targets": ["%s:8199"], "labels": {"node": "%s"}}]\n' "$LLM_GATEWAY_ADDR" "${DYNAMO_HEAD:-}" > "$STATE_DIR/prometheus-sd/llm-gateway.json"
   triton_compose up -d
-  setup_envs
+  monitor_timer
+  setup_envs $setup
   exit 0
 fi
 
-# Who uses each GPU and each node's CPU memory, pushed for Prometheus (prometheus/gpu_processes.py): once, or
-# `monitor timer` to run it every minute on this node (systemd user timer).
+# Who uses each GPU and each node's CPU memory, pushed for Prometheus (prometheus/gpu_processes.py): `monitor` runs it
+# once; the timer `up` installs (monitor_timer) runs it every minute on this node.
 if [[ $1 == monitor ]]; then
-  if [[ ${2:-} == timer ]]; then
-    mkdir -p ~/.config/systemd/user
-    cat > ~/.config/systemd/user/flywheel-gpu-processes.service <<UNIT
-[Unit]
-Description=Push who uses each GPU to Prometheus
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash -lc 'flock -n -E 0 $STATE_DIR/gpu-processes.lock $here/ctl.sh monitor'
-UNIT
-    cat > ~/.config/systemd/user/flywheel-gpu-processes.timer <<'TIMER'
-[Unit]
-Description=Push who uses each GPU to Prometheus
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=1min
-
-[Install]
-WantedBy=timers.target
-TIMER
-    loginctl enable-linger && systemctl --user daemon-reload && systemctl --user enable --now flywheel-gpu-processes.timer
-    systemctl --user list-timers flywheel-gpu-processes.timer --no-pager
-  else
-    FLYWHEEL_CA=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt python3 "$here/prometheus/gpu_processes.py"
-  fi
+  FLYWHEEL_CA=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt python3 "$here/prometheus/gpu_processes.py"
   exit 0
 fi
 
@@ -817,16 +804,6 @@ fi
 
 if [[ $1 == triton ]]; then
   triton_compose "${@:2}"
-  exit 0
-fi
-
-if [[ $1 == s3-policies ]]; then
-  apply_s3_policies
-  exit 0
-fi
-
-if [[ $1 == setup ]]; then
-  setup_envs force
   exit 0
 fi
 

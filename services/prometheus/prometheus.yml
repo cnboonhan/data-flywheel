@@ -35,7 +35,7 @@ scrape_configs:
     file_sd_configs: [{ files: [/etc/prometheus-sd/llm-gateway.json] }]   # DYNAMO_HEAD:8199, written by ctl.sh up
 
   # Each Dynamo model's frontend (requests, tokens, TTFT, inter-token latency) and engine (vLLM tokens, queue, KV
-  # cache), relayed by the gateway; labels model and part (frontend, engine). Targets written by ctl.sh dynamo render.
+  # cache), relayed by the gateway; labels model and part (frontend, engine). Targets written by ctl.sh dynamo up.
   - job_name: dynamo
     file_sd_configs: [{ files: [/etc/prometheus-sd/dynamo.json] }]
 

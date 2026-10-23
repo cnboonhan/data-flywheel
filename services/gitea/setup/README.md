@@ -10,7 +10,7 @@ Builds the environments the Slurm jobs run in. Not a pipeline stage: `ctl.sh up`
 
 1. To rebuild every env, run setup (safe to rerun; the data download resumes where it stopped).
    ```bash
-   services/ctl.sh setup
+   services/ctl.sh up --setup
    ```
 2. To build one env by hand, run its installer on any node.
    ```bash
