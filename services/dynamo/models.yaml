@@ -1,13 +1,15 @@
-# The LLMs Dynamo can serve, on the two trays DYNAMO_HEAD + DYNAMO_WORKER only (TRITON_NODE is Triton's): a vLLM engine
-# over both trays' 8 GPUs (rank 0 on the head, rank 1 headless on the worker), one at a time. Which one, at which
-# version, is set in MLflow: the model whose registered model has the alias `dynamo`. After moving the alias, run the
-# Gitea workflow sync-dynamo (or ctl.sh dynamo up) by hand: the old engines stop and the new model cold-starts (minutes).
-# A version's tag `dynamo.args` (a JSON list) appends engine flags.
+# What Dynamo serves (services/dynamo/README.md), on the two trays DYNAMO_HEAD + DYNAMO_WORKER only (TRITON_NODE is
+# Triton's): a vLLM engine over both trays' 8 GPUs (rank 0 on the head, rank 1 headless on the worker), one at a time.
+# This file in data-flywheel is the seed: the live copy is dynamo/models.yaml in the Gitea pipelines repo, and a push of
+# it runs sync-dynamo (the old engines stop and the new model cold-starts, minutes). A model with a `version` is served,
+# that version of its MLflow registered model; remove the version to stop it. The weights must be registered first
+# (download-models-hf, by an admin).
 #
-# Per model: name (the OpenAI `model` clients send), registered (MLflow registered model), image (Dynamo's vLLM runtime
-# for that model; its frontend uses it too), ports (frontend, worker system API, vLLM rendezvous; all on the head's
-# localhost except the rendezvous, which the worker tray reaches), frontend_args, args (engine flags), env, and licence and
-# about (shown with the model's context window and inputs on the landing page, through the gateway's /v1/models).
+# Per model: name (the OpenAI `model` clients send), registered (MLflow registered model), version (served when set),
+# image (Dynamo's vLLM runtime for that model, from nvcr.io/nvidia/ai-dynamo/ only; its frontend uses it too), ports
+# (frontend, worker system API, vLLM rendezvous; all on the head's localhost except the rendezvous, which the worker
+# tray reaches), frontend_args, args (engine flags), env (no LD_* or PYTHON*), and licence and about (shown with the
+# model's context window and inputs on the landing page, through the gateway's /v1/models).
 # Flags follow Dynamo's and vLLM's recipes for these models (services/dynamo/README.md); none is tuned here yet.
 
 # The trays' CPU-memory NUMA nodes (`numactl -H`: the nodes with CPUs; each GPU's memory is a node too). Engines are
@@ -31,6 +33,7 @@ models:
     licence: "Kimi K3 licence (modified MIT)"
     about: "Moonshot's largest MoE: long context, agents, images"
     registered: Kimi-K3
+    version: 1
     image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1   # carries the K3 patch set and Dynamo's K3 parsers
     ports: {frontend: 8191, system: 9311, rendezvous: 29511}
     # Dynamo's chat processor: vLLM's (in Dynamo 1.6's vLLM 0.31 image) builds K3's config without prefix caching and

@@ -48,16 +48,18 @@ Expect an image edit at 1024×1024 in ~16 s, MoGe in ~0.6 s per 1024 px view (a 
 
 ## Serve a model
 
-1. Set the alias `triton` on the version to serve; remove it to unload.
-   ```python
-   mlflow.MlflowClient().set_registered_model_alias("ACT.arx_x5.RoboDojo.stack_bowls", "triton", "3")
+1. Register the weights in MLflow (a training run does; `download-models-hf` for Hugging Face models, by an admin).
+2. List the version in the spec, `triton/models.yaml` in the Gitea `pipelines` repo, and push to `main`; remove an entry to unload it. Optional per model: `backend`, `gpu`, `vllm` (engine arguments); [`models.yaml`](models.yaml) explains them.
+   ```yaml
+   models:
+     - {name: ACT.arx_x5.RoboDojo.stack_bowls, version: 3}
    ```
-2. Dispatch the Gitea workflow `sync-triton` (`gitea_ci/sync-triton.yml`; [how](../gitea/README.md)): it packages, loads and test-runs the version, and writes the outcome to the version's tags (`triton.status`: `ready`, `failed`, `unsupported`, `unloaded`; `triton.error`).
+3. The push runs the Gitea workflow `sync-triton` (`gitea_ci/sync-triton.yml`; dispatch it by hand with `force` or `dry_run`, [how](../gitea/README.md)): it packages, loads and test-runs what changed. The outcome is in the run's log and `s3://triton/sync/status.json` (`ready`, `failed`, `unsupported`, with the error).
 
 **Notes**
 - Runs on two GPUs of `TRITON_NODE`: `TRITON_GPU` for the image models and policies, `TRITON_LLM_GPU` for the 122B (a whole GPU: split across GPUs it hit NVLink errors). GPU 0 there isn't ours; keep GPU-heavy Slurm jobs off the node (`--exclude=$TRITON_NODE`).
 - Loading, unloading and settings aren't reachable from outside: `sync-triton` does them, and Caddy adds the key Triton requires.
-- A new model type needs a `package_<model>` in `sync.py` or a backend in `backends/` (inputs and outputs in `PYTHON_IO`); others are tagged `unsupported`. After changing a backend, dispatch `sync-triton` with `force` set to the models it serves.
+- A new model type needs a `package_<model>` in `sync.py` or a backend in `backends/` (inputs and outputs in `PYTHON_IO`); others are reported `unsupported`. After changing a backend, dispatch `sync-triton` with `force` set to the models it serves.
 - After editing `Dockerfile`, rebuild on the node: `services/ctl.sh triton build`, then recreate the server: dispatch the Gitea workflow `triton-up` (`gitea_ci/triton-up.yml`; input `dry_run` shows what it would recreate), or run `services/ctl.sh triton up -d`. The same after changing its GPUs or flags (`compose.yml`, `.env`). Logs: `services/ctl.sh triton logs -f`. Then copy the image to `SERVICE_NODE`, where the runner starts the `sync-triton` job in it (13 GB, a few minutes):
   ```bash
   ssh $TRITON_NODE "bash -lc 'docker save flywheel-triton:26.08 | ssh $SERVICE_NODE \"bash -lc \\\"docker load\\\"\"'"

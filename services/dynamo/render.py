@@ -1,13 +1,16 @@
-"""Render models.yaml into one compose file per node, the gateways' model lists and the Prometheus targets.
+"""Render the deployment spec (models.yaml) into one compose file per node, the gateways' model lists and the
+Prometheus targets.
 
-    python render.py OUT_DIR      (ctl.sh dynamo render: OUT_DIR = $STATE_DIR/dynamo)
+    python render.py OUT_DIR [SPEC]   (ctl.sh dynamo render: OUT_DIR = $STATE_DIR/dynamo, SPEC = the pipelines repo's
+                                       dynamo/models.yaml; default: the models.yaml beside this file, the seed)
 
-A model is served when its registered model's MLflow alias `dynamo` is set, at that version, read in place from the
-mlflow bucket (that version's tag `dynamo.args`, a JSON list, appends engine flags). Its placement in models.yaml says
-where: `trays` (both of DYNAMO_HEAD's and DYNAMO_WORKER's 8 GPUs, rank 0 on the head and rank 1 headless on the worker;
-one such model at a time) or a node and GPUs with a share of each GPU's memory (the shares on one GPU must fit its
-budget in models.yaml `gpus`). Setting or moving an alias changes what is served at the next sync (Gitea workflow
-sync-dynamo, or `ctl.sh dynamo up`).
+The spec lives in the Gitea pipelines repo, so deploying is an edit there. A model is served when its entry has a
+`version`: that version of its MLflow registered model (the admin registers the weights, download-models-hf), read in
+place from the mlflow bucket. Its placement says where: `trays` (both of DYNAMO_HEAD's and DYNAMO_WORKER's 8 GPUs, rank
+0 on the head and rank 1 headless on the worker; one such model at a time) or a node and GPUs with a share of each GPU's
+memory (the shares on one GPU must fit its budget in the spec's `gpus`). A changed spec is served at the next sync
+(Gitea workflow sync-dynamo, which a push of the spec starts, or `ctl.sh dynamo up`). The spec is checked first
+(check_spec): whoever can push it chooses what runs on the GPU nodes.
 
 Writes OUT_DIR/<node>.json (each node's services: etcd, the frontends and engines of the models whose rank 0 runs there,
 and a gateway; rank-1 engines on the worker), OUT_DIR/<node>.gateway.json (that gateway's models; DYNAMO_HEAD's is the
@@ -32,7 +35,8 @@ import yaml
 
 here = os.path.dirname(os.path.abspath(__file__))
 out = sys.argv[1]
-cfg = yaml.safe_load(open(os.path.join(here, "models.yaml")))
+spec = sys.argv[2] if len(sys.argv) > 2 else os.path.join(here, "models.yaml")
+cfg = yaml.safe_load(open(spec))
 state = os.environ["STATE_DIR"]
 HEAD, WORKER = os.environ["DYNAMO_HEAD"], os.environ["DYNAMO_WORKER"]
 user = f'{os.environ["SERVICE_UID"]}:{os.environ["SERVICE_GID"]}'
@@ -52,19 +56,45 @@ def mlflow(path, **query):
         return json.load(r)
 
 
-def served_version(registered):
-    """(path of the weights inside the engine container, extra flags) of the version aliased `dynamo`, or None."""
+# What a spec may say. Images only from Dynamo's own registry; per model only these keys; no env var that changes what
+# the engine process loads (LD_*, PYTHON*). Mounts, devices and privileges are render.py's alone, never the spec's.
+IMAGES = ("nvcr.io/nvidia/ai-dynamo/",)
+TOP_KEYS = {"host_numa_nodes", "common_args", "common_env", "gpus", "models"}
+MODEL_KEYS = {"name", "registered", "version", "image", "ports", "frontend_args", "args", "env", "licence", "about",
+              "placement", "host_numa_nodes"}
+
+
+def check_spec(cfg):
+    bad = set(cfg) - TOP_KEYS
+    errs = [f"unknown top-level keys {sorted(bad)}"] if bad else []
+    envs = [cfg.get("common_env", {})]
+    for m in cfg.get("models", []):
+        n = m.get("name", "?")
+        if set(m) - MODEL_KEYS:
+            errs.append(f"{n}: unknown keys {sorted(set(m) - MODEL_KEYS)}")
+        if not str(m.get("image", "")).startswith(IMAGES):
+            errs.append(f"{n}: image {m.get('image')!r} is not from {', '.join(IMAGES)}")
+        if "version" in m and not str(m["version"]).isdigit():
+            errs.append(f"{n}: version {m['version']!r} is not a model version number")
+        envs.append(m.get("env", {}))
+    errs += [f"env {k} is not allowed" for e in envs for k in e if k.startswith(("LD_", "PYTHON"))]
+    if errs:
+        raise SystemExit(f"{spec}: " + "; ".join(errs))
+
+
+def served_version(registered, version):
+    """The path, inside the engine container, of the registered model's version's weights."""
     try:
-        mv = mlflow("registered-models/alias", name=registered, alias="dynamo")["model_version"]
+        mv = mlflow("model-versions/get", name=registered, version=str(version))["model_version"]
     except urllib.error.HTTPError as e:
-        if e.code == 404 or (e.code == 400 and "alias" in e.read().decode()):   # no such model; model but no alias
-            return None
-        raise
-    tags = {t["key"]: t["value"] for t in mv.get("tags", [])}
+        raise SystemExit(f"{registered} v{version}: not in the MLflow registry (HTTP {e.code}): register it first")
     src = mv["source"]
     if not src.startswith("mlflow-artifacts:/"):
         raise SystemExit(f"{registered} v{mv['version']}: source {src} is not in the mlflow bucket")
-    return "/mlflow/" + src.removeprefix("mlflow-artifacts:/").lstrip("/"), json.loads(tags.get("dynamo.args", "[]"))
+    return "/mlflow/" + src.removeprefix("mlflow-artifacts:/").lstrip("/")
+
+
+check_spec(cfg)
 
 
 common = dict(network_mode="host", user=user, ipc="host", shm_size="32gb",
@@ -76,7 +106,7 @@ def namespace(m):
     return "flywheel-" + m["name"].replace(".", "-")
 
 
-def engine(m, path, extra, rank=None):
+def engine(m, path, rank=None):
     """A model's vLLM engine: on the trays, rank 0 or 1 of two; otherwise on its node's GPUs."""
     p = m["ports"]
     if rank is None:
@@ -91,7 +121,7 @@ def engine(m, path, extra, rank=None):
     numa = m.get("host_numa_nodes", cfg["host_numa_nodes"])   # host memory on the CPU nodes only (models.yaml); "" off
     cmd = [*(["numactl", "--membind", numa] if numa else []),
            "python3", "-m", "dynamo.vllm", "--model", path, "--served-model-name", m["name"],
-           *cfg["common_args"], *m["args"], *place, *extra]
+           *cfg["common_args"], *m["args"], *place]
     env = {**cfg["common_env"], **m.get("env", {}), "HOME": "/cache", "HF_HOME": "/cache/hf",
            "ETCD_ENDPOINTS": "http://127.0.0.1:2379", "DYN_REQUEST_PLANE": "tcp", "DYN_EVENT_PLANE": "zmq",
            "DYN_TCP_RPC_HOST": "127.0.0.1", "DYN_SYSTEM_HOST": "127.0.0.1", "DYN_SYSTEM_PORT": str(p["system"]),
@@ -150,17 +180,16 @@ def gateway(node):
 
 services, local, served, skipped, trays, share, on_gpu, infos = {}, {}, {}, [], [], {}, {}, {}
 for m in cfg["models"]:
-    v = served_version(m["registered"])
-    if v is None:
-        skipped.append(m["registered"])
+    if "version" not in m:
+        skipped.append(m["name"])
         continue
-    path, extra = v
+    path = served_version(m["registered"], m["version"])
     n, p, pl = m["name"], m["ports"], m.get("placement", "trays")
     if pl == "trays":
         trays.append(n)
         node = HEAD
-        services.setdefault(WORKER, {})[f"engine-{n}"] = engine(m, path, extra, 1)
-        services.setdefault(HEAD, {})[f"engine-{n}"] = {**engine(m, path, extra, 0), "depends_on": ["etcd"]}
+        services.setdefault(WORKER, {})[f"engine-{n}"] = engine(m, path, 1)
+        services.setdefault(HEAD, {})[f"engine-{n}"] = {**engine(m, path, 0), "depends_on": ["etcd"]}
     else:
         node = pl["node"] = os.path.expandvars(pl["node"])
         # engines that share a GPU start one after another: vLLM sizes its KV cache from the GPU's free memory, and a
@@ -169,7 +198,7 @@ for m in cfg["models"]:
         for g in pl["gpus"]:
             share[(node, str(g))] = share.get((node, str(g)), 0) + pl["share"]
             on_gpu.setdefault((node, str(g)), []).append(n)
-        services.setdefault(node, {})[f"engine-{n}"] = {**engine(m, path, extra),
+        services.setdefault(node, {})[f"engine-{n}"] = {**engine(m, path),
                                                         "depends_on": {"etcd": {"condition": "service_started"}, **after}}
     services[node][f"frontend-{n}"] = frontend(m)
     local.setdefault(node, {})[n] = {"frontend": f"http://127.0.0.1:{p['frontend']}", "system": f"http://127.0.0.1:{p['system']}",
@@ -177,16 +206,16 @@ for m in cfg["models"]:
     infos[n] = info(m)
     served[n] = {"node": node, "system": p["system"], "tray": pl == "trays"}
 if len(trays) > 1:
-    raise SystemExit(f"the alias `dynamo` is on {', '.join(trays)}: set it on one of the tray models (each takes all 8 GPUs)")
+    raise SystemExit(f"{', '.join(trays)} all have a version: give one of the tray models a version (each takes all 8 GPUs)")
 on_trays = [n for n, sv in served.items() if not sv["tray"] and sv["node"] in (HEAD, WORKER)]
 if trays and on_trays:
-    raise SystemExit(f"the alias `dynamo` is on {trays[0]}, which takes both trays, and on {', '.join(on_trays)}, placed on a "
-                     "tray: set it on one or the other")
+    raise SystemExit(f"{trays[0]}, which takes both trays, and {', '.join(on_trays)}, placed on a tray, all have a version: "
+                     "serve one or the other")
 budget = {(os.path.expandvars(nd), str(g)): b for nd, gs in cfg.get("gpus", {}).items() for g, b in gs.items()}
 for (node, g), s in share.items():
     if s > budget.get((node, g), 0) + 1e-9:
         raise SystemExit(f"{node} GPU {g}: the served models' shares add up to {s:.2f}, over its budget "
-                         f"{budget.get((node, g), 0)} (models.yaml gpus)")
+                         f"{budget.get((node, g), 0)} (the spec's gpus)")
 
 services.setdefault(HEAD, {})   # the main gateway runs on the head even when only other nodes serve models
 for node, svc in services.items():
@@ -223,4 +252,4 @@ sd_dir = os.path.join(state, "prometheus-sd") if live else out
 os.makedirs(sd_dir, exist_ok=True)
 json.dump(sd, open(os.path.join(sd_dir, "dynamo.json" if live else "prometheus-sd-dynamo.json"), "w"), indent=1)
 print(f"rendered {', '.join(f"{n} ({sv['node']})" for n, sv in served.items()) or 'no models'}"
-      + (f"; no `dynamo` alias: {', '.join(skipped)}" if skipped else ""))
+      + (f"; no version (not served): {', '.join(skipped)}" if skipped else ""))

@@ -14,7 +14,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
 | Browse Data: the buckets as folders, LeRobot dataset pages | [browse/](browse/README.md) | `/data` |
 | Triton: image models and robot policies from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (no token) |
-| Dynamo + LLM gateway: the large language model (Kimi K3, on the two trays), chosen by MLflow alias | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
+| Dynamo + LLM gateway: the large language model (Kimi K3, on the two trays), chosen in the `pipelines` repo's `dynamo/models.yaml` | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run
