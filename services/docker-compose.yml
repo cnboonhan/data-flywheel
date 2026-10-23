@@ -29,7 +29,7 @@ services:
       SERVING_NODES: ${TRITON_NODE:-}|${DYNAMO_NODE:-}|${DYNAMO_HEAD:-}|${DYNAMO_WORKER:-}   # their GPUs on the landing page's load table
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy/site:/srv:ro
+      - ./caddy/site:/srv:ro   # the mounts below inside /srv need their folders in site/ (assets/, bufo/: empty, .gitkeep), or dockerd makes them as root
       - ./browse:/etc/caddy/browse:ro   # Browse Data's listing template (services/browse), outside /srv so it is never served
       - ../assets/bufo/all-the-bufo:/srv/bufo:ro   # submodule assets/bufo: the landing page's hover images
       - ../assets:/srv/assets:ro   # the architecture diagram and the role pages (devroles/, included on hover, not served: Caddyfile) on the landing page; a folder, since git replaces files and a file mount would go stale
