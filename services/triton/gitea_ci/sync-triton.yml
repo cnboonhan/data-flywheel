@@ -1,11 +1,14 @@
-# Serve MLflow models on Triton (services/triton/sync.py): every registered model whose alias `triton` names a version is
-# packaged into s3://triton/models/ and loaded; a model whose alias is gone is unloaded. Each model's outcome goes back to
-# its MLflow model version as tags triton.* and to s3://triton/sync/ (status.json, log/). Runs on demand only: a schedule filled the Actions list with runs.
+# Serve models on Triton (services/triton/sync.py) as this repo's triton/models.yaml says: every listed registered model
+# version is packaged into s3://triton/models/ and loaded; a model no longer listed is unloaded. The outcome goes to
+# s3://triton/sync/ (status.json, log/) and each model's Triton config. Runs when the spec is pushed, or on demand.
 name: sync-triton
 concurrency:
   group: sync-triton
   cancel-in-progress: false
 on:
+  push:
+    branches: [main]
+    paths: [triton/models.yaml]
   workflow_dispatch:
     inputs:
       force:
@@ -39,8 +42,16 @@ jobs:
       GIT_PYTHON_REFRESH: quiet
       PYTHONDONTWRITEBYTECODE: "1"   # the job runs as root; don't leave root-owned __pycache__ in the checkout
     steps:
+      - name: spec
+        # this repo's triton/models.yaml at the commit that started the run
+        env:
+          URL: ${{ github.api_url }}/repos/${{ github.repository }}/raw/triton/models.yaml?ref=${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          python3 -c 'import os, urllib.request; open("models.yaml", "wb").write(urllib.request.urlopen(urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})).read())'
       - shell: bash
         run: |
+          export TRITON_SPEC=$PWD/models.yaml
           args=()
           [[ "${{ inputs.dry_run }}" == true ]] && args+=(--dry-run)
           [[ -n "${{ inputs.force }}" ]] && args+=(--force ${{ inputs.force }})

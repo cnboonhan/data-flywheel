@@ -1,0 +1,17 @@
+# What Triton serves (services/triton/README.md). This file in data-flywheel is the seed: the live copy is
+# triton/models.yaml in the Gitea pipelines repo, and a push of it runs sync-triton, which packages, loads and test-runs
+# what changed and unloads what is no longer listed. The weights must be registered in MLflow first (training runs;
+# download-models-hf, by an admin).
+#
+# Per model: name (the MLflow registered model, also the Triton model's name) and version (its MLflow model version),
+# and optionally backend (a Python backend in services/triton/backends/, or vllm; default by the Hugging Face repo, see
+# HF_BACKENDS in sync.py), gpu (the GPU index inside Triton; default TRITON_PYTHON_GPU or TRITON_VLLM_GPU) and vllm (vLLM
+# engine arguments over sync.py's VLLM_ENGINE).
+
+models:
+  - {name: Qwen-Image-Edit-2511, version: 1}
+  - {name: Qwen3.5-122B-A10B, version: 1}
+  - {name: TripoSG, version: 1}
+  - {name: llmdet_large, version: 1}
+  - {name: moge-3-vitg, version: 1}
+  - {name: sam2.1-hiera-large, version: 1}

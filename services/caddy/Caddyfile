@@ -277,10 +277,10 @@ https://triton.{$SERVICE_HOST}:8443 {
 	@admin_grpc path /inference.GRPCInferenceService/RepositoryModelLoad /inference.GRPCInferenceService/RepositoryModelUnload /inference.GRPCInferenceService/LogSettings /inference.GRPCInferenceService/TraceSetting /inference.GRPCInferenceService/SystemSharedMemory* /inference.GRPCInferenceService/CudaSharedMemory*
 	@grpc header Content-Type application/grpc*
 	handle @admin_http {
-		respond "Triton: models are loaded and unloaded by sync-triton (MLflow alias triton), not from outside" 403
+		respond "Triton: models are loaded and unloaded by sync-triton (the pipelines repo's triton/models.yaml), not from outside" 403
 	}
 	handle @admin_grpc {
-		respond "Triton: models are loaded and unloaded by sync-triton (MLflow alias triton), not from outside" 403
+		respond "Triton: models are loaded and unloaded by sync-triton (the pipelines repo's triton/models.yaml), not from outside" 403
 	}
 	# Triton's default ports: gRPC on 8001 (HTTP/2, cleartext inside), HTTP on 8000.
 	handle @grpc {

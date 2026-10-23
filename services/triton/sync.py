@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """Serve MLflow registered model versions on Triton. Run by the Gitea workflow sync-triton.
 
-Desired state is the MLflow registry: every registered model whose alias `triton` points at a version is served,
-as a Triton model with the registered model's name and the MLflow version number as Triton version. Each sync
+Desired state is the deployment spec, triton/models.yaml in the Gitea pipelines repo (the models.yaml beside this file
+is its seed): every entry names a registered model and version to serve, as a Triton model with the registered model's
+name and the MLflow version number as Triton version, and optionally its backend, GPU and vLLM engine arguments (SPEC_KEYS
+below). The weights must be registered in MLflow first (training runs; download-models-hf, by an admin). Each sync
 
   1. packages new or changed versions into s3://triton/models/<name>/ (Triton's model repository), using the packager
      for the run's `model` param (PACKAGERS below; a Hugging Face model registered by download-models-hf gets the
-     Python backend that HF_BACKENDS or its tag triton.backend names, else the vLLM packager), and removes models whose
-     alias is gone;
+     Python backend that HF_BACKENDS or the spec's `backend` names, else the vLLM packager), and removes models no longer
+     in the spec;
   2. loads or unloads them in Triton (explicit model control) and runs one zero-input inference on each;
   3. records the outcome where people look:
-       - MLflow model version tags   triton.status (ready | failed | unsupported | unloaded), triton.model,
-                                     triton.synced_at, triton.error
        - Triton model config         parameters mlflow_model, mlflow_version, mlflow_run_id, model, embodiment, action,
-                                     mix, data_fingerprint, git_commit, synced_at (GET /v2/models/<name>/config)
+                                     mix, data_fingerprint, git_commit, spec, synced_at (GET /v2/models/<name>/config)
        - s3://triton/sync/status.json   the current table; sync/log/<time>.json   every sync that changed something
 
-    python sync.py [--dry-run] [--force NAME ...]
+    python sync.py [--spec models.yaml] [--dry-run] [--force NAME ...]
     python sync.py --status          print what Triton has loaded and where each model came from
 
 Env: MLFLOW_TRACKING_URI/USERNAME/PASSWORD, S3_ENDPOINT_URL + AWS_* (the gateway), TRITON_URL (http://triton:8000),
-FLYWHEEL_ROOT (the checkout: XPolicyLab code for ACT, models/mlp for MLP).
+FLYWHEEL_ROOT (the checkout: XPolicyLab code for ACT, models/mlp for MLP), TRITON_SPEC (the spec, else --spec).
 """
 
 import argparse
@@ -39,7 +39,6 @@ import urllib.request
 import boto3
 import mlflow
 
-ALIAS = os.environ.get("TRITON_ALIAS", "triton")
 BUCKET = os.environ.get("TRITON_BUCKET", "triton")
 MODELS, SYNC = "models", "sync"   # the model repository Triton reads, and the sync's own records
 TRITON = os.environ.get("TRITON_URL", "http://triton:8000").rstrip("/")
@@ -75,7 +74,7 @@ def train_args(run):
     return out
 
 
-def package_act(mv, run, ckpt, dst, params):
+def package_act(mv, run, ckpt, dst, params, opts):
     import yaml
     act = os.path.join(XPL, "policy", "ACT")
     cfg = yaml.safe_load(open(os.path.join(act, "deploy.yml")))
@@ -103,7 +102,7 @@ def package_act(mv, run, ckpt, dst, params):
     return pbtxt("python", inputs, [("action", "FP32", [cfg["chunk_size"], d])], params)
 
 
-def package_mlp(mv, run, ckpt, dst, params):
+def package_mlp(mv, run, ckpt, dst, params, opts):
     import torch
     sys.path[:0] = [os.path.join(ROOT, "services", "slurm", "models", "mlp"), os.path.join(ROOT, "services", "slurm", "lib")]
     from train import MLP
@@ -133,7 +132,7 @@ def package_mlp(mv, run, ckpt, dst, params):
                  platform="onnxruntime_onnx")
 
 
-# vLLM engine arguments (model.json); a model version's tag triton.vllm (JSON) overrides them, tag triton.gpu the GPU.
+# vLLM engine arguments (model.json); the spec's `vllm` overrides them, its `gpu` the GPU.
 # Context 32k tokens, 90% of the GPU's memory (vLLM's default), at most 4 images per prompt, 32 sequences batched at
 # once: untuned. VLLM_GPU and PYTHON_GPU (below) place the models on the service node's GPUs: the vLLM model takes all
 # of GPU 1, the Python-backend models share GPU 2 (~71 GB together); which index is a choice, not tuned.
@@ -142,18 +141,18 @@ VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_
 VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "1")   # TRITON_LLM_GPU, Triton's second GPU (index 1 inside)
 
 
-def package_vllm(mv, run, ckpt, dst, params):
+def package_vllm(mv, run, ckpt, dst, params, opts):
     """A Hugging Face LLM or VLM on the vLLM backend, as one instance on one whole GPU (vLLM's own batching; split
     across GPUs the 122B hit NVLink errors). The weights are read in place from the mlflow bucket, which the server
     mounts at /mlflow: copying hundreds of GB into the triton bucket would only double them."""
     if not mv.source.startswith("mlflow-artifacts:/"):
         raise ValueError(f"source {mv.source} is not in the mlflow bucket")
     engine = {"model": "/mlflow/" + mv.source.removeprefix("mlflow-artifacts:/").lstrip("/"), **VLLM_ENGINE,
-              **json.loads(mv.tags.get("triton.vllm", "{}"))}
+              **opts.get("vllm", {})}
     v = os.path.join(dst, mv.version)
     os.makedirs(v)
     json.dump(engine, open(os.path.join(v, "model.json"), "w"), indent=1)
-    gpu = int(mv.tags.get("triton.gpu", VLLM_GPU))
+    gpu = int(opts.get("gpu", VLLM_GPU))
     lines = ['backend: "vllm"', f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]"]
     # vLLM's own metrics on Triton's metrics port (vllm:prompt_tokens_total, vllm:generation_tokens_total, time to first
     # token, ... per model): the token usage Prometheus tracks
@@ -161,8 +160,8 @@ def package_vllm(mv, run, ckpt, dst, params):
 
 
 # Hugging Face models served by a Python backend (services/triton/backends/<name>.py) instead of vLLM, keyed by repo;
-# a model version's tag triton.backend names one for any other repo. Each loads its weights in place from /mlflow, on
-# one GPU (tag triton.gpu, default TRITON_PYTHON_GPU), takes encoded images as BYTES and has no batch dimension.
+# the spec's `backend` names one for any other repo. Each loads its weights in place from /mlflow, on one GPU (the
+# spec's `gpu`, default TRITON_PYTHON_GPU), takes encoded images as BYTES and has no batch dimension.
 # (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG). It checks that a model runs,
 # not how well, so few steps (2, 4) and faces (1000) keep it quick; fov_x and the box are any valid ones.
 HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
@@ -190,11 +189,11 @@ SMOKE = {"qwen_image_edit": {"images": ["image"], "prompt": ["Keep the image as 
          "triposg": {"image": ["image"], "steps": [4], "faces": [1000]}}
 
 
-def hf_kind(mv, run):
-    return mv.tags.get("triton.backend") or HF_BACKENDS.get(run.data.params.get("hf_repo", ""), "vllm")
+def hf_kind(run, opts):
+    return opts.get("backend") or HF_BACKENDS.get(run.data.params.get("hf_repo", ""), "vllm")
 
 
-def package_python(backend, mv, run, ckpt, dst, params):
+def package_python(backend, mv, run, ckpt, dst, params, opts):
     """A Hugging Face model on its Python backend: model.py (+ _common.py), weights read in place from /mlflow."""
     if not mv.source.startswith("mlflow-artifacts:/"):
         raise ValueError(f"source {mv.source} is not in the mlflow bucket")
@@ -205,7 +204,7 @@ def package_python(backend, mv, run, ckpt, dst, params):
     t = lambda kind, n, ty, d, opt=False: (f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ]'
                                            + (" optional: true" if opt else "") + " }")
     ins, outs = PYTHON_IO[backend]
-    gpu = int(mv.tags.get("triton.gpu", PYTHON_GPU))
+    gpu = int(opts.get("gpu", PYTHON_GPU))
     lines = ['backend: "python"', "max_batch_size: 0"] + [t("input", *i) for i in ins] + [t("output", *o) for o in outs]
     lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]")
     in_place = lambda m: "/mlflow/" + m.source.removeprefix("mlflow-artifacts:/").lstrip("/")
@@ -341,56 +340,87 @@ def smoke_python(name, kind):
 
 # ---- sync --------------------------------------------------------------------------------------------------------
 
-def desired(client):
-    """{name: ModelVersion} for every registered model with the alias."""
+# What a spec entry may say: the registered model and version, and the packager's options. Whoever can push the spec
+# chooses what Triton loads, so nothing else is accepted (the backends are this directory's code, not the spec's).
+SPEC_KEYS = {"name", "version", "backend", "gpu", "vllm"}
+
+
+def read_spec(path):
+    import yaml
+    entries, errs = (yaml.safe_load(open(path)) or {}).get("models") or [], []
+    for e in entries:
+        n = e.get("name", "?")
+        if set(e) - SPEC_KEYS:
+            errs.append(f"{n}: unknown keys {sorted(set(e) - SPEC_KEYS)}")
+        if not str(e.get("version", "")).isdigit():
+            errs.append(f"{n}: version {e.get('version')!r} is not a model version number")
+        if "backend" in e and e["backend"] not in (*PYTHON_IO, "vllm"):
+            errs.append(f"{n}: backend {e['backend']!r} is not one of {', '.join([*PYTHON_IO, 'vllm'])}")
+        if "gpu" in e and not str(e["gpu"]).isdigit():
+            errs.append(f"{n}: gpu {e['gpu']!r} is not a GPU index")
+        if "vllm" in e and not isinstance(e["vllm"], dict):
+            errs.append(f"{n}: vllm must be a mapping of engine arguments")
+    if len({e.get("name") for e in entries}) != len(entries):
+        errs.append("a model is listed twice")
+    if errs:
+        sys.exit(f"{path}: " + "; ".join(errs))
+    return entries
+
+
+def desired(client, spec):
+    """{name: (ModelVersion, options)} for every model the spec lists."""
     out = {}
-    for rm in client.search_registered_models(max_results=1000):   # one page: models past the 1000th go unseen
-        if ALIAS in (rm.aliases or {}):
-            out[rm.name] = client.get_model_version(rm.name, rm.aliases[ALIAS])
+    for e in read_spec(spec):
+        try:
+            mv = client.get_model_version(e["name"], str(e["version"]))
+        except Exception as ex:
+            sys.exit(f"{e['name']} v{e['version']}: not in the MLflow registry ({ex}): register it first")
+        out[e["name"]] = (mv, {k: e[k] for k in ("backend", "gpu", "vllm") if k in e})
     return out
 
 
-def tag(client, name, version, status, error=""):
-    # triton.error is cut at 5000 characters (MLflow allows 100 000 in a model version tag); untuned.
-    for k, v in {"triton.status": status, "triton.model": name, "triton.synced_at": NOW, "triton.error": error[:5000]}.items():
-        try:
-            client.set_model_version_tag(name, str(version), k, v)
-        except Exception as e:   # the version may have been deleted
-            print(f"  warning: could not tag {name} v{version}: {e}")
+def last_status():
+    """{name: status row} from the previous sync's status.json, or {} before the first."""
+    try:
+        rows = json.loads(s3.get_object(Bucket=BUCKET, Key=f"{SYNC}/status.json")["Body"].read())["models"]
+    except Exception:
+        return {}
+    return {r["model"]: r for r in rows}
 
 
 def sync(args):
     client = mlflow.MlflowClient()
     ensure_bucket()
-    want, have = desired(client), served()
+    want, have, before = desired(client, args.spec), served(), last_status()
     changes, rows, status = [], [], []   # rows: (name, version, action) to bring up in Triton; status: what we report
 
     for name, prov in have.items():
         if name not in want:
-            print(f"- {name} v{prov['mlflow_version']}: alias '{ALIAS}' removed, unloading")
+            print(f"- {name} v{prov['mlflow_version']}: no longer in the spec, unloading")
             if not args.dry_run:
                 triton(f"/v2/repository/models/{name}/unload", {})
                 remove(name)
-                tag(client, name, prov["mlflow_version"], "unloaded")
             changes.append({"model": name, "version": prov["mlflow_version"], "action": "unload"})
 
-    for name, mv in sorted(want.items()):
+    for name, (mv, opts) in sorted(want.items()):
         prov = have.get(name)
-        current = prov and prov["mlflow_version"] == mv.version and prov["mlflow_run_id"] == mv.run_id
+        spec = json.dumps(opts, sort_keys=True)   # a changed option repackages the model, as a new version does
+        current = (prov and prov["mlflow_version"] == mv.version and prov["mlflow_run_id"] == mv.run_id
+                   and prov.get("spec", "{}") == spec)
         if current and name not in args.force:
             rows.append((name, mv.version, None))
             continue
-        if not current and mv.tags.get("triton.error", "").startswith("packaging") and name not in args.force:
-            status.append({"model": name, "version": mv.version, "status": "failed", "error": mv.tags["triton.error"]})
-            continue   # packaging failed before; retried only with --force (or a new version)
+        last = before.get(name, {})
+        if (not current and last.get("version") == mv.version and last.get("spec", "{}") == spec
+                and last.get("error", "").startswith("packaging") and name not in args.force):
+            status.append(last)
+            continue   # packaging failed before; retried only with --force (or a new version or options)
         run = client.get_run(mv.run_id) if mv.run_id else None
-        kind = run and (run.data.params.get("model") or (hf_kind(mv, run) if "hf_repo" in run.data.params else None))
+        kind = run and (run.data.params.get("model") or (hf_kind(run, opts) if "hf_repo" in run.data.params else None))
         packager = PACKAGERS.get(kind)
         if packager is None:
             msg = f"no packager for model '{kind}' (have: {', '.join(PACKAGERS)})"
             print(f"! {name} v{mv.version}: {msg}")
-            if not args.dry_run and mv.tags.get("triton.status") != "unsupported":   # tag once, not every sync
-                tag(client, name, mv.version, "unsupported", msg)
             status.append({"model": name, "version": mv.version, "status": "unsupported", "error": msg})
             continue
         print(f"+ {name} v{mv.version} ({kind}, run {mv.run_id}){' replaces v' + prov['mlflow_version'] if prov else ''}")
@@ -400,14 +430,15 @@ def sync(args):
         p = run.data.params
         params = {"mlflow_model": name, "mlflow_version": mv.version, "mlflow_run_id": mv.run_id, "model": kind,
                   "embodiment": p.get("embodiment", ""), "action": p.get("action", ""), "mix": p.get("mix", ""),
-                  "data_fingerprint": p.get("data_fingerprint", ""), "git_commit": p.get("git_commit", ""), "synced_at": NOW}
+                  "data_fingerprint": p.get("data_fingerprint", ""), "git_commit": p.get("git_commit", ""), "spec": spec,
+                  "synced_at": NOW}
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 ckpt = None if kind in IN_PLACE else mlflow.artifacts.download_artifacts(   # read in place
                     artifact_uri=mv.source, dst_path=os.path.join(tmp, "ckpt"))
                 dst = os.path.join(tmp, "repo")
                 os.makedirs(dst)
-                cfg = packager(mv, run, ckpt, dst, params)
+                cfg = packager(mv, run, ckpt, dst, params, opts)
                 open(os.path.join(dst, "config.pbtxt"), "w").write(cfg)
                 json.dump(params, open(os.path.join(dst, "flywheel.json"), "w"), indent=1)
                 upload(dst, name)
@@ -415,8 +446,7 @@ def sync(args):
         except Exception as e:
             print(f"  packaging failed: {type(e).__name__}: {e}")
             err = f"packaging: {type(e).__name__}: {e}"
-            tag(client, name, mv.version, "failed", err)
-            status.append({"model": name, "version": mv.version, "status": "failed", "error": err})
+            status.append({"model": name, "version": mv.version, "spec": spec, "status": "failed", "error": err})
             for c in changes:
                 if c["model"] == name:
                     c["status"], c["error"] = "failed", err
@@ -448,7 +478,6 @@ def sync(args):
         state = "failed" if err else "ready"
         if action or err:
             print(f"  {name} v{version}: {state}{': ' + err if err else ''}")
-            tag(client, name, version, state, err or "")
         status.append({"model": name, "version": version, "status": state, "error": err or ""})
         if action == "reload":
             changes.append({"model": name, "version": version, "action": "reload"})
@@ -456,7 +485,7 @@ def sync(args):
             if c["model"] == name and c["action"] in ("load", "reload"):
                 c["status"], c["error"] = state, err or ""
 
-    put_json(f"{SYNC}/status.json", {"synced_at": NOW, "alias": ALIAS, "models": status})
+    put_json(f"{SYNC}/status.json", {"synced_at": NOW, "spec": args.spec, "models": status})
     if changes:
         put_json(f"{SYNC}/log/{NOW}.json", {"synced_at": NOW, "changes": changes})
     print(f"{len(status)} model(s) served, {len(changes)} change(s)")
@@ -479,6 +508,8 @@ def show_status():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--spec", default=os.environ.get("TRITON_SPEC", os.path.join(HERE, "models.yaml")),
+                    help="the deployment spec (the pipelines repo's triton/models.yaml; default $TRITON_SPEC, else the seed)")
     ap.add_argument("--dry-run", action="store_true", help="report what would change, touch nothing")
     ap.add_argument("--force", nargs="*", default=[], help="repackage and reload these models even if unchanged")
     ap.add_argument("--status", action="store_true", help="print Triton's loaded models with their MLflow source")

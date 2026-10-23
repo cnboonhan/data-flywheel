@@ -33,7 +33,7 @@ services/ctl.sh dynamo on <node> logs -f gateway             # another node's
 
 ## Notes
 
-- Its config, `$STATE_DIR/dynamo/<node>.gateway.json`, is written by `dynamo/render.py` from `dynamo/models.yaml` and the MLflow aliases: each model's frontend and system API, or the gateway it lives behind, and its details. A changed config restarts the gateway (its environment carries the config's hash).
+- Its config, `$STATE_DIR/dynamo/<node>.gateway.json`, is written by `dynamo/render.py` from the spec (`dynamo/models.yaml` in the `pipelines` repo) and the MLflow registry: each model's frontend and system API, or the gateway it lives behind, and its details. A changed config restarts the gateway (its environment carries the config's hash).
 - It keeps Dynamo off the network: Dynamo has no authentication, so its frontends, etcd and the engines' system APIs (stop, sleep, load weights) listen on 127.0.0.1 only, and the gateway is what listens on the node's address.
 - Each request is counted by the gateway on the model's node; `DYNAMO_HEAD`'s only forwards other nodes' requests, so the counts in Prometheus aren't doubled.
 - Env: `GATEWAY_CONFIG`, `GATEWAY_LISTEN` (host:port), `LLM_CRITICAL_TOKEN`.

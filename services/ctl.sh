@@ -54,8 +54,9 @@ keep_off_gpu_memory() {
   docker update --cpuset-mems "$(IFS=,; echo "${mems[*]}")" $("${compose[@]}" ps -q) >/dev/null
 }
 
-# Dynamo (dynamo/README.md): serves the models whose MLflow alias `dynamo` is set, where models.yaml places them (the
-# trays, or a node's GPUs). render: write each node's compose file from models.yaml and the aliases (dynamo/render.py).
+# Dynamo (dynamo/README.md): serves what the spec, dynamo/models.yaml in the Gitea pipelines repo, gives a version, where
+# it places them (the trays, or a node's GPUs). render: pull the pipelines repo's checkout ($STATE_DIR/pipelines) and
+# write each node's compose file from its spec (dynamo/render.py).
 # up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
 # node's services up (unchanged ones keep running) and wait for each served model. The Gitea workflow sync-dynamo runs
 # up (dynamo/gitea_ci/sync-dynamo.yml), with a key that may run nothing else (tools/bin/dynamo-up, FORCED_COMMANDS).
@@ -69,7 +70,9 @@ dynamo() {
   case ${1:-} in
     render)
       mkdir -p "$out/cache"
-      (set -a; . "$STATE_DIR/flywheel.env"; uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out") || return 1
+      git -C "$STATE_DIR/pipelines" pull -q --ff-only || { echo "dynamo: can't update $STATE_DIR/pipelines (the spec's repo)" >&2; return 1; }
+      (set -a; . "$STATE_DIR/flywheel.env"
+       uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out" "$STATE_DIR/pipelines/dynamo/models.yaml") || return 1
       for m in $(q '" ".join(d["served"])'); do mkdir -p "$out/cache/$m"; done
       for node in $(q '" ".join(d["nodes"])'); do mkdir -p "$out/etcd-$node"; done ;;   # else dockerd makes them, root-owned
     up)
@@ -230,6 +233,7 @@ bootstrap_gitea() {
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
   done
   for f in gitea/{setup,ingest,clean,mix,serve}/*.yml gitea/ingest/xpolicylab_adapter/*/*.yml */gitea_ci/*.yml gitea/setup/*.sh gitea/ingest/xpolicylab_adapter/*/*.py \
+           dynamo/models.yaml triton/models.yaml \
            gitea/setup/conda-shim/bin/conda gitea/setup/conda-shim/etc/profile.d/conda.sh; do
     [[ -f $f ]] || continue   # a stage folder without workflows yet leaves its glob unmatched
     case $f in
@@ -237,6 +241,7 @@ bootstrap_gitea() {
       gitea/setup/conda-shim/*) path="${f#gitea/}" ;;                # copied into the envs by install-robodojo.sh
       gitea/setup/*.sh) path="setup/$(basename "$f")" ;;              # run by the setup-envs workflow
       gitea/ingest/xpolicylab_adapter/*/*) path="${f#gitea/ingest/}" ;;   # xpolicylab_adapter/<source>/<script> the adapter workflows run
+      */models.yaml) path="$f" ;;                                     # the deployment specs (dynamo/, triton/): edited there afterwards
       *) path="$f" ;;
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
