@@ -1,16 +1,13 @@
-# Serve the language models on Dynamo (services/dynamo/README.md) as this repo's dynamo/models.yaml says: every model
-# with a version is started where the spec places it, at that MLflow model version, and a model without one is stopped;
-# the others keep running. Runs `ctl.sh dynamo up` on the service node over ssh, as the service account: the job's key
-# (secret DYNAMO_SSH_KEY, set by ctl.sh up) may run that command and nothing else, and the node pulls this repo for the
-# spec. Runs when the spec is pushed, or on demand.
+# Serve the language models on Dynamo (services/dynamo/README.md) as the Gitea repo dynamo's models.yaml says: every
+# model with a version is started where the spec places it, at that MLflow model version, and a model without one is
+# stopped; the others keep running. Runs `ctl.sh dynamo up` on the service node over ssh, as the service account: the
+# job's key (secret DYNAMO_SSH_KEY, set by ctl.sh up) may run that command and nothing else, and the node pulls the
+# dynamo repo for the spec. A push to that repo dispatches it (its webhook, ctl.sh bootstrap_specs), or run it by hand.
 name: sync-dynamo
 concurrency:
   group: sync-dynamo
   cancel-in-progress: false
 on:
-  push:
-    branches: [main]
-    paths: [dynamo/models.yaml]
   workflow_dispatch:
 
 jobs:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serve MLflow registered model versions on Triton. Run by the Gitea workflow sync-triton.
 
-Desired state is the deployment spec, triton/models.yaml in the Gitea pipelines repo (the models.yaml beside this file
+Desired state is the deployment spec, models.yaml in the Gitea repo triton (the models.yaml beside this file
 is its seed): every entry names a registered model and version to serve, as a Triton model with the registered model's
 name and the MLflow version number as Triton version, and optionally its backend, GPU and vLLM engine arguments (SPEC_KEYS
 below). The weights must be registered in MLflow first (training runs; download-models-hf, by an admin). Each sync
@@ -157,7 +157,7 @@ def package_vllm(mv, run, ckpt, dst, params, opts):
     return "\n".join(lines + param_lines({"REPORT_CUSTOM_METRICS": "true", **params})) + "\n"
 
 
-# Python backends: <BACKENDS>/<name>.py (the pipelines repo's triton/backends/, where they are edited; the backends/
+# Python backends: <BACKENDS>/<name>.py (the Gitea repo triton's backends/, where they are edited; the backends/
 # beside this file are the seed), copied into a model as its model.py with _common.py. A file whose name doesn't start
 # with "_" is a backend for a Hugging Face model when it declares, as plain literals at module level: TRITON_INPUTS and
 # TRITON_OUTPUTS ((name, type, dims[, optional]) each), TRITON_SMOKE (the request smoke_test sends, "image" being a
@@ -526,9 +526,9 @@ def show_status():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--spec", default=os.environ.get("TRITON_SPEC", os.path.join(HERE, "models.yaml")),
-                    help="the deployment spec (the pipelines repo's triton/models.yaml; default $TRITON_SPEC, else the seed)")
+                    help="the deployment spec (the Gitea repo triton's models.yaml; default $TRITON_SPEC, else the seed)")
     ap.add_argument("--backends", default=os.environ.get("TRITON_BACKENDS", os.path.join(HERE, "backends")),
-                    help="the Python backends (the pipelines repo's triton/backends/; default $TRITON_BACKENDS, else the seed)")
+                    help="the Python backends (the Gitea repo triton's backends/; default $TRITON_BACKENDS, else the seed)")
     ap.add_argument("--dry-run", action="store_true", help="report what would change, touch nothing")
     ap.add_argument("--force", nargs="*", default=[], help="repackage and reload these models even if unchanged")
     ap.add_argument("--status", action="store_true", help="print Triton's loaded models with their MLflow source")

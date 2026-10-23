@@ -1,5 +1,5 @@
 """The LLM gateway: one OpenAI-compatible endpoint for Dynamo's served model, with access tokens and a critical-traffic
-flag. Which model is served is decided by the spec, not by requests: dynamo/models.yaml in the Gitea pipelines repo
+flag. Which model is served is decided by the spec, not by requests: models.yaml in the Gitea repo dynamo
 (services/dynamo/README.md); a push of it swaps the model (sync-dynamo restarts the engines).
 
     POST /v1/chat/completions, /v1/completions, /v1/responses, ...   forwarded to the frontend of the body's `model`
@@ -63,7 +63,7 @@ async def forward(request):
     if name not in MODELS:
         if name in CFG.get("known", []):
             raise web.HTTPServiceUnavailable(text=f"{name} is not served now (served: {served}); the served model is "
-                                                  "chosen in the pipelines repo's dynamo/models.yaml")
+                                                  "chosen in the Gitea repo dynamo's models.yaml")
         raise web.HTTPNotFound(text=f"unknown model {name!r} (served: {served})")
     if "gateway" in MODELS[name]:   # another node's: its gateway classifies and counts it
         return await proxy(request, MODELS[name]["gateway"],
