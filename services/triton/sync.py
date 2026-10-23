@@ -20,7 +20,7 @@ below). The weights must be registered in MLflow first (training runs; download-
     python sync.py --status          print what Triton has loaded and where each model came from
 
 Env: MLFLOW_TRACKING_URI/USERNAME/PASSWORD, S3_ENDPOINT_URL + AWS_* (the gateway), TRITON_URL (http://triton:8000),
-FLYWHEEL_ROOT (the checkout: XPolicyLab code for ACT, models/mlp for MLP), TRITON_SPEC (the spec, else --spec).
+FLYWHEEL_ROOT (the checkout: serve_pi05.py and r1pro.py for π0.5, models/mlp for MLP), TRITON_SPEC (the spec, else --spec).
 """
 
 import argparse
@@ -44,7 +44,6 @@ MODELS, SYNC = "models", "sync"   # the model repository Triton reads, and the s
 TRITON = os.environ.get("TRITON_URL", "http://triton:8000").rstrip("/")
 KEY = {"triton-key": os.environ["TRITON_KEY"]} if os.environ.get("TRITON_KEY") else {}   # Triton's restricted APIs
 ROOT = os.environ.get("FLYWHEEL_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-XPL = os.path.join(ROOT, "eval", "system1", "RoboDojo", "XPolicyLab")
 HERE = os.path.dirname(os.path.abspath(__file__))
 NOW = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -57,7 +56,7 @@ def param_lines(params):
 
 def pbtxt(backend, inputs, outputs, params, max_batch=8, platform=None):
     """config.pbtxt; inputs/outputs: (name, TYPE, dims) without the batch dim. max_batch: the largest batch Triton's
-    dynamic batcher forms (8 for ACT; untuned)."""
+    dynamic batcher forms (8; untuned)."""
     t = lambda kind, n, ty, d: f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ] }}'
     lines = [f'platform: "{platform}"' if platform else f'backend: "{backend}"', f"max_batch_size: {max_batch}"]
     lines += [t("input", *i) for i in inputs] + [t("output", *o) for o in outputs]
@@ -65,41 +64,40 @@ def pbtxt(backend, inputs, outputs, params, max_batch=8, platform=None):
     return "\n".join(lines + param_lines(params)) + "\n"
 
 
-def train_args(run):
-    """The training command's --key value pairs (later ones win, as with argparse)."""
-    words, out = shlex.split(run.data.params.get("command", "")), {}
-    for i, w in enumerate(words):
-        if w.startswith("--") and i + 1 < len(words) and not words[i + 1].startswith("--"):
-            out[w[2:]] = words[i + 1]
-    return out
+PI05 = os.path.join(ROOT, "sensors", "autolearn", "adapter", "pi05")   # serve_pi05.py and r1pro.py (the openpi configs)
 
 
-def package_act(mv, run, ckpt, dst, params, opts):
-    import yaml
-    act = os.path.join(XPL, "policy", "ACT")
-    cfg = yaml.safe_load(open(os.path.join(act, "deploy.yml")))
-    args = train_args(run)
-    num = lambda v: float(v) if "." in v or "e" in v else int(v)
-    for k in ("kl_weight", "chunk_size", "hidden_dim", "dim_feedforward", "lr"):
-        if k in args:
-            cfg[k] = num(args[k])
-    tasks = json.load(open(os.path.join(act, "TASK_CONFIGS.json")))
-    cfg["camera_names"] = tasks.get(args.get("ckpt_setting", ""), {}).get("camera_names", cfg["camera_names"])
-    cfg["action_dim"] = int(run.data.params["action_dim"])
-    for f in ("policy_last.ckpt", "dataset_stats.pkl"):
-        if not os.path.exists(os.path.join(ckpt, f)):
-            raise ValueError(f"checkpoints/ has no {f}")
+def package_pi05(mv, run, ckpt, dst, params, opts):
+    """A π0.5 checkpoint (openpi; a registered step directory with params/ and assets/) on backends/xpolicylab_pi05.py,
+    read in place from /mlflow. The training run names its openpi config (param `openpi_config`, one r1pro.py
+    registers) and may give the default instruction (param `prompt`); the state size comes from the checkpoint's norm
+    stats."""
+    if not mv.source.startswith("mlflow-artifacts:/"):
+        raise ValueError(f"source {mv.source} is not in the mlflow bucket")
+    config = run.data.params.get("openpi_config")
+    if not config:
+        raise ValueError("the training run has no param openpi_config")
+    with tempfile.TemporaryDirectory() as tmp:
+        assets = mlflow.artifacts.download_artifacts(artifact_uri=mv.source.rstrip("/") + "/assets", dst_path=tmp)
+        stats = [os.path.join(d, f) for d, _, fs in os.walk(assets) for f in fs if f == "norm_stats.json"]
+        if not stats:
+            raise ValueError("the checkpoint has no assets/<repo>/norm_stats.json")
+        dim = len(json.load(open(stats[0]))["norm_stats"]["state"]["mean"])
     v = os.path.join(dst, mv.version)
     os.makedirs(v)
-    for f in ("policy_last.ckpt", "dataset_stats.pkl"):
-        shutil.copy(os.path.join(ckpt, f), v)
-    shutil.copytree(os.path.join(act, "detr"), os.path.join(v, "detr"),
-                    ignore=shutil.ignore_patterns("__pycache__", "*.egg-info", "setup.py", "LICENSE"))
-    shutil.copy(os.path.join(BACKENDS, "xpolicylab_act.py"), os.path.join(v, "model.py"))
-    json.dump(cfg, open(os.path.join(v, "act.json"), "w"), indent=1)
-    d = cfg["action_dim"]
-    inputs = [("state", "FP32", [d])] + [(c, "UINT8", [-1, -1, 3]) for c in cfg["camera_names"]]
-    return pbtxt("python", inputs, [("action", "FP32", [cfg["chunk_size"], d])], params)
+    shutil.copy(os.path.join(BACKENDS, "xpolicylab_pi05.py"), os.path.join(v, "model.py"))
+    for f in ("serve_pi05.py", "r1pro.py"):
+        shutil.copy(os.path.join(PI05, f), v)
+    img = lambda n: f'input {{ name: "{n}" data_type: TYPE_UINT8 dims: [ -1, -1, 3 ] }}'
+    lines = ['backend: "python"', "max_batch_size: 0", f'input {{ name: "state" data_type: TYPE_FP32 dims: [ {dim} ] }}',
+             img("cam_high"), img("cam_left_wrist"), img("cam_right_wrist"),
+             'input { name: "prompt" data_type: TYPE_STRING dims: [ 1 ] optional: true }',
+             f'output {{ name: "action" data_type: TYPE_FP32 dims: [ -1, {dim} ] }}']
+    pin = f", gpus: [ {int(opts['gpu'])} ]" if "gpu" in opts else ""   # without gpus: one instance on every GPU
+    lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU{pin} }} ]")
+    weights = "/mlflow/" + mv.source.removeprefix("mlflow-artifacts:/").lstrip("/")
+    params = {**params, "weights": weights, "openpi_config": config, "prompt": run.data.params.get("prompt", "")}
+    return "\n".join(lines + param_lines(params)) + "\n"
 
 
 def package_mlp(mv, run, ckpt, dst, params, opts):
@@ -185,7 +183,7 @@ def load_backends(path):
         for node in ast.parse(open(os.path.join(path, f)).read()).body:
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "").startswith("TRITON_"):
                 consts[node.targets[0].id] = ast.literal_eval(node.value)
-        if "TRITON_INPUTS" not in consts:   # a backend a packager uses for training runs (xpolicylab_act.py)
+        if "TRITON_INPUTS" not in consts:   # a backend a packager uses for training runs (xpolicylab_pi05.py)
             continue
         PYTHON_IO[name] = (consts["TRITON_INPUTS"], consts["TRITON_OUTPUTS"])
         SMOKE[name] = consts.get("TRITON_SMOKE", {})
@@ -197,7 +195,7 @@ def load_backends(path):
 def code_hash(kind):
     """The hash of the code a model of this kind is packaged with: a changed backend repackages its models."""
     import hashlib
-    files = {"ACT": ["xpolicylab_act.py"]}.get(kind) or ([f"{kind}.py", "_common.py"] if kind in PYTHON_IO else [])
+    files = {"Pi_05": ["xpolicylab_pi05.py"]}.get(kind) or ([f"{kind}.py", "_common.py"] if kind in PYTHON_IO else [])
     h = hashlib.sha256()
     for f in files:
         h.update(open(os.path.join(BACKENDS, f), "rb").read())
@@ -227,9 +225,9 @@ def package_python(backend, mv, run, ckpt, dst, params, opts):
     return "\n".join(lines + param_lines(params)) + "\n"
 
 
-PACKAGERS = {"ACT": package_act, "MLP": package_mlp, "vllm": package_vllm}   # keyed by the training run's param `model`;
+PACKAGERS = {"Pi_05": package_pi05, "MLP": package_mlp, "vllm": package_vllm}   # keyed by the training run's param `model`;
                                                                             # load_backends adds the Python backends
-IN_PLACE = {"vllm"}   # packagers that read the weights from /mlflow instead of downloading them (+ the Python backends)
+IN_PLACE = {"vllm", "Pi_05"}   # packagers that read the weights from /mlflow instead of downloading them (+ the Python backends)
 
 
 # ---- S3 ----------------------------------------------------------------------------------------------------------
@@ -313,6 +311,8 @@ def smoke_test(name):
         return smoke_python(name, kind)
     inputs = []
     for i in cfg["input"]:
+        if i.get("optional"):   # zeros make no sense for every optional input (a prompt); leave them to their defaults
+            continue
         dims = [64 if d == -1 else int(d) for d in i["dims"]]
         n = 1
         for d in dims:

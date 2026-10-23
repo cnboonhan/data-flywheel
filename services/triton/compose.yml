@@ -5,7 +5,10 @@
 # (triton.<host>) and sync.py send; clients go through Caddy. Metrics (node port 8102) are open, for Prometheus.
 services:
   triton:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        openpi: ../../eval/system1/RoboDojo/XPolicyLab/policy/Pi_05/openpi   # the π0.5 venv's source (Dockerfile)
     image: flywheel-triton:26.08
     restart: unless-stopped
     user: "${SERVICE_UID}:${SERVICE_GID}"

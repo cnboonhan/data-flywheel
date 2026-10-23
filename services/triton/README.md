@@ -22,27 +22,34 @@ jpg = open("view.jpg", "rb").read()
 edit = Endpoint("EDIT", "Qwen-Image-Edit-2511")
 png = edit.infer({"images": [jpg], "prompt": [b"Remove the bucket."]}, ["image"])["image"][0]              # PNG bytes
 
-policy = Endpoint("POLICY", "ACT.arx_x5.RoboDojo.stack_bowls")   # a trained policy: one observation in, an action chunk out
-action = policy.infer({"state": state[None].astype(np.float32),                                     # [1, D], per arm [arm, ee]
-                       **{cam: rgb[None] for cam, rgb in images.items()}},                          # cam_head, ...: uint8 [1, H, W, 3]
-                      ["action"])["action"]                                                          # [1, chunk, D]
+policy = Endpoint("POLICY", "Pi05.r1pro.picking_up_cup")   # a π0.5 policy: one observation in, an action chunk out
+action = policy.infer({"state": state.astype(np.float32),                                 # [D], the trained joint vector
+                       "cam_high": head, "cam_left_wrist": left, "cam_right_wrist": right},  # uint8 [H, W, 3]
+                      ["action"])["action"]                                                # [chunk, D]
 ```
 
 | Model | Inputs | Output |
 |---|---|---|
 | `Qwen-Image-Edit-2511` | `images` BYTES `[1-3]` (picture 1 first), `prompt` BYTES; optional `negative_prompt`, `steps` (40), `seed` (0), `true_cfg_scale` (4.0) | `image` BYTES (PNG) |
-| ACT policies | `state` FP32 `[B, D]`, one UINT8 `[B, H, W, 3]` per camera, named after it | `action` FP32 `[B, chunk, D]` |
+| π0.5 policies | `state` FP32 `[D]`, `cam_high`, `cam_left_wrist`, `cam_right_wrist` UINT8 `[H, W, 3]`; optional `prompt` BYTES (default: the run's) | `action` FP32 `[chunk, D]` (absolute joint targets) |
 | MLP policies | `state` FP32 `[B, D]` | `action` FP32 `[B, 1, D]` |
 
-Expect an image edit at 1024×1024 in ~16 s, an ACT call ~40 ms.
+Expect an image edit at 1024×1024 in ~16 s.
 
 ## Serve a model
 
-1. Register the weights in MLflow (a training run does; `download-models-hf` for Hugging Face models, by an admin).
+1. Register the weights in MLflow (a training run does; `download-models-hf` for Hugging Face models, by an admin). A π0.5 checkpoint is registered from a run with params `model=Pi_05`, `openpi_config` (a config [`r1pro.py`](../../sensors/autolearn/adapter/pi05/r1pro.py) registers) and optionally `prompt`, its artifacts the step directory's `params/` and `assets/` (not `train_state/`):
+   ```python
+   with mlflow.start_run() as run:
+       mlflow.log_params({"model": "Pi_05", "openpi_config": "pi05_r1pro_picking_up_cup", "prompt": "pick up the cup"})
+       for d in ("params", "assets"):
+           mlflow.log_artifacts(f"{step_dir}/{d}", f"checkpoint/{d}")
+   mlflow.register_model(f"runs:/{run.info.run_id}/checkpoint", "Pi05.r1pro.picking_up_cup")
+   ```
 2. List the version in the spec, `triton/models.yaml` in the Gitea `pipelines` repo, and push to `main`; remove an entry to unload it. Optional per model: `backend`, `gpu`, `vllm` (engine arguments); [`models.yaml`](models.yaml) explains them.
    ```yaml
    models:
-     - {name: ACT.arx_x5.RoboDojo.stack_bowls, version: 3}
+     - {name: Pi05.r1pro.picking_up_cup, version: 1}
    ```
 3. The push runs the Gitea workflow `sync-triton` (`gitea_ci/sync-triton.yml`; dispatch it by hand with `force` or `dry_run`, [how](../gitea/README.md)): it packages, loads and test-runs what changed. The outcome is in the run's log and `s3://triton/sync/status.json` (`ready`, `failed`, `unsupported`, with the error).
 

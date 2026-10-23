@@ -10,3 +10,4 @@
 
 models:
   - {name: Qwen-Image-Edit-2511, version: 1}
+  - {name: Pi05.r1pro.picking_up_cup, version: 1}
