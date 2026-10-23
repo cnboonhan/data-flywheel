@@ -132,6 +132,7 @@ gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; 
 FORCED_COMMANDS=(
   "dynamo-up $STATE_DIR/dynamo/sync_key"     # Gitea workflow sync-dynamo (secret DYNAMO_SSH_KEY)
   "setup-envs $STATE_DIR/setup-envs/ssh_key" # Gitea workflow setup-envs (secret SETUP_SSH_KEY)
+  "triton-up $STATE_DIR/triton/up_key"       # Gitea workflow triton-up (secret TRITON_UP_SSH_KEY)
 )
 install_forced_commands() {
   local entry cmd key comment line keys=~/.ssh/authorized_keys root
@@ -203,6 +204,9 @@ bootstrap_gitea() {
   "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"data": open(sys.argv[1]).read()}))' "$STATE_DIR/setup-envs/ssh_key")" \
     "$api/repos/$ADMIN_USER/pipelines/actions/secrets/SETUP_SSH_KEY" >/dev/null
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"data": open(sys.argv[1]).read()}))' "$STATE_DIR/triton/up_key")" \
+    "$api/repos/$ADMIN_USER/pipelines/actions/secrets/TRITON_UP_SSH_KEY" >/dev/null
   # The header key Triton requires (sync-triton), synced on every up.
   "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$TRITON_KEY")" \

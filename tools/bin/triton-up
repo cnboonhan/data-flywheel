@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Forced command of the triton-up SSH key (Gitea secret TRITON_UP_SSH_KEY; installed by ctl.sh up, FORCED_COMMANDS):
+# bring the Triton server on TRITON_NODE up to date with services/triton/compose.yml and .env (`ctl.sh triton up -d`):
+# recreates it after its image, GPUs or flags change, then waits until it is ready again. Which models it serves is
+# sync-triton's job, not this. The client's command ($SSH_ORIGINAL_COMMAND) is ignored but for one word, `--dry-run`:
+# show what would be recreated, change nothing.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+dry=; [[ ${SSH_ORIGINAL_COMMAND:-} =~ (^|[[:space:]])--dry-run($|[[:space:]]) || ${1:-} == --dry-run ]] && dry=1
+eval "$(grep -E '^TRITON_NODE=' "$root/services/.env" | sed 's/^/export /')"
+
+if [[ -n $dry ]]; then
+  exec "$root/services/ctl.sh" triton up -d --dry-run
+fi
+"$root/services/ctl.sh" triton up -d
+# Triton reloads every model in its repository on start; the image editor alone takes minutes. 20 min: well past the
+# slowest start seen (the 122B on vLLM, ~4 min) plus the Python backends; untuned.
+addr=$(getent hosts "$TRITON_NODE" | awk '{print $1; exit}')
+for _ in $(seq 1 120); do   # 120 x 10 s
+  curl -fs -o /dev/null "http://$addr:8100/v2/health/ready" && { echo "triton-up: ready on $TRITON_NODE"; exit 0; }
+  sleep 10
+done
+echo "triton-up: not ready after 20 min (services/ctl.sh triton logs -f)" >&2
+exit 1

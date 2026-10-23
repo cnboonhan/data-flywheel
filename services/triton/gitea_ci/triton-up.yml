@@ -1,0 +1,32 @@
+# Bring the Triton server on TRITON_NODE up to date with services/triton/compose.yml and .env: recreate it after its
+# image, GPUs or flags changed, then wait until it's ready (services/triton/README.md). Which models it serves is
+# sync-triton's job. The job only logs in to the service node over ssh: the key (secret TRITON_UP_SSH_KEY, set by
+# ctl.sh up) may run tools/bin/triton-up and nothing else. Runs on demand only.
+name: triton-up
+concurrency:
+  group: triton-up
+  cancel-in-progress: false
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show what would be recreated (true/false)"
+        default: "false"
+
+jobs:
+  up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30   # triton-up waits up to 20 min for the server to be ready; untuned
+    env:
+      SSH_KEY: ${{ secrets.TRITON_UP_SSH_KEY }}
+      SSH_HOST: ${{ vars.SERVICE_SSH_HOST }}          # the service node (ctl.sh up)
+      KNOWN_HOSTS: ${{ vars.SERVICE_KNOWN_HOSTS }}    # its host keys (ctl.sh up)
+      SSH_USER: ${{ vars.SERVICE_SSH_USER }}
+    steps:
+      - shell: bash
+        run: |
+          umask 077; key=$(mktemp); hosts=$(mktemp)
+          printf '%s\n' "$SSH_KEY" > "$key"; printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          # The key's forced command is tools/bin/triton-up, whatever is asked for here; it reads only `--dry-run`.
+          ssh -i "$key" -o IdentitiesOnly=yes -o UserKnownHostsFile="$hosts" -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" triton-up $([[ "${{ inputs.dry_run }}" == true ]] && echo --dry-run)
