@@ -144,6 +144,17 @@ https://{$SERVICE_HOST}:8443 {
 	# episodes in the viewer on rerun.<host> with the path token, and each LeRobot dataset's page (rerun-lerobot, from its
 	# meta/) is at /data/dataset/<bucket>/<path>/; only Caddy adds the token (header_up replaces any the client sent).
 	redir /data /data/
+	# A big bag's page (rerun-lerobot): converts it to a recording the web viewer can hold, with progress, then opens it
+	handle /data/bag* {
+		route {
+			import sso
+			uri strip_prefix /data
+			reverse_proxy rerun-lerobot:8080 {
+				header_up X-Rerun-Token {env.RERUN_RAW_TOKEN}
+				header_up X-Viewer-Host rerun.{$SERVICE_HOST}:{$CADDY_PORT}
+			}
+		}
+	}
 	handle /data/dataset/* {
 		route {
 			import sso
@@ -236,6 +247,15 @@ https://rerun.{$SERVICE_HOST}:8443 {
 	}
 	handle @lerobot_processed_token {
 		uri path_regexp ^/lerobot-processed/[^/]+ /lerobot-processed
+		reverse_proxy rerun-lerobot:8080
+	}
+	# A big bag's converted recording (rerun-lerobot, /bag-rrd/<token>/<bucket>/<path>.mcap.rrd), the same token
+	@bag_token {
+		path *.rrd
+		expression `{env.RERUN_RAW_TOKEN} != "" && {path}.startsWith("/bag-rrd/" + {env.RERUN_RAW_TOKEN} + "/")`
+	}
+	handle @bag_token {
+		uri path_regexp ^/bag-rrd/[^/]+ /bag-rrd
 		reverse_proxy rerun-lerobot:8080
 	}
 	# route keeps the written order: Caddy otherwise runs file_server before the

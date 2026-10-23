@@ -42,7 +42,6 @@
 <body>
 <main>
 <h1>{{ if $dir }}{{ trimPrefix "/" $dir }}/{{ else }}Buckets{{ end }}</h1>
-<p class="hint">Bags (.mcap, .bag) and LeRobot v2.x episodes (under <code>data/chunk-*</code>) open in Rerun. A LeRobot dataset folder (v2.x or v3) links its dataset page: summary, episodes and tasks, each episode openable.</p>
 {{- if and $bucket $dataset }}
 <p><a class="open" href="/data/dataset/{{ $bucket }}{{ $dataset }}/">dataset page</a></p>
 {{- end }}
@@ -55,7 +54,10 @@
 <tr>
   <td class="name">
     <a href="{{ html .URL }}">{{ html .Name }}</a>
-    {{- if and $token $bucket (not .IsDir) (or (hasSuffix ".mcap" .Name) (hasSuffix ".bag" .Name)) }}
+    {{- if and $token $bucket (not .IsDir) (hasSuffix ".mcap" .Name) (ge .Size (int64 500000000)) }}
+    {{- /* 500 MB: about where the web viewer, in a browser tab's ~4 GB, stops holding a bag's camera frames */}}
+    <a class="open" target="_blank" rel="noopener" href="/data/bag?bucket={{ urlquery $bucket }}&amp;path={{ urlquery (trimPrefix "/" $path) }}">open in Rerun</a>
+    {{- else if and $token $bucket (not .IsDir) (or (hasSuffix ".mcap" .Name) (hasSuffix ".bag" .Name)) }}
     <a class="open" target="_blank" rel="noopener" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s" $base $bucket $token $path) }}">open in Rerun</a>
     {{- else if and $token $root (not .IsDir) (regexMatch "^episode_[0-9]+\\.parquet$" .Name) }}
     <a class="open" target="_blank" rel="noopener" href="{{ $base }}/?url={{ urlquery (printf "%s/%s/%s%s/episode_%d.rrd" $base $episodes $token $root (regexFind "[0-9]+" .Name | atoi)) }}">open in Rerun</a>
