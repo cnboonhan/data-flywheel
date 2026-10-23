@@ -77,7 +77,11 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
    ```bash
    services/ctl.sh deployer add <name>
    ```
-3. List every account and what it reaches: Keycloak groups (every web UI, MLflow included), Gitea (local-only or Keycloak, admin, access to the admin's repos) and S3 (what the bucket policies give it).
+3. Print a user's quickstart exports (section 1, the host and their name filled in; secrets given as arguments, else left as `<...>`), which `user add` also prints with what it minted:
+   ```bash
+   services/ctl.sh user env <name> [<s3 secret> [<mlflow token> [<gitea token>]]]
+   ```
+4. List every account and what it reaches: Keycloak groups (every web UI, MLflow included), Gitea (local-only or Keycloak, admin, access to the admin's repos) and S3 (what the bucket policies give it).
    ```bash
    services/ctl.sh user list
    ```

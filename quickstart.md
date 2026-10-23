@@ -4,27 +4,34 @@ Connect to the stack from your laptop or a cluster node. You need the account de
 
 ## 1. Export the environment
 
-Run this in your clone of this repo (add it to `~/.bashrc` or `~/.zshrc` to keep it), replacing the `<...>` values with your account details. The host settings come from `services/.env.example`.
+Run this in your clone of this repo (add it to `~/.bashrc` or `~/.zshrc` to keep it), after filling in the five `FLYWHEEL_*` values at its top with your account details; the rest reads them. The host settings come from `services/.env.example`. An admin can print this block with your details and the host filled in: `services/ctl.sh user env <name>` (`user add` prints it with your new secrets).
 
 ```bash
+# Your account: fill in these five with the details you were given (empty: that service is left unconfigured)
+export FLYWHEEL_USER=           # your name
+export FLYWHEEL_S3_SECRET=      # your S3 secret
+export FLYWHEEL_MLFLOW_TOKEN=   # your MLflow token
+export FLYWHEEL_GITEA_TOKEN=    # your Gitea token
+export FLYWHEEL_LOKI_TOKEN=     # the Loki push token, only if you push logs
+
 eval "$(grep -E '^(SERVICE_NODE|SERVICE_HOST|CADDY_PORT)=' services/.env.example | sed 's/^/export /')"
 export FLYWHEEL_CA=~/.flywheel/ca.crt
 
 # S3 (aws CLI, boto3)
-export AWS_ACCESS_KEY_ID=<your name> AWS_SECRET_ACCESS_KEY=<your S3 secret> AWS_DEFAULT_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=$FLYWHEEL_USER AWS_SECRET_ACCESS_KEY=$FLYWHEEL_S3_SECRET AWS_DEFAULT_REGION=us-east-1
 export AWS_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT AWS_CA_BUNDLE=$FLYWHEEL_CA
 
 # MLflow (CLI, Python client); large artifacts go through the server, else they hang
 export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
-export MLFLOW_TRACKING_USERNAME=<your name> MLFLOW_TRACKING_PASSWORD=<your MLflow token>
+export MLFLOW_TRACKING_USERNAME=$FLYWHEEL_USER MLFLOW_TRACKING_PASSWORD=$FLYWHEEL_MLFLOW_TOKEN
 export MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 export MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD=false MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false
 
 # Gitea (pipelines; token from Gitea > Settings > Applications, scope repository read and write)
-export GITEA_URL=https://$SERVICE_HOST:$CADDY_PORT/gitea GITEA_TOKEN=<your Gitea token>
+export GITEA_URL=https://$SERVICE_HOST:$CADDY_PORT/gitea GITEA_TOKEN=$FLYWHEEL_GITEA_TOKEN
 
 # Loki (only if you push logs)
-export LOKI_URL=https://$SERVICE_HOST:$CADDY_PORT/loki LOKI_TOKEN=<Loki push token>
+export LOKI_URL=https://$SERVICE_HOST:$CADDY_PORT/loki LOKI_TOKEN=$FLYWHEEL_LOKI_TOKEN
 
 # Triton (image models; no token)
 export TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
@@ -100,7 +107,7 @@ aws s3 cp ./file s3://raw/<dest>/file                            # one file
 
 ```bash
 export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow   # if section 1 isn't in your shell
-export MLFLOW_TRACKING_USERNAME=<your name> MLFLOW_TRACKING_PASSWORD=<your MLflow token> MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
+export MLFLOW_TRACKING_USERNAME=$FLYWHEEL_USER MLFLOW_TRACKING_PASSWORD=$FLYWHEEL_MLFLOW_TOKEN MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 mlflow experiments search                                        # experiments and their IDs
 mlflow runs list --experiment-id <id>                            # runs of one experiment
 uv run --with mlflow-skinny python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry
