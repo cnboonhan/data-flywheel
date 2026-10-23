@@ -95,7 +95,7 @@ def package_act(mv, run, ckpt, dst, params, opts):
         shutil.copy(os.path.join(ckpt, f), v)
     shutil.copytree(os.path.join(act, "detr"), os.path.join(v, "detr"),
                     ignore=shutil.ignore_patterns("__pycache__", "*.egg-info", "setup.py", "LICENSE"))
-    shutil.copy(os.path.join(HERE, "backends", "xpolicylab_act.py"), os.path.join(v, "model.py"))
+    shutil.copy(os.path.join(BACKENDS, "xpolicylab_act.py"), os.path.join(v, "model.py"))
     json.dump(cfg, open(os.path.join(v, "act.json"), "w"), indent=1)
     d = cfg["action_dim"]
     inputs = [("state", "FP32", [d])] + [(c, "UINT8", [-1, -1, 3]) for c in cfg["camera_names"]]
@@ -159,34 +159,49 @@ def package_vllm(mv, run, ckpt, dst, params, opts):
     return "\n".join(lines + param_lines({"REPORT_CUSTOM_METRICS": "true", **params})) + "\n"
 
 
-# Hugging Face models served by a Python backend (services/triton/backends/<name>.py) instead of vLLM, keyed by repo;
-# the spec's `backend` names one for any other repo. Each loads its weights in place from /mlflow, as one instance on
-# every GPU Triton sees (Triton spreads requests over them), or on one GPU when the spec's `gpu` pins it, takes encoded
-# images as BYTES and has no batch dimension.
-# (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG). It checks that a model runs,
-# not how well, so few steps (2, 4) and faces (1000) keep it quick; fov_x and the box are any valid ones.
-HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
-               "Ruicheng/moge-2-vitl-normal": "moge", "iSEE-Laboratory/llmdet_large": "llmdet",
-               "facebook/sam2.1-hiera-large": "sam2", "VAST-AI/TripoSG": "triposg"}
-PYTHON_IO = {
-    "qwen_image_edit": ([("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
-                         ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True)],
-                        [("image", "STRING", [1])]),
-    "moge": ([("image", "STRING", [1]), ("fov_x", "FP32", [1]), ("view_size", "INT32", [1], True),
-              ("merge_width", "INT32", [1], True)],
-             [("distance", "FP32", [-1, -1]), ("mask", "BOOL", [-1, -1])]),
-    "llmdet": ([("image", "STRING", [1]), ("labels", "STRING", [-1]), ("box_threshold", "FP32", [1], True),
-                ("text_threshold", "FP32", [1], True), ("nms", "FP32", [1], True)],
-               [("boxes", "FP32", [-1, 4]), ("scores", "FP32", [-1]), ("names", "STRING", [-1])]),
-    "sam2": ([("image", "STRING", [1]), ("boxes", "FP32", [-1, 4])], [("masks", "BOOL", [-1, -1, -1])]),
-    "triposg": ([("image", "STRING", [1]), ("seed", "INT32", [1], True), ("steps", "INT32", [1], True),
-                 ("guidance", "FP32", [1], True), ("faces", "INT32", [1], True)], [("mesh", "STRING", [1])]),
-}
-SMOKE = {"qwen_image_edit": {"images": ["image"], "prompt": ["Keep the image as it is."], "steps": [2]},
-         "moge": {"image": ["image"], "fov_x": [60.0]},
-         "llmdet": {"image": ["image"], "labels": ["chair"]},
-         "sam2": {"image": ["image"], "boxes": [[8.0, 8.0, 56.0, 56.0]]},
-         "triposg": {"image": ["image"], "steps": [4], "faces": [1000]}}
+# Python backends: <BACKENDS>/<name>.py (the pipelines repo's triton/backends/, where they are edited; the backends/
+# beside this file are the seed), copied into a model as its model.py with _common.py. A file whose name doesn't start
+# with "_" is a backend for a Hugging Face model when it declares, as plain literals at module level: TRITON_INPUTS and
+# TRITON_OUTPUTS ((name, type, dims[, optional]) each), TRITON_SMOKE (the request smoke_test sends, "image" being a
+# 64x64 grey PNG) and TRITON_HF_REPOS (the Hugging Face repos it serves by default; the spec's `backend` picks it for any
+# other). sync.py reads those literals without running the file; the file itself runs only inside Triton. Each loads
+# its weights in place from /mlflow, as one instance on every GPU Triton sees (Triton spreads requests over them), or
+# on one GPU when the spec's `gpu` pins it, takes encoded images as BYTES and has no batch dimension.
+BACKENDS = HERE + "/backends"   # set from --backends
+PYTHON_IO, SMOKE, HF_BACKENDS = {}, {}, {}
+
+
+def load_backends(path):
+    """Fill PYTHON_IO, SMOKE and HF_BACKENDS from the backends' TRITON_* literals."""
+    import ast
+    import re
+    global BACKENDS
+    BACKENDS = path
+    for f in sorted(os.listdir(path)):
+        name = f.removesuffix(".py")
+        if not f.endswith(".py") or f.startswith("_") or not re.fullmatch(r"[a-z0-9_]+", name):
+            continue
+        consts = {}
+        for node in ast.parse(open(os.path.join(path, f)).read()).body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "").startswith("TRITON_"):
+                consts[node.targets[0].id] = ast.literal_eval(node.value)
+        if "TRITON_INPUTS" not in consts:   # a backend a packager uses for training runs (xpolicylab_act.py)
+            continue
+        PYTHON_IO[name] = (consts["TRITON_INPUTS"], consts["TRITON_OUTPUTS"])
+        SMOKE[name] = consts.get("TRITON_SMOKE", {})
+        HF_BACKENDS.update({r: name for r in consts.get("TRITON_HF_REPOS", [])})
+    PACKAGERS.update({b: functools.partial(package_python, b) for b in PYTHON_IO})
+    IN_PLACE.update(PYTHON_IO)
+
+
+def code_hash(kind):
+    """The hash of the code a model of this kind is packaged with: a changed backend repackages its models."""
+    import hashlib
+    files = {"ACT": ["xpolicylab_act.py"]}.get(kind) or ([f"{kind}.py", "_common.py"] if kind in PYTHON_IO else [])
+    h = hashlib.sha256()
+    for f in files:
+        h.update(open(os.path.join(BACKENDS, f), "rb").read())
+    return h.hexdigest()[:12] if files else ""
 
 
 def hf_kind(run, opts):
@@ -199,8 +214,8 @@ def package_python(backend, mv, run, ckpt, dst, params, opts):
         raise ValueError(f"source {mv.source} is not in the mlflow bucket")
     v = os.path.join(dst, mv.version)
     os.makedirs(v)
-    shutil.copy(os.path.join(HERE, "backends", f"{backend}.py"), os.path.join(v, "model.py"))
-    shutil.copy(os.path.join(HERE, "backends", "_common.py"), v)
+    shutil.copy(os.path.join(BACKENDS, f"{backend}.py"), os.path.join(v, "model.py"))
+    shutil.copy(os.path.join(BACKENDS, "_common.py"), v)
     t = lambda kind, n, ty, d, opt=False: (f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ]'
                                            + (" optional: true" if opt else "") + " }")
     ins, outs = PYTHON_IO[backend]
@@ -212,9 +227,9 @@ def package_python(backend, mv, run, ckpt, dst, params, opts):
     return "\n".join(lines + param_lines(params)) + "\n"
 
 
-PACKAGERS = {"ACT": package_act, "MLP": package_mlp, "vllm": package_vllm,   # keyed by the training run's param `model`
-             **{b: functools.partial(package_python, b) for b in PYTHON_IO}}
-IN_PLACE = {"vllm", *PYTHON_IO}   # packagers that read the weights from /mlflow instead of downloading them
+PACKAGERS = {"ACT": package_act, "MLP": package_mlp, "vllm": package_vllm}   # keyed by the training run's param `model`;
+                                                                            # load_backends adds the Python backends
+IN_PLACE = {"vllm"}   # packagers that read the weights from /mlflow instead of downloading them (+ the Python backends)
 
 
 # ---- S3 ----------------------------------------------------------------------------------------------------------
@@ -404,7 +419,10 @@ def sync(args):
 
     for name, (mv, opts) in sorted(want.items()):
         prov = have.get(name)
-        spec = json.dumps(opts, sort_keys=True)   # a changed option repackages the model, as a new version does
+        run = client.get_run(mv.run_id) if mv.run_id else None
+        kind = run and (run.data.params.get("model") or (hf_kind(run, opts) if "hf_repo" in run.data.params else None))
+        # a changed option or backend code repackages the model, as a new version does
+        spec = json.dumps({**opts, **({"code": code_hash(kind)} if code_hash(kind) else {})}, sort_keys=True)
         current = (prov and prov["mlflow_version"] == mv.version and prov["mlflow_run_id"] == mv.run_id
                    and prov.get("spec", "{}") == spec)
         if current and name not in args.force:
@@ -414,9 +432,7 @@ def sync(args):
         if (not current and last.get("version") == mv.version and last.get("spec", "{}") == spec
                 and last.get("error", "").startswith("packaging") and name not in args.force):
             status.append(last)
-            continue   # packaging failed before; retried only with --force (or a new version or options)
-        run = client.get_run(mv.run_id) if mv.run_id else None
-        kind = run and (run.data.params.get("model") or (hf_kind(run, opts) if "hf_repo" in run.data.params else None))
+            continue   # packaging failed before; retried only with --force (or a new version, options or code)
         packager = PACKAGERS.get(kind)
         if packager is None:
             msg = f"no packager for model '{kind}' (have: {', '.join(PACKAGERS)})"
@@ -510,10 +526,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--spec", default=os.environ.get("TRITON_SPEC", os.path.join(HERE, "models.yaml")),
                     help="the deployment spec (the pipelines repo's triton/models.yaml; default $TRITON_SPEC, else the seed)")
+    ap.add_argument("--backends", default=os.environ.get("TRITON_BACKENDS", os.path.join(HERE, "backends")),
+                    help="the Python backends (the pipelines repo's triton/backends/; default $TRITON_BACKENDS, else the seed)")
     ap.add_argument("--dry-run", action="store_true", help="report what would change, touch nothing")
     ap.add_argument("--force", nargs="*", default=[], help="repackage and reload these models even if unchanged")
     ap.add_argument("--status", action="store_true", help="print Triton's loaded models with their MLflow source")
     args = ap.parse_args()
+    load_backends(args.backends)
     show_status() if args.status else sync(args)
 
 

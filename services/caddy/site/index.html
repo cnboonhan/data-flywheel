@@ -89,14 +89,14 @@ curl -k https://llm.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v1/chat/completi
     <h2 style="margin-top:18px">Image models</h2>
     <p><small>Triton, no token: list the models and their inputs, then call one with <code>tritonclient</code> (images go as encoded bytes; every model's inputs: <code>services/triton/README.md</code>).</small></p>
     <pre class="cmd">curl -k -X POST https://triton.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v2/repository/index
-curl -k https://triton.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v2/models/llmdet_large
+curl -k https://triton.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/v2/models/Qwen-Image-Edit-2511
 curl -k https://{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}/ca.crt -o flywheel-ca.crt</pre>
     <pre class="cmd">import numpy as np, tritonclient.http as th   # pip install "tritonclient[http]"
 c = th.InferenceServerClient("triton.{{env "SERVICE_HOST"}}:{{env "CADDY_PORT"}}", ssl=True, ssl_options={"ca_certs": "flywheel-ca.crt"})
-img = th.InferInput("image", [1], "BYTES"); img.set_data_from_numpy(np.array([open("view.jpg", "rb").read()], dtype=object))
-lab = th.InferInput("labels", [1], "BYTES"); lab.set_data_from_numpy(np.array([b"chair"], dtype=object))
-r = c.infer("llmdet_large", [img, lab])
-print(r.as_numpy("boxes"), r.as_numpy("scores"))</pre>
+img = th.InferInput("images", [1], "BYTES"); img.set_data_from_numpy(np.array([open("view.jpg", "rb").read()], dtype=object))
+txt = th.InferInput("prompt", [1], "BYTES"); txt.set_data_from_numpy(np.array([b"Remove the bucket."], dtype=object))
+r = c.infer("Qwen-Image-Edit-2511", [img, txt])
+open("edited.png", "wb").write(r.as_numpy("image")[0])</pre>
     <table><thead><tr><th>Model</th><th>Requests/s (5 min)</th><th>In progress</th></tr></thead>
       <tbody id="tritonRows"><tr><td colspan="3">loading&hellip;</td></tr></tbody></table>
     <small id="loadGpus"></small>
