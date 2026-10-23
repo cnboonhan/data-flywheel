@@ -58,5 +58,8 @@ Expect an image edit at 1024×1024 in ~16 s, MoGe in ~0.6 s per 1024 px view (a 
 - Runs on two GPUs of `TRITON_NODE`: `TRITON_GPU` for the image models and policies, `TRITON_LLM_GPU` for the 122B (a whole GPU: split across GPUs it hit NVLink errors). GPU 0 there isn't ours; keep GPU-heavy Slurm jobs off the node (`--exclude=$TRITON_NODE`).
 - Loading, unloading and settings aren't reachable from outside: `sync-triton` does them, and Caddy adds the key Triton requires.
 - A new model type needs a `package_<model>` in `sync.py` or a backend in `backends/` (inputs and outputs in `PYTHON_IO`); others are tagged `unsupported`. After changing a backend, dispatch `sync-triton` with `force` set to the models it serves.
-- After editing `Dockerfile`, rebuild on the node: `services/ctl.sh triton build && services/ctl.sh triton up -d`. Logs: `services/ctl.sh triton logs -f`.
+- After editing `Dockerfile`, rebuild on the node: `services/ctl.sh triton build && services/ctl.sh triton up -d`. Logs: `services/ctl.sh triton logs -f`. Then copy the image to `SERVICE_NODE`, where the runner starts the `sync-triton` job in it (13 GB, a few minutes):
+  ```bash
+  ssh $TRITON_NODE "bash -lc 'docker save flywheel-triton:26.08 | ssh $SERVICE_NODE \"bash -lc \\\"docker load\\\"\"'"
+  ```
 - TripoSG skips background removal (its RMBG-1.4 is non-commercial): give it a cutout. Its yaw is close to the input's view but not exact, so fit it against the input.

@@ -58,7 +58,7 @@ keep_off_gpu_memory() {
 # trays, or a node's GPUs). render: write each node's compose file from models.yaml and the aliases (dynamo/render.py).
 # up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
 # node's services up (unchanged ones keep running) and wait for each served model. The Gitea workflow sync-dynamo runs
-# up (dynamo/gitea_ci/sync-dynamo.yml), with a key that may run nothing else (dynamo_sync_key).
+# up (dynamo/gitea_ci/sync-dynamo.yml), with a key that may run nothing else (tools/bin/dynamo-up, FORCED_COMMANDS).
 dynamo() {
   local out="$STATE_DIR/dynamo"
   on() { local node=$1; shift
@@ -125,16 +125,28 @@ triton_compose() {
 
 gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; }
 
-# The key sync-dynamo logs in with, as this account, to the service node: its forced command is `ctl.sh dynamo up`, so
-# the key can serve the aliased models and do nothing else (no shell, no forwarding). Made once; its line in
-# ~/.ssh/authorized_keys (shared by the nodes) is rewritten when the key or the checkout's path changes.
-dynamo_sync_key() {
-  local key="$STATE_DIR/dynamo/sync_key" line keys=~/.ssh/authorized_keys
-  mkdir -p "$STATE_DIR/dynamo"
-  [[ -s $key ]] || ssh-keygen -q -t ed25519 -N '' -C flywheel-sync-dynamo -f "$key"
-  line="restrict,command=\"bash -lc '$here/ctl.sh dynamo up'\" $(cat "$key.pub")"
-  grep -qxF "$line" "$keys" 2>/dev/null && return 0
-  (umask 077; { grep -v ' flywheel-sync-dynamo$' "$keys" 2>/dev/null || true; echo "$line"; } > "$keys.new") && mv "$keys.new" "$keys"
+# SSH keys that may run one command each, on this account: the command's script in tools/bin (its README lists them), which
+# the key's authorized_keys line forces (`restrict`: no shell, no forwarding), whatever the client asks for. Each entry
+# is "<script in tools/bin> <key file>"; a missing key is made, and the line is rewritten when the key or the checkout's
+# path changes (one line per key, found by the key's comment). ~/.ssh/authorized_keys is shared by the nodes.
+FORCED_COMMANDS=(
+  "dynamo-up $STATE_DIR/dynamo/sync_key"     # Gitea workflow sync-dynamo (secret DYNAMO_SSH_KEY)
+  "setup-envs $STATE_DIR/setup-envs/ssh_key" # Gitea workflow setup-envs (secret SETUP_SSH_KEY)
+)
+install_forced_commands() {
+  local entry cmd key comment line keys=~/.ssh/authorized_keys root
+  root=$(cd "$here/.." && pwd)
+  for entry in "${FORCED_COMMANDS[@]}"; do
+    read -r cmd key <<<"$entry"
+    [[ -x $root/tools/bin/$cmd ]] || { echo "forced command tools/bin/$cmd is missing or not executable" >&2; return 1; }
+    mkdir -p "$(dirname "$key")"
+    [[ -s $key ]] || ssh-keygen -q -t ed25519 -N '' -C "flywheel-$cmd" -f "$key"
+    comment=$(awk '{print $3}' "$key.pub")
+    line="restrict,command=\"bash -lc '$root/tools/bin/$cmd'\" $(cat "$key.pub")"
+    grep -qxF "$line" "$keys" 2>/dev/null && continue
+    (umask 077; { grep -v " $comment\$" "$keys" 2>/dev/null || true; echo "$line"; } > "$keys.new") && mv "$keys.new" "$keys"
+    echo "forced command: tools/bin/$cmd for key $comment"
+  done
 }
 
 # First-run setup Gitea can't take from env: the admin user, the runner's
@@ -184,10 +196,13 @@ bootstrap_gitea() {
       -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$HF_TOKEN")" \
       "$api/repos/$ADMIN_USER/pipelines/actions/secrets/HF_TOKEN" >/dev/null
   fi
-  dynamo_sync_key
+  install_forced_commands
   "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"data": open(sys.argv[1]).read()}))' "$STATE_DIR/dynamo/sync_key")" \
     "$api/repos/$ADMIN_USER/pipelines/actions/secrets/DYNAMO_SSH_KEY" >/dev/null
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"data": open(sys.argv[1]).read()}))' "$STATE_DIR/setup-envs/ssh_key")" \
+    "$api/repos/$ADMIN_USER/pipelines/actions/secrets/SETUP_SSH_KEY" >/dev/null
   # The header key Triton requires (sync-triton), synced on every up.
   "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "$TRITON_KEY")" \
@@ -204,7 +219,8 @@ bootstrap_gitea() {
   for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
            "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID" \
            "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=1" \
-           "DYNAMO_SSH_HOST=$SERVICE_ADDR" "DYNAMO_SSH_USER=$USER" "DYNAMO_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)"; do   # Triton's one GPU is 0 inside it
+           "DYNAMO_SSH_HOST=$SERVICE_ADDR" "DYNAMO_SSH_USER=$USER" "DYNAMO_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)" \
+           "SERVICE_SSH_HOST=$SERVICE_ADDR" "SERVICE_SSH_USER=$USER" "SERVICE_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)"; do   # setup-envs' ssh   # Triton's one GPU is 0 inside it
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null

@@ -23,7 +23,7 @@ jobs:
       # Literal path: the runner doesn't evaluate ${{ }} in volumes. Must match the checkout and container.valid_volumes
       # in act_runner/config.yaml. The packagers read XPolicyLab's ACT code and models/mlp from it.
       volumes:
-        - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel
+        - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel:ro
     timeout-minutes: 60   # a sync that loads the 122B takes ~4 min (services/triton/README.md); untuned
     env:
       MLFLOW_TRACKING_URI: http://mlflow:5000

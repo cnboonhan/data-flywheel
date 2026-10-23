@@ -18,7 +18,7 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
 | [`services/`](services/README.md) | Infra stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
 | `assets/` | The architecture diagram and its role variants, the developer roles that push the flywheel along ([Scientist](assets/devroles/scientist.md), [Engineering](assets/devroles/engineering.md)), the quickstart's landing-page screenshot, and the `bufo` image submodule |
-| `tools/` | Repo maintenance scripts |
+| `tools/` | Repo maintenance scripts; [`bin/`](tools/bin/README.md): the commands SSH keys may run on the service account (e.g. `dynamo-up` for `sync-dynamo`) |
 
 ## Setup
 

@@ -35,8 +35,6 @@ container:
   options: -v /tier1/mistral/flywheel/versitygw/buckets:/buckets:ro --cpuset-mems=0,1
   valid_volumes:
     - /tier1/mistral/flywheel/versitygw/buckets
-    # setup-envs mounts the state dir, the checkout and ~/.local at their host paths (repo variables STATE_DIR,
-    # FLYWHEEL_ROOT, USER_LOCAL); keep these in step with .env and the checkout location.
-    - /tier1/mistral/flywheel
+    # sync-triton mounts the checkout read-only, at its host path (repo variable FLYWHEEL_ROOT), for its packagers;
+    # keep it in step with the checkout location. Nothing else of the host: work there goes through tools/bin (ssh).
     - /home/htx_boonhan/workspaces/data-flywheel
-    - /home/htx_boonhan/.local

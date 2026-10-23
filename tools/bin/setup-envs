@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Forced command of the setup-envs SSH key (Gitea secret SETUP_SSH_KEY; installed by ctl.sh up, FORCED_COMMANDS): build
+# the environments the pipelines and Slurm jobs run in, on the service node as the service account: the RoboDojo eval
+# env (with its sim assets and the RoboDojo data into raw/open_datasets/) and the ACT and DP policy envs, the three
+# installers in services/gitea/setup/ side by side, each output line tagged with its env. Each installer is
+# idempotent, so a re-run resumes. The client's command ($SSH_ORIGINAL_COMMAND) is ignored but for one word,
+# `--dry-run`: check the installers and the settings, build nothing.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+services=$root/services
+setup=$services/gitea/setup
+dry=; [[ ${SSH_ORIGINAL_COMMAND:-} =~ (^|[[:space:]])--dry-run($|[[:space:]]) || ${1:-} == --dry-run ]] && dry=1
+
+eval "$(grep -E '^(STATE_DIR|HF_TOKEN)=' "$services/.env" | sed 's/^/export /')"
+set -a; . "$STATE_DIR/flywheel.env"; set +a   # this checkout's paths, S3 endpoint, keys and CA (ctl.sh up writes it)
+export HF_HOME="$STATE_DIR/hf-home" UV_PYTHON_INSTALL_DIR="$HOME/.local/share/uv/python"
+
+exec 9>"$STATE_DIR/setup-envs.lock"   # one build at a time: two would write the same envs
+flock -n 9 || { echo "setup-envs: another run is going" >&2; exit 1; }
+
+installers=("robodojo install-robodojo.sh" "act install-policy-env.sh ACT" "dp install-policy-env.sh DP")
+if [[ -n $dry ]]; then
+  echo "setup-envs (dry run) from $root, as $(id -un), STATE_DIR=$STATE_DIR, ENVS_DIR=$ENVS_DIR"
+  for t in uv python3 apt-get git; do command -v "$t" >/dev/null || { echo "missing on PATH: $t" >&2; exit 1; }; done
+  for i in "${installers[@]}"; do read -r name script _ <<<"$i"; bash -n "$setup/$script" && echo "  $name: $setup/$script ok"; done
+  # any HTTP answer (403 for an unsigned request) means the endpoint and the CA work
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 ${AWS_CA_BUNDLE:+--cacert "$AWS_CA_BUNDLE"} "$S3_ENDPOINT_URL" || true)
+  [[ $code =~ ^[1-5][0-9][0-9]$ ]] || { echo "S3 gateway unreachable: $S3_ENDPOINT_URL" >&2; exit 1; }
+  echo "  S3 gateway answers ($code): $S3_ENDPOINT_URL"
+  exit 0
+fi
+
+pids=()
+for i in "${installers[@]}"; do
+  read -r name script args <<<"$i"
+  ( bash "$setup/$script" $args 2>&1 | sed -u "s/^/[$name] /"; exit "${PIPESTATUS[0]}" ) &
+  pids+=("$!:$name")
+done
+failed=()
+for p in "${pids[@]}"; do wait "${p%%:*}" || failed+=("${p#*:}"); done
+[[ ${#failed[@]} == 0 ]] && echo "setup-envs: all three environments built" || { echo "setup-envs: failed: ${failed[*]}" >&2; exit 1; }

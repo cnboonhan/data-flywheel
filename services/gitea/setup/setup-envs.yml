@@ -1,64 +1,35 @@
 # Build the environments the pipelines run in: the RoboDojo evaluation env (Isaac Sim 5.1, Isaac Lab, curobo,
-# XPolicyLab, plus the sim assets and the RoboDojo data into raw/open_datasets/) and the ACT and DP
-# policy envs. Runs the installers directly in a job container on the service node, with $STATE_DIR, the checkout
-# and ~/.local (uv and its Pythons) mounted at their host paths and the commands run under your uid, so the envs
-# work on the GB300 nodes as built (same OS image and glibc). Dispatched by `services/ctl.sh up` when an env is
-# missing or was built for another checkout, and by `services/ctl.sh setup`. Each installer is idempotent.
+# XPolicyLab, plus the sim assets and the RoboDojo data into raw/open_datasets/) and the ACT and DP policy envs.
+# The job only logs in to the service node over ssh: the key (secret SETUP_SSH_KEY, set by ctl.sh up) may run
+# tools/bin/setup-envs and nothing else, which runs the installers there as the service account, so the envs work on
+# the GB300 nodes as built and nothing in the job's container touches the host. Dispatched by `services/ctl.sh up`
+# when an env is missing or was built for another checkout, and by `services/ctl.sh setup`. Each installer is
+# idempotent, so a re-run resumes.
 name: setup-envs
 concurrency:
   group: setup-envs
   cancel-in-progress: false
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only check the installers and the settings on the node (true/false)"
+        default: "false"
 
 jobs:
   install:
     runs-on: ubuntu-latest
-    container:
-      image: docker.gitea.com/runner-images:ubuntu-latest
-      # Literal paths: the runner doesn't evaluate ${{ }} in volumes. Must match STATE_DIR in .env, the checkout,
-      # ~/.local, and container.valid_volumes in act_runner/config.yaml.
-      volumes:
-        - /tier1/mistral/flywheel:/tier1/mistral/flywheel
-        - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel
-        - /home/htx_boonhan/.local:/home/htx_boonhan/.local
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {script: install-robodojo.sh, args: ""}
-          - {script: install-policy-env.sh, args: ACT}
-          - {script: install-policy-env.sh, args: DP}
+    timeout-minutes: 1440   # the RoboDojo data can take up to a day on a cold start (gitea/setup/README.md); untuned
     env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+      SSH_KEY: ${{ secrets.SETUP_SSH_KEY }}
+      SSH_HOST: ${{ vars.SERVICE_SSH_HOST }}          # the service node (ctl.sh up)
+      KNOWN_HOSTS: ${{ vars.SERVICE_KNOWN_HOSTS }}    # its host keys (ctl.sh up)
+      SSH_USER: ${{ vars.SERVICE_SSH_USER }}
     steps:
-      - name: checkout
-        env:
-          URL: ${{ github.api_url }}/repos/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
-          TOKEN: ${{ github.token }}
+      - shell: bash
         run: |
-          python3 - <<'PY'
-          import io, os, tarfile, urllib.request
-          req = urllib.request.Request(os.environ["URL"], headers={"Authorization": "token " + os.environ["TOKEN"]})
-          with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(req).read())) as tar:
-              top = tar.getnames()[0].split("/")[0]
-              for m in tar.getmembers():
-                  m.name = m.name[len(top) + 1:]
-                  if m.name:
-                      tar.extract(m, ".")
-          PY
-          chmod -R a+rX .
-      - name: install
-        env:
-          STATE_DIR: ${{ vars.STATE_DIR }}
-          USER_LOCAL: ${{ vars.USER_LOCAL }}
-          RUN_UID: ${{ vars.RUN_UID }}
-          RUN_GID: ${{ vars.RUN_GID }}
-        run: |
-          set -a; . "$STATE_DIR/flywheel.env"; set +a            # paths of this checkout and the state dir (ctl.sh writes it)
-          export S3_ENDPOINT_URL=http://versitygw:7070; unset AWS_CA_BUNDLE   # the gateway on the compose network
-          export HOME=/tmp/home PATH="$USER_LOCAL/bin:$PATH" UV_PYTHON_INSTALL_DIR="$USER_LOCAL/share/uv/python" HF_HOME="$STATE_DIR/hf-home"
-          mkdir -p "$HOME" && chown "$RUN_UID:$RUN_GID" "$HOME"
-          exec setpriv --reuid "$RUN_UID" --regid "$RUN_GID" --clear-groups -- bash "$PWD/setup/${{ matrix.script }}" ${{ matrix.args }}
+          umask 077; key=$(mktemp); hosts=$(mktemp)
+          printf '%s\n' "$SSH_KEY" > "$key"; printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          # The key's forced command is tools/bin/setup-envs, whatever is asked for here; it reads only `--dry-run`.
+          ssh -i "$key" -o IdentitiesOnly=yes -o UserKnownHostsFile="$hosts" -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" setup-envs $([[ "${{ inputs.dry_run }}" == true ]] && echo --dry-run)
