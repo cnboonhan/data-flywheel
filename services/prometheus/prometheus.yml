@@ -39,7 +39,7 @@ scrape_configs:
   - job_name: dynamo
     file_sd_configs: [{ files: [/etc/prometheus-sd/dynamo.json] }]
 
-  # Metrics pushed from outside, e.g. which GPU each Slurm job holds (services/slurm-exporter); the pushed job,
+  # Metrics pushed from outside, e.g. which GPU each Slurm job holds (services/prometheus/slurm_exporter.py); the pushed job,
   # instance and gpu labels are kept (honor_labels), so slurm_job_gpu joins dcgm's series on (instance, gpu).
   - job_name: pushgateway
     honor_labels: true

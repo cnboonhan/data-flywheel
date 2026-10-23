@@ -504,7 +504,7 @@ if [[ $1 == up ]]; then
     mkdir -p "$STATE_DIR/$d"
   done
   # The Slurm job pusher, where an account that sees every job can read it (it may not be able to read this checkout).
-  cp -f "$here/slurm-exporter/exporter.py" "$STATE_DIR/slurm-exporter/exporter.py"
+  cp -f "$here/prometheus/slurm_exporter.py" "$STATE_DIR/slurm-exporter/exporter.py"   # that name: existing crontabs run it
   # Keycloak imports the realm (clients, groups, the admin user) on first start.
   (umask 077; python3 -c '
 import os, re, sys

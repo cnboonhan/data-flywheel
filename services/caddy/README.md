@@ -25,7 +25,7 @@ For programs that push data in:
 | Send to | What | Token |
 |---|---|---|
 | `POST $HOST/loki/api/v1/push` | log lines ([loki/](../loki/README.md)) | `LOKI_PUSH_TOKEN` |
-| `PUT`, `POST`, `DELETE $HOST/pushgateway/metrics/job/...` | metrics ([slurm-exporter/](../slurm-exporter/README.md)) | `PUSHGATEWAY_TOKEN` |
+| `PUT`, `POST`, `DELETE $HOST/pushgateway/metrics/job/...` | metrics, e.g. Slurm jobs ([prometheus/](../prometheus/README.md#slurm-jobs)) | `PUSHGATEWAY_TOKEN` |
 
 **Notes** (for operators)
 - `/fiftyone`, `/rerun` and `/s3` on `$HOST` redirect to their subdomains; `rerun.…/browse` and `/dataset` redirect to `/data`.

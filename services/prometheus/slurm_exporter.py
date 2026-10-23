@@ -19,7 +19,7 @@
                                                                   the one running then; none when the node was empty
     <job> = job_id, user, job_name, partition
 
-    PUSHGATEWAY_TOKEN=<token> python3 exporter.py --push https://<host>:<port>/pushgateway [SEC]
+    PUSHGATEWAY_TOKEN=<token> python3 slurm_exporter.py --push https://<host>:<port>/pushgateway [SEC]
 
 Every running job the running account can see (an account that sees all jobs publishes everyone's). It rewrites
 the group job="slurm_jobs" (PUSHGATEWAY_JOB) every SEC seconds (30) and deletes it on exit, so a

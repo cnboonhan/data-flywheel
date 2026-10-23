@@ -7,7 +7,7 @@
  "timezone": "browser",
  "schemaVersion": 39,
  "editable": false,
- "description": "One Slurm job's CPU, RAM and GPUs over time, from the Slurm job pusher (services/slurm-exporter) joined with node_exporter and dcgm-exporter.",
+ "description": "One Slurm job's CPU, RAM and GPUs over time, from the Slurm job pusher (services/prometheus/slurm_exporter.py) joined with node_exporter and dcgm-exporter.",
  "refresh": "30s",
  "time": {
   "from": "now-6h",

@@ -830,7 +830,7 @@
     "x": 0,
     "y": 11
    },
-   "description": "Every pending Slurm job the job pusher sees (slurm-exporter, scontrol), longest-waiting first: why it waits (Resources: no free nodes fit it; Priority: others go first; launch_failed_requeued_held: its start failed, often a Prolog error draining the node, and it is held until released), what it asks for, and its priority (0: held).",
+   "description": "Every pending Slurm job the job pusher sees (prometheus/slurm_exporter.py, scontrol), longest-waiting first: why it waits (Resources: no free nodes fit it; Priority: others go first; launch_failed_requeued_held: its start failed, often a Prolog error draining the node, and it is held until released), what it asks for, and its priority (0: held).",
    "targets": [
     {
      "refId": "A",
@@ -1003,7 +1003,7 @@
     "x": 0,
     "y": 21
    },
-   "description": "One row per Slurm node, by name (click a header to sort by it, e.g. Status for problems first). Status: DOWN (no ssh answer, or Slurm: down or not responding), NO SSH (up, refuses our key), DRAINED (Slurm won't start jobs on it), NO /TIER1 (shared file system missing: jobs using it fail), else SLURM JOB, MANUAL JOB (GPU work started outside Slurm) or IDLE. Problem: the most telling cause, from the collector (ssh, the node's pre-job health check, mounts; gpu_processes.py) or Slurm's reason. A health-check finding such as dmesg's 'task python blocked for more than 122 seconds' comes from a job running then, not from the one it tripped. Last run job: every job running on it now, SLURM (job \u00b7 user \u00b7 name) or MANUAL (a GPU workload started outside Slurm: user \u00b7 workload); with none, the Slurm job it went down on (requeued on a Prolog error, or failed with NODE_FAIL). Slurm columns from the Slurm job pusher (slurm-exporter).",
+   "description": "One row per Slurm node, by name (click a header to sort by it, e.g. Status for problems first). Status: DOWN (no ssh answer, or Slurm: down or not responding), NO SSH (up, refuses our key), DRAINED (Slurm won't start jobs on it), NO /TIER1 (shared file system missing: jobs using it fail), else SLURM JOB, MANUAL JOB (GPU work started outside Slurm) or IDLE. Problem: the most telling cause, from the collector (ssh, the node's pre-job health check, mounts; gpu_processes.py) or Slurm's reason. A health-check finding such as dmesg's 'task python blocked for more than 122 seconds' comes from a job running then, not from the one it tripped. Last run job: every job running on it now, SLURM (job \u00b7 user \u00b7 name) or MANUAL (a GPU workload started outside Slurm: user \u00b7 workload); with none, the Slurm job it went down on (requeued on a Prolog error, or failed with NODE_FAIL). Slurm columns from the Slurm job pusher (prometheus/slurm_exporter.py).",
    "targets": [
     {
      "refId": "A",
@@ -2022,7 +2022,7 @@
     "x": 0,
     "y": 106
    },
-   "description": "Running Slurm jobs the job pusher's account sees (slurm-exporter): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
+   "description": "Running Slurm jobs the job pusher's account sees (prometheus/slurm_exporter.py): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
     {
      "refId": "A",

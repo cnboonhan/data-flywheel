@@ -99,7 +99,7 @@ https://{$SERVICE_HOST}:8443 {
 		reverse_proxy loki:3100
 	}
 
-	# Metric pushes from outside (e.g. slurm-exporter/exporter.py --push): a bearer token, Pushgateway's push API only;
+	# Metric pushes from outside (e.g. prometheus/slurm_exporter.py --push): a bearer token, Pushgateway's push API only;
 	# an empty PUSHGATEWAY_TOKEN never matches. Prometheus reads the Pushgateway inside the compose network.
 	@pushgateway {
 		method PUT POST DELETE

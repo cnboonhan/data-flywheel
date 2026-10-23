@@ -132,7 +132,7 @@ services:
       - ${STATE_DIR}/prometheus-sd:/etc/prometheus-sd:ro   # targets ctl.sh writes, e.g. Triton on TRITON_NODE
 
   # Metrics pushed from outside the stack (Caddy's /pushgateway route, bearer token), e.g. which GPU each Slurm job
-  # holds (slurm-exporter/exporter.py --push); Prometheus scrapes it. Pushes are kept in memory: lost on restart until
+  # holds (prometheus/slurm_exporter.py --push); Prometheus scrapes it. Pushes are kept in memory: lost on restart until
   # the next push.
   pushgateway:
     <<: *common
