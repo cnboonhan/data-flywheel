@@ -1,7 +1,8 @@
-# The LLMs Dynamo can serve on DYNAMO_HEAD + DYNAMO_WORKER (a vLLM engine over both trays' 8 GPUs, rank 0 on the
-# head, rank 1 headless on the worker), one at a time: the model whose registered model's MLflow alias `dynamo` is set,
-# at that version. Moving the alias to another model swaps it (Gitea workflow sync-dynamo, or ctl.sh dynamo up): the old
-# engines stop and the new model cold-starts (minutes). A version's tag `dynamo.args` (a JSON list) appends engine flags.
+# The LLMs Dynamo can serve, on the two trays DYNAMO_HEAD + DYNAMO_WORKER only (TRITON_NODE is Triton's): a vLLM engine
+# over both trays' 8 GPUs (rank 0 on the head, rank 1 headless on the worker), one at a time. Which one, at which
+# version, is set in MLflow: the model whose registered model has the alias `dynamo`. After moving the alias, run the
+# Gitea workflow sync-dynamo (or ctl.sh dynamo up) by hand: the old engines stop and the new model cold-starts (minutes).
+# A version's tag `dynamo.args` (a JSON list) appends engine flags.
 #
 # Per model: name (the OpenAI `model` clients send), registered (MLflow registered model), image (Dynamo's vLLM runtime
 # for that model; its frontend uses it too), ports (frontend, worker system API, vLLM rendezvous; all on the head's
@@ -12,14 +13,6 @@
 # The trays' CPU-memory NUMA nodes (`numactl -H`: the nodes with CPUs; each GPU's memory is a node too). Engines are
 # bound to them, so their host buffers and the file cache of the weights they read can't fill a GPU's memory.
 host_numa_nodes: "0,1"
-
-# The share of each GPU's memory that single-node models may take together (render.py checks the aliased ones), on the
-# nodes they're placed on. DYNAMO_NODE: GPU 2 also holds Triton's image models and policies (~103 GiB, 0.37; TRITON_GPU);
-# GPUs 1 and 3 are Dynamo's. DYNAMO_HEAD: a one-tray model, when no tray model holds the alias (render.py refuses both).
-# 0.92: vLLM's activations and CUDA graphs need some room past the shares; untuned.
-gpus:
-  $DYNAMO_NODE: {1: 0.92, 2: 0.58, 3: 0.92}
-  $DYNAMO_HEAD: {0: 0.92, 1: 0.92, 2: 0.92, 3: 0.92}
 
 common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp,
               --scheduling-policy, priority, --enable-prefix-caching, --disable-custom-all-reduce]
@@ -54,139 +47,3 @@ models:
     # max-model-len 262144: a quarter of K3's 1M; at 0.85 of each GPU that leaves ~1.08M tokens of KV cache (4 requests
     # at full length). max-num-seqs 64: untuned. bf16 KV cache: with fp8, K3's attention asserts on an fp8 prefill query.
     env: {}   # the image's other symmetric-memory kernel (VLLM_KIMI_K3_GEMM_RS) is off by default
-
-  - name: glm-5.3
-    licence: "GLM-5.3 licence (MIT-like)"
-    about: "Zhipu's large MoE: the strongest here for reasoning, coding and agents"
-    registered: GLM-5.3
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1   # vLLM 0.28; no GLM-5.3 image of Dynamo's own (README: risk)
-    ports: {frontend: 8192, system: 9312, rendezvous: 29512}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, glm47, --tool-call-parser, glm47, --enable-auto-tool-choice]
-    args: [--max-model-len, "131072", --gpu-memory-utilization, "0.75", --kv-cache-dtype, fp8,
-           --speculative-config, '{"method":"mtp","num_speculative_tokens":5}',
-           --reasoning-parser, glm47, --dyn-tool-call-parser, glm47, --dyn-reasoning-parser, glm45]
-    # max-model-len 131072: untuned; FP8 weights take ~91 GiB of each GPU. gpu-memory-utilization 0.75 (207 GiB, ~1M
-    # tokens of KV cache): vLLM wants that much free at start, and at 0.85 (235 GiB) Linux file cache on a GPU's memory
-    # (README) failed the check. Dynamo's worker takes the tool parser as
-    # --dyn-tool-call-parser (vLLM's own --tool-call-parser, --enable-auto-tool-choice go to the frontend); glm45 is
-    # Dynamo's GLM reasoning parser (its GLM-5.2 recipe)
-    env: {}
-
-  - name: glm-5.3-flash
-    licence: "MIT"
-    about: "Zhipu's multimodal MoE, 18B active: reasoning, coding, agents, images"
-    registered: GLM-5.3-Flash
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.6.0-deepseek-v4.1-flash-dev.2   # vLLM 0.31 (Glm5Next), FlashInfer 0.7
-    # one tray, TP4, as vLLM's recipe: ~77 GiB of FP8 weights per GPU; share 0.80 (221 GiB) leaves room for file cache
-    # on a GPU's memory, which failed GLM-5.3's start at 0.85 (README); untuned
-    placement: {node: $DYNAMO_HEAD, gpus: [0, 1, 2, 3], share: 0.80}
-    ports: {frontend: 8298, system: 9328}
-    # Dynamo's chat processor: vLLM's refuses hybrid linear-attention configs like K3's and this one's (kimi-k3 above)
-    frontend_args: [--dyn-chat-processor, dynamo]
-    args: [--max-model-len, "262144", --max-num-seqs, "64", --kv-cache-dtype, fp8, --enable-multimodal,
-           --limit-mm-per-prompt, '{"image": 4}', --speculative-config, '{"method":"mtp","num_speculative_tokens":5}',
-           --reasoning-parser, glm47, --dyn-tool-call-parser, glm47, --dyn-reasoning-parser, glm45]
-    # flags from vLLM's recipe (fp8 KV cache, MTP with 5 draft tokens, glm47 parsers); max-model-len 262144: a quarter of
-    # its 1M, as kimi-k3; max-num-seqs 64 and 4 images per request: untuned
-    env: {}
-
-  - name: inkling
-    licence: "Apache-2.0"
-    about: "Thinking Machines' MoE (not served yet)"
-    registered: Inkling-NVFP4
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-inkling-dev.1
-    ports: {frontend: 8193, system: 9313, rendezvous: 29513}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, inkling, --tool-call-parser, inkling, --enable-auto-tool-choice]
-    args: [--tokenizer-mode, inkling, --max-model-len, "262144", --gpu-memory-utilization, "0.70", --enable-multimodal,
-           --speculative-config, '{"method":"mtp","num_speculative_tokens":8}',
-           --dyn-reasoning-parser, inkling, --dyn-tool-call-parser, inkling, --reasoning-parser, inkling,
-           --dyn-enable-structural-tag, --structured-outputs-config, '{"enable_in_reasoning": true}']
-    # recipe runs TP4 per tray; TP8 over both here, like the other models; max-model-len untuned.
-    # gpu-memory-utilization 0.70 (193 GiB): leaves room for file cache on the GPUs' memory (README); untuned
-    # No fp8 KV cache: Inkling's FA4 attention kernel needs query and KV in one dtype (fails its warmup otherwise)
-    env:
-      VLLM_USE_V2_MODEL_RUNNER: "1"
-
-  # Single-node models on DYNAMO_NODE (placement: node, gpus, share of each GPU's memory). Context 32k tokens and the
-  # parsers htx_xingyu's servers use for these models; untuned. Qwen3.6 and Qwen3.8 read images too.
-  - name: qwen3.5-122b-a10b
-    licence: "Apache-2.0"
-    about: "Vision-language MoE (10B active): the sim tools' VLM"
-    registered: Qwen3.5-122B-A10B
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $DYNAMO_NODE, gpus: [3], share: 0.90}   # 230 GiB of bf16 weights; ~15 GiB of KV cache
-    ports: {frontend: 8294, system: 9324}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
-    args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
-           --max-num-seqs, "32", --limit-mm-per-prompt, '{"image": 4}']   # Triton's limits: else profiling fills the share
-    env: {}
-
-  - name: qwen3.6-27b
-    licence: "Apache-2.0"
-    about: "Dense 27B: reasoning, images"
-    registered: Qwen3.6-27B-FP8
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $DYNAMO_NODE, gpus: [2], share: 0.16}   # 29 GiB of weights; ~12 GiB of KV cache
-    ports: {frontend: 8291, system: 9321}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
-    args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
-           --max-num-seqs, "32", --limit-mm-per-prompt, '{"image": 4}']   # Triton's limits: else profiling fills the share
-    env: {}
-
-  - name: qwen3.8-27b
-    licence: "Apache-2.0"
-    about: "Newer dense 27B: reasoning, images"
-    registered: Qwen3.8-27B-FP8
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $DYNAMO_NODE, gpus: [2], share: 0.16}   # 29 GiB of weights; ~12 GiB of KV cache
-    ports: {frontend: 8292, system: 9322}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
-    args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
-           --max-num-seqs, "32", --limit-mm-per-prompt, '{"image": 4}']   # Triton's limits: else profiling fills the share
-    env: {}
-
-  - name: qwen3.6-35b-a3b
-    licence: "Apache-2.0"
-    about: "MoE with 3B active: the fastest here, reasoning, images"
-    registered: Qwen3.6-35B-A3B-FP8
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $DYNAMO_NODE, gpus: [1], share: 0.19}   # 34 GiB of weights; ~15 GiB of KV cache
-    ports: {frontend: 8293, system: 9323}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
-    args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3,
-           --max-num-seqs, "32", --limit-mm-per-prompt, '{"image": 4}']   # Triton's limits: else profiling fills the share
-    env: {}
-
-  - name: qwen3-vl-8b
-    licence: "Apache-2.0"
-    about: "Small vision-language model: quick image questions"
-    registered: Qwen3-VL-8B-Instruct
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $DYNAMO_NODE, gpus: [1], share: 0.11}   # 17 GiB of bf16 weights; KV cache and image activations
-    ports: {frontend: 8295, system: 9325}
-    frontend_args: [--dyn-chat-processor, vllm, --tool-call-parser, hermes, --enable-auto-tool-choice]   # Instruct: no reasoning
-    args: [--max-model-len, "32768", --enable-multimodal]
-    env: {}
-
-  - name: qwen3-vl-30b-a3b
-    licence: "Apache-2.0"
-    about: "Vision-language MoE (3B active), bf16"
-    registered: Qwen3-VL-30B-A3B-Instruct
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.1
-    placement: {node: $DYNAMO_NODE, gpus: [2], share: 0.26}   # GPU 2's last share: 58 GiB of bf16 weights, ~9 GiB of KV cache (~90k tokens)
-    ports: {frontend: 8297, system: 9327}
-    frontend_args: [--dyn-chat-processor, vllm, --tool-call-parser, hermes, --enable-auto-tool-choice]   # Instruct: no reasoning
-    args: [--max-model-len, "32768", --enable-multimodal,
-           --max-num-seqs, "32", --limit-mm-per-prompt, '{"image": 4}']   # Triton's limits: else profiling fills the share
-    env: {}
-
-  - name: qwen3.8-flash-next
-    licence: "NVIDIA Open Model License"
-    about: "Fast NVFP4 MoE: reasoning, images"
-    registered: Qwen3.8-Flash-Next-NVFP4
-    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.6.0-deepseek-v4.1-flash-dev.2   # vLLM 0.31, which its architecture needs
-    placement: {node: $DYNAMO_NODE, gpus: [1], share: 0.60}   # 124 GiB of NVFP4 weights; ~35 GiB of KV cache
-    ports: {frontend: 8296, system: 9326}
-    frontend_args: [--dyn-chat-processor, vllm, --reasoning-parser, qwen3, --tool-call-parser, qwen3_xml, --enable-auto-tool-choice]
-    args: [--max-model-len, "32768", --enable-multimodal, --reasoning-parser, qwen3]
-    env: {}

@@ -216,7 +216,11 @@ sd = [{"targets": [f"{addr(sv['node'])}:{GATEWAY_PORT}"],
       for n, sv in served.items() for part in ("frontend", "engine")]
 sd += [{"targets": [f"{addr(node)}:{GATEWAY_PORT}"], "labels": {"part": "gateway"}}   # the other nodes' gateways (served models,
        for node in sorted(local) if node != HEAD]                                    # requests); the head's is job llm-gateway
-os.makedirs(os.path.join(state, "prometheus-sd"), exist_ok=True)
-json.dump(sd, open(os.path.join(state, "prometheus-sd", "dynamo.json"), "w"), indent=1)
+# Prometheus's live targets only when rendering the live config (ctl.sh dynamo render/up); a test render elsewhere keeps
+# its copy beside its other files, so it can't change what Prometheus scrapes.
+live = os.path.realpath(out) == os.path.realpath(os.path.join(state, "dynamo"))
+sd_dir = os.path.join(state, "prometheus-sd") if live else out
+os.makedirs(sd_dir, exist_ok=True)
+json.dump(sd, open(os.path.join(sd_dir, "dynamo.json" if live else "prometheus-sd-dynamo.json"), "w"), indent=1)
 print(f"rendered {', '.join(f"{n} ({sv['node']})" for n, sv in served.items()) or 'no models'}"
       + (f"; no `dynamo` alias: {', '.join(skipped)}" if skipped else ""))

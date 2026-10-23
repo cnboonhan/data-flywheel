@@ -139,7 +139,7 @@ def package_mlp(mv, run, ckpt, dst, params):
 # of GPU 1, the Python-backend models share GPU 2 (~71 GB together); which index is a choice, not tuned.
 VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_per_prompt": {"image": 4},
                "max_num_seqs": 32}
-VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "0")   # Triton has one GPU (index 0 inside)
+VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "1")   # TRITON_LLM_GPU, Triton's second GPU (index 1 inside)
 
 
 def package_vllm(mv, run, ckpt, dst, params):
