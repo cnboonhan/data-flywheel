@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 # Set up sensors/autolearn on this machine, step by step and idempotently. Everything lands in this folder (the
-# gitignored state dirs) or in the two submodules' own venvs; the Docker image is the one exception. On arm64 (the
+# gitignored state dirs) or in the ASPIRE submodule's own venvs. On arm64 (the
 # GB300 nodes) everything lands under $STATE on shared storage instead, and only BEHAVIOR-1K collection is set up
 # (see "arm64" below).
 #
-#   setup.sh geniesim    the Genie Sim CLI venv, asset pack, image, container, RT Engine workspace, crash-reporter hook
-#   setup.sh aspire      ASPIRE's LIBERO venv, SAM3 + Contact-GraspNet + PyRoki venvs, the adapter's extra packages, the LeRobot venv
+#   setup.sh aspire      ASPIRE's LIBERO venv, SAM3 + Contact-GraspNet + PyRoki venvs, the LeRobot venv
 #   setup.sh behavior    BEHAVIOR-1K: CUDA 12.8 toolkit, Isaac Sim 5.1 venv, the datasets (~40 GB, non-commercial terms)
 #   setup.sh services    start ASPIRE's SAM3 and Contact-GraspNet (ports 8114-8115) in the background
-#   setup.sh benchmark [CONFIG]   start a Genie Sim benchmark run in the container against the adapter on port 8999
-#   setup.sh all         geniesim, aspire, behavior
+#   setup.sh all         aspire, behavior
 #
-# Needs: uv, docker with the NVIDIA container toolkit, a Hugging Face login with access to facebook/sam3
+# Needs: uv, a Hugging Face login with access to facebook/sam3
 # (`uvx hf auth login`, or HF_TOKEN), and for behavior the CUDA 12.8 runfile at $CUDA_RUNFILE (default
 # /tmp/cuda_12.8.1_linux.run; not on arm64).
 set -euo pipefail
@@ -19,39 +17,6 @@ A="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE="${CAP_HARNESS_PROFILE:-rtx5090}"
 export HF_HOME="$A/hf-cache" HF_TOKEN_PATH="${HF_TOKEN_PATH:-$HOME/.cache/huggingface/token}"
 log() { printf '\n== %s\n' "$*"; }
-
-geniesim() {
-  cd "$A"
-  git -C "$A/.." submodule update --init autolearn/genie_sim
-  if [[ ! -x .venv-geniesim/bin/geniesim ]]; then
-    log "Genie Sim CLI venv"
-    uv venv --python 3.12 .venv-geniesim
-    VIRTUAL_ENV="$A/.venv-geniesim" uv pip install pip -e genie_sim/source/geniesim_cli
-  fi
-  if [[ ! -f GenieSimAssets/pyproject.toml ]]; then
-    log "Genie Sim asset pack (29 GB, CC BY-NC-SA 4.0)"
-    uvx hf download agibot-world/GenieSimAssets --repo-type dataset --local-dir GenieSimAssets
-  fi
-  .venv-geniesim/bin/python -c 'import geniesim_assets' 2>/dev/null || VIRTUAL_ENV="$A/.venv-geniesim" uv pip install -e GenieSimAssets
-  cd genie_sim
-  if ! docker image inspect registry.agibot.com/genie-sim/geniesim3:latest >/dev/null 2>&1; then
-    log "Genie Sim image (Isaac Sim 5.1 base, ~25 min)"
-    GENIESIM_WIP_ACK=1 ../.venv-geniesim/bin/geniesim docker5.1 build
-  fi
-  if ! docker ps --format '{{.Names}}' | grep -qx geniesim3; then
-    log "Genie Sim container (headless, caches in isaac-cache/)"
-    GENIESIM_CACHE_ROOT="$A/isaac-cache" ../.venv-geniesim/bin/geniesim docker5.1 up --headless
-  fi
-  if [[ ! -f devel/setup.bash ]]; then
-    log "RT Engine ROS 2 workspace (~3 min)"
-    docker exec -u "$(id -u):$(id -g)" geniesim3 bash -lc 'cd /workspace && geniesim ros build dev'
-  fi
-  log "crash-reporter hook into the container"
-  docker exec geniesim3 mkdir -p /home/isaac-sim/.local/hooks
-  docker cp "$A/hooks/sitecustomize.py" geniesim3:/home/isaac-sim/.local/hooks/sitecustomize.py
-  docker exec -u "$(id -u):$(id -g)" -e PYTHONPATH=/home/isaac-sim/.local/hooks geniesim3 \
-    python3 -c 'import isaacsim; assert not isaacsim.SimulationApp.DEFAULT_LAUNCHER_CONFIG["enable_crashreporter"]; print("hook ok")'
-}
 
 aspire() {
   cd "$A"
@@ -65,9 +30,7 @@ aspire() {
   scripts/bootstrap_libero.sh
   log "SAM3, Contact-GraspNet, PyRoki venvs"
   scripts/bootstrap_providers.sh --providers sam3,contact_graspnet,pyroki --profile "$PROFILE"
-  log "adapter packages into the PyRoki venv"
-  VIRTUAL_ENV="$A/aspire/.venv-pyroki" uv pip install msgpack opencv-python-headless
-  log "LeRobot venv for adapter/to_lerobot.py (0.3.3: the last release writing dataset v2.1, which the flywheel reads)"
+  log "LeRobot venv for adapter/behavior_to_lerobot.py (0.3.3: the last release writing dataset v2.1, which the flywheel reads)"
   [[ -d .venv-lerobot ]] || uv venv --python 3.10 .venv-lerobot
   uv pip install --python .venv-lerobot/bin/python "lerobot==0.3.3" h5py pyarrow pandas opencv-python-headless av boto3   # + the xspark adapter's needs
 }
@@ -97,12 +60,6 @@ services() {
   tail -2 "$A/aspire/outputs/services.log"
 }
 
-benchmark() {
-  local config="${1:-g2op_if_pick_block_color}"
-  docker exec -u "$(id -u):$(id -g)" -e PYTHONPATH=/home/isaac-sim/.local/hooks -e ROS_DOMAIN_ID=42 geniesim3 bash -lc \
-    "cd /workspace && geniesim benchmark run $config --infer-host=127.0.0.1:8999 --app.headless=true --benchmark.num_episode=1"
-}
-
 # ---- arm64 (GB300 nodes): BEHAVIOR-1K collection only, in Slurm jobs (gb300/collect_behavior.sbatch) ----
 # Differences from the steps above, all forced by arm64 or the cluster:
 #   - state under $STATE (shared storage, group-readable), not in this checkout; gb300/behavior.env points jobs at it
@@ -112,7 +69,7 @@ benchmark() {
 #   - SAM3: torch 2.9.1 cu130 (has sm_103); decord has no arm64 wheels, and SAM3 imports it at module level though the
 #     service only segments images, so a stand-in that refuses video takes its place
 #   - no bubblewrap on the nodes: gb300/run_behavior.sh runs reviewed policies unsandboxed; no agent campaigns here
-#   - not set up: Genie Sim (x86-only image and ik_solver), LIBERO, Contact-GraspNet
+#   - not set up: LIBERO, Contact-GraspNet
 STATE="${AUTOLEARN_STATE:-/tier1/mistral/flywheel/autolearn}"
 B1K_COMMIT=b1979916ec1549b10a4e65e630bc6504a9af1b00     # aspire/configs/dependency-lock.json (BEHAVIOR-1K v3.9.2)
 PYROKI_COMMIT=388e43e1fc0d0ee382968d3dd72970fd62a0450c  # same lock
@@ -235,8 +192,7 @@ if [[ $(uname -m) == aarch64 ]]; then
 fi
 
 case "${1:-}" in
-  geniesim|aspire|behavior|services) "$1" ;;
-  benchmark) benchmark "${2:-}" ;;
-  all) geniesim; aspire; behavior ;;
-  *) sed -n '2,17p' "$0"; exit 2 ;;
+  aspire|behavior|services) "$1" ;;
+  all) aspire; behavior ;;
+  *) sed -n '2,14p' "$0"; exit 2 ;;
 esac

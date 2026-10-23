@@ -1,6 +1,3 @@
-isaac-cache/
-.venv-geniesim/
-GenieSimAssets/
 behavior-data/
 cuda-12.8/
 hf-cache/

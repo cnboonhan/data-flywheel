@@ -1,6 +1,6 @@
 # Pick up the coffee cup on BEHAVIOR-1K `picking_up_cup` (set_up_a_coffee_station_in_your_kitchen: the one coffee cup
 # stands on a ~0.89 m kitchen countertop beside a saucer, kettle, coffee maker and filter) with the Galaxea R1 Pro, run
-# through run_behavior.py. Grown from pick_radio_r1pro.py: blocks 2-5 (drive to the support edge, adaptive lean,
+# through run_behavior.py. Grown from a radio pickup policy (since removed): blocks 2-5 (drive to the support edge, adaptive lean,
 # joint-space approach legs, wrist-read rung ladder, 15 cm lift) are its, with the radio's wire-handle rungs off. Block 1
 # is new: from where the robot starts the cup is a few pixels and SAM3 scores it <= 0.02, so the search keeps weak cup
 # masks whose points sit at counter height, drives to ~1 m of the best one and reads it again there. Variables keep the

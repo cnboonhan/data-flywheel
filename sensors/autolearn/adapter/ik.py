@@ -1,4 +1,4 @@
-"""An ASPIRE IKProvider on PyRoki for any URDF: the Genie Sim G2 and OmniGibson's R1 Pro use it alike.
+"""An ASPIRE IKProvider on PyRoki for any URDF (used for OmniGibson's R1 Pro).
 
 Solves one arm's joints to an end-effector pose while every other joint (torso and waist are on each arm's chain)
 is pinned to the robot's current reading by a heavy rest cost. The arm's joint names, end-effector link and base

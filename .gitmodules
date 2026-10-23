@@ -20,6 +20,3 @@
 [submodule "sensors/autolearn/aspire"]
 	path = sensors/autolearn/aspire
 	url = https://github.com/NVlabs/ASPIRE
-[submodule "sensors/autolearn/genie_sim"]
-	path = sensors/autolearn/genie_sim
-	url = https://github.com/AgibotTech/genie_sim

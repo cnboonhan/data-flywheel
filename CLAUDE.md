@@ -7,7 +7,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - Data and weights live in the S3 gateway (`services/`), not in the checkout. Gitea workflows fetch from Hugging Face: `services/gitea/ingest/download-datasets-hf.yml` into `raw/open_datasets/`, `download-models-hf.yml` into the MLflow model registry (self-contained workflows; each header lists the known repos).
 - `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
 - `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
-- `sensors/autolearn/`: skills learned by coding agents (`aspire/`, NVIDIA ASPIRE) in scenes built from real sites (`genie_sim/`, AgiBot Genie Sim on Isaac Sim 5.1), to be distilled into a VLA; the plan is in its README. Data in `sensors/autolearn/` (gitignored).
+- `sensors/autolearn/`: skills learned by coding agents (`aspire/`, NVIDIA ASPIRE) in BEHAVIOR-1K scenes (OmniGibson on Isaac Sim 5.1), distilled into a VLA (π0.5); the plan is in its README. Data in `sensors/autolearn/` (gitignored).
 - `services/triton/triton_endpoint.py`: the client for Triton models; each role's endpoint is a `<ROLE>_ENDPOINT` variable.
 - Everything under `eval/`, `sensors/yubi-*` and `sensors/autolearn/` is an **upstream git submodule**.
 

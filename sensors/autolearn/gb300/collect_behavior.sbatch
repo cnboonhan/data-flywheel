@@ -3,7 +3,7 @@
 # instances, both on the job's GPU, in the environments setup.sh builds on arm64. Several jobs over disjoint seed
 # ranges collect in parallel (gb300/collect_parallel.sh submits them).
 #   sbatch sensors/autolearn/gb300/collect_behavior.sbatch <policy.py> <first seed> <last seed> [collect_behavior.sh options]
-#   e.g. sbatch ... adapter/programs/pick_radio_r1pro.py 46 75 --target 30
+#   e.g. sbatch ... adapter/programs/pick_cup_r1pro.py 68 97 --target 30 --suite picking_up_cup
 # Runs land in $STATE/collect/behavior/<suite>/<policy>/seeds_<first>-<last>/ (collect.jsonl inside); the log in
 # $STATE/logs/behavior-<job>.log.
 #

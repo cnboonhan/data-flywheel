@@ -1,4 +1,4 @@
-# Smoke program for the Genie Sim adapter: lift the right gripper 8 cm, close it, open it. No perception.
+# Smoke program for any ASPIRE environment: lift the right gripper 8 cm, close it, open it. No perception.
 state = get_robot_state()
 arm = "secondary"
 start = state.end_effector_poses[arm]

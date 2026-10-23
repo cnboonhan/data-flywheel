@@ -44,7 +44,7 @@ for seed in $(seq "$first" "$last"); do
     [[ $(done_runs "$seed" "$rep") -gt 0 ]] && continue
     # python processes only: a shell whose command line merely mentions these names must not count. Not under Slurm,
     # where each job has a GPU of its own and other jobs' runs share the node
-    if [[ -z ${SLURM_JOB_ID:-} ]] && pgrep -f 'python[^ ]* [^ ]*(run_behavior\.py|geniesim_benchmark/app/app\.py)' > /dev/null; then
+    if [[ -z ${SLURM_JOB_ID:-} ]] && pgrep -f 'python[^ ]* [^ ]*run_behavior\.py' > /dev/null; then
       echo "another Isaac Sim process is running; stopping" >&2; exit 1
     fi
     root="$out/seed_$(printf '%04d' "$seed")/rep_$rep"
