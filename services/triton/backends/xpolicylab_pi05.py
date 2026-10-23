@@ -40,6 +40,9 @@ class TritonPythonModel:
         # LD_LIBRARY_PATH without the image's dist-packages: the venv's torch would load the image's libtorch (Python 3.12)
         lib = ":".join(d for d in os.environ.get("LD_LIBRARY_PATH", "").split(":") if d and "dist-packages" not in d)
         env = {**os.environ, "LD_LIBRARY_PATH": lib, "CUDA_VISIBLE_DEVICES": str(args.get("model_instance_device_id", "0")), "HOME": "/tmp",
+               # Triton runs as the service account's uid, which the image's passwd lacks: torch asks getpass for a
+               # user name at import, which reads these before it looks the uid up (and fails)
+               "USER": "triton", "LOGNAME": "triton",
                "PYTHONPATH": here, "XLA_PYTHON_CLIENT_PREALLOCATE": "false",   # share the GPU: allocate as it goes
                # jaxlib does not know the GB300's compute capability 10.3 (train_pi05.sbatch): Triton GEMMs off
                "XLA_FLAGS": "--xla_gpu_enable_triton_gemm=false"}
