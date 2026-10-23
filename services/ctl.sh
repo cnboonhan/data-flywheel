@@ -10,6 +10,7 @@
 #   services/ctl.sh dynamo render|up|down|<compose args>   the LLMs on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md)
 #   services/ctl.sh specs     make the Gitea spec repos dynamo and triton (what is served), their webhooks and tokens
 #   services/ctl.sh deployer add <name>   a Gitea-only account that may push those two repos (no Keycloak)
+#   services/ctl.sh user add <name> [...] | user list   a person in every service; every account and what it reaches
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
 # over ssh; the repo and the state dir are on /tier1, so paths are the same.
@@ -31,7 +32,7 @@ SERVICE_ADDR=$(getent hosts "$SERVICE_NODE" | awk '{print $1; exit}')   # sync-d
 LLM_GATEWAY_ADDR=$(getent hosts "${DYNAMO_HEAD:-}" | awk '{print $1; exit}' || true); export LLM_GATEWAY_ADDR   # dynamo/
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-12: the usage block at the top of this file
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'   # lines 2-13: the usage block at the top of this file
   exit 1
 fi
 
@@ -535,6 +536,75 @@ apply_s3_policies_save() {
   echo "s3: policies saved in services/$dir/"
 }
 
+# Every account and what it reaches, one row per username: Keycloak (enabled, groups users/admins, which every web UI
+# checks, MLflow included), Gitea (local-only accounts such as `deployer add`'s, Gitea admins, access to the admin's
+# repos, own repos) and S3 (the gateway's role and what the bucket policies give it, apply_s3_policies).
+user_list() {
+  local kc=("${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh) api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD"
+  local g=("${compose[@]}" exec -T gitea curl -fs -u "$auth") tmp gid name page repo
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
+  "${kc[@]}" config credentials --server http://localhost:8080/auth --realm master --user "$ADMIN_USER" --password "$ADMIN_PASSWORD" >/dev/null 2>&1
+  "${kc[@]}" get users -r flywheel -q max=10000 --fields username,enabled > "$tmp/kc.json"
+  "${kc[@]}" get groups -r flywheel --fields id,name > "$tmp/kc-groups.json"
+  for gid in $(python3 -c 'import json,sys; print(" ".join(g["id"]+":"+g["name"] for g in json.load(open(sys.argv[1]))))' "$tmp/kc-groups.json"); do
+    "${kc[@]}" get "groups/${gid%%:*}/members" -r flywheel -q max=10000 --fields username > "$tmp/kc-members-${gid#*:}.json" 2>/dev/null
+  done
+  : > "$tmp/gitea.jsonl"
+  for page in $(seq 1 100); do   # 50 a page (Gitea's default MAX_RESPONSE_ITEMS)
+    "${g[@]}" "$api/admin/users?limit=50&page=$page" > "$tmp/page.json" || break
+    python3 -c 'import json,sys; [print(json.dumps(u)) for u in json.load(open(sys.argv[1]))]' "$tmp/page.json" >> "$tmp/gitea.jsonl"
+    [[ $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$tmp/page.json") -lt 50 ]] && break
+  done
+  for repo in $("${g[@]}" "$api/users/$ADMIN_USER/repos?limit=50" | python3 -c 'import json,sys; print(" ".join(r["name"] for r in json.load(sys.stdin)))'); do
+    "${g[@]}" "$api/repos/$ADMIN_USER/$repo/collaborators?limit=50" > "$tmp/collab-$repo.json"
+    for name in $(python3 -c 'import json,sys; print(" ".join(u["login"] for u in json.load(open(sys.argv[1]))))' "$tmp/collab-$repo.json"); do
+      echo "$repo $name $("${g[@]}" "$api/repos/$ADMIN_USER/$repo/collaborators/$name/permission" | python3 -c 'import json,sys; print(json.load(sys.stdin)["permission"])')"
+    done >> "$tmp/collab.txt"
+  done
+  touch "$tmp/collab.txt"
+  "${compose[@]}" exec -T versitygw versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 list-users \
+    | awk 'NR > 2 {print $1, $2}' > "$tmp/s3.txt"
+  ADMIN="$ADMIN_USER" SHARED="$S3_SHARED_BUCKETS" SCOPED="$S3_SCOPED_USERS" python3 - "$tmp" <<'PY'
+import glob, json, os, sys
+t = sys.argv[1]
+kc = {u["username"]: u.get("enabled", True) for u in json.load(open(f"{t}/kc.json"))}
+groups = {}
+for f in glob.glob(f"{t}/kc-members-*.json"):
+    g = f.rsplit("kc-members-", 1)[1][:-5]
+    for u in json.load(open(f)):
+        groups.setdefault(u["username"], []).append(g)
+gitea = {u["login"]: u for u in map(json.loads, open(f"{t}/gitea.jsonl"))}
+repos = {}
+for line in open(f"{t}/collab.txt"):
+    repo, name, perm = line.split()
+    repos.setdefault(name, []).append(f"{repo}:{perm}")
+s3 = dict(line.split() for line in open(f"{t}/s3.txt") if len(line.split()) == 2)
+scoped = dict(e.split("=", 1) for e in os.environ["SCOPED"].split())
+admin = os.environ["ADMIN"]
+rows = []
+for name in sorted(set(kc) | set(gitea) | set(s3) | {admin}):
+    k = (",".join(sorted(groups.get(name, []))) or "no group") + ("" if kc.get(name, True) else ", disabled") if name in kc else "-"
+    if name in gitea:
+        u = gitea[name]
+        kind = "admin" if u.get("is_admin") else ("local" if u.get("source_id", 0) == 0 and name not in kc else "keycloak")
+        own = u.get("repos_count", "")
+        access = "all repos" if u.get("is_admin") else (" ".join(sorted(repos.get(name, []))) or "no admin repos")
+        gi = f"{kind}; {access}" + (f"; owns {own}" if own else "")
+    else:
+        gi = "-"
+    if name == admin:
+        si = "root: every bucket"
+    elif name in s3:
+        si = (f"{s3[name]}: rw {scoped[name]}/" if name in scoped else f"{s3[name]}: rw {', '.join(os.environ['SHARED'].split())}")
+    else:
+        si = "-"
+    rows.append((name, k, gi, si))
+w = [max(len(r[i]) for r in rows + [("user", "keycloak (web UIs, mlflow)", "gitea", "s3")]) for i in range(4)]
+for r in [("user", "keycloak (web UIs, mlflow)", "gitea", "s3")] + rows:
+    print("  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())
+PY
+}
+
 user_add() {
   # Random password: 18 bytes in base64 (24 chars) minus /+=, cut to 20 chars; length untuned.
   local name=${1:?name} email=${2:-} pw=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
@@ -596,7 +666,8 @@ user_add() {
 if [[ $1 == user ]]; then
   case ${2:-} in
     add) user_add "${@:3}" ;;
-    *) echo "usage: ctl.sh user add <name> [<email> or - [password]]" >&2; exit 2 ;;
+    list) user_list ;;
+    *) echo "usage: ctl.sh user add <name> [<email> or - [password]] | user list" >&2; exit 2 ;;
   esac
   exit
 fi
