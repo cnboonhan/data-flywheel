@@ -1,12 +1,12 @@
 # dynamo
 
-The stack's large language model on NVIDIA Dynamo, behind the [LLM gateway](../llm-gateway/README.md) at `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (OpenAI API), on two nodes: the trays `DYNAMO_HEAD` + `DYNAMO_WORKER`. What is served is set by the spec `models.yaml` in the Gitea repo `dynamo`: each model with a `version` is served, that version of its MLflow registered model; pushing the spec applies it. The weights must be in the MLflow registry first (an admin registers them). `TRITON_NODE` is Triton's: image models and robot policies are on [Triton](../triton/README.md).
+The stack's large language model on NVIDIA Dynamo, behind the [LLM gateway](../llm-gateway/README.md) at `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (OpenAI API), on two nodes: the trays `DYNAMO_HEAD` + `DYNAMO_WORKER`. What is served is set by the spec `compose.yaml` in the Gitea repo `dynamo`, a Docker Compose file with one service per model (only `image`, `command`, `environment`, `deploy.replicas` and the extension `x-flywheel`; [the seed](compose.yaml) explains each): every service is served at the MLflow registered model and version its `x-flywheel` names; pushing the spec applies it. The weights must be in the MLflow registry first (an admin registers them). `TRITON_NODE` is Triton's: image models and robot policies are on [Triton](../triton/README.md).
 
 ```mermaid
 flowchart LR
   C["clients<br/>(OpenAI API)"] -->|llm.host| Caddy --> G["gateway (DYNAMO_HEAD)<br/>critical flag"]
   G --> T["Kimi K3, 8 GPUs<br/>rank 0 head + rank 1 worker<br/>InfiniBand between trays"]
-  M["Gitea repo dynamo<br/>models.yaml"] -.->|push → webhook → sync-dynamo| T
+  M["Gitea repo dynamo<br/>compose.yaml"] -.->|push → webhook → sync-dynamo| T
   R["MLflow registry<br/>(weights)"] -.-> T
 ```
 
@@ -38,23 +38,25 @@ A model that isn't served answers `503` with what is; one that is starting (minu
 
 ## Serve, swap and stop models
 
-1. Edit `models.yaml` in the Gitea repo `dynamo` (`https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/dynamo`, in the web editor or a clone) and push to `main`: set a model's `version` to serve that MLflow model version, remove it to stop serving the model, and change its `args` for its engine flags. Moving the version from one tray model to another swaps them.
+1. Edit `compose.yaml` in the Gitea repo `dynamo` (`https://$SERVICE_HOST:$CADDY_PORT/gitea/admin/dynamo`, in the web editor or a clone) and push to `main`: `x-flywheel.version` picks the MLflow model version, `deploy: {replicas: 0}` stops a model (it stays listed), `command` holds its engine flags and `environment` its environment. Stopping one tray model and serving another swaps them.
    ```yaml
-   models:
-     - name: kimi-k3
-       registered: Kimi-K3
-       version: 1          # serve v1 of the registered model Kimi-K3; delete this line to stop it
+   services:
+     kimi-k3:
+       image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1
+       command: [--max-model-len, "262144", ...]   # the engine's flags
+       deploy: {replicas: 0}                        # stop it; remove the line to serve it again
+       x-flywheel: {registered: Kimi-K3, version: 1, ports: {...}}
    ```
-2. The push runs the Gitea workflow `sync-dynamo` in the admin's `pipelines` repo, through the repo's webhook (`gitea_ci/sync-dynamo.yml`; an admin can dispatch it by hand to retry, [how](../gitea/README.md)). It checks the spec, stops what lost its version and starts what gained one; other models keep running. It ends when every served model answers: expect several minutes for a tray model (about twice that the first time, compiling kernels). Follow it in the run's log.
+2. The push runs the Gitea workflow `sync-dynamo` in the admin's `pipelines` repo, through the repo's webhook (`gitea_ci/sync-dynamo.yml`; an admin can dispatch it by hand to retry, [how](../gitea/README.md)). It checks the spec, stops what was stopped or removed and starts what was added or changed; other models keep running. It ends when every served model answers: expect several minutes for a tray model (about twice that the first time, compiling kernels). Follow it in the run's log.
 3. Or run the same from a shell: `services/ctl.sh dynamo up` (it pulls the spec into `$STATE_DIR/specs/dynamo` first).
 4. Check a model: `services/ctl.sh dynamo <node> logs -f engine-<model>` (`dynamo logs` for `DYNAMO_HEAD`), the gateway's `GET /health`, Grafana **Flywheel → Model usage**.
 
-A sync refuses two tray models at once (each takes all 8 GPUs); it then serves nothing new until the spec gives only one a version. A sync whose model fails to start fails: read the engine's log, fix, then dispatch it again. An engine that dies later stays down until the next sync.
+A sync refuses two tray models at once (each takes all 8 GPUs); it then serves nothing new until all tray models but one have `replicas: 0`. A sync whose model fails to start fails: read the engine's log, fix, then dispatch it again. An engine that dies later stays down until the next sync.
 
 ## Add a model
 
 1. Register its weights (`download-models-hf`).
-2. Add it to the spec (`models.yaml` in the repo `dynamo`): name, registered model, version, image (from `nvcr.io/nvidia/ai-dynamo/`), placement (`trays`; a single-node `{node, gpus, share}` needs a `gpus` budget for that node, and a node that isn't Triton's), ports no other model uses, flags. Check the shares on its GPUs fit `gpus`.
+2. Add a service to the spec (`compose.yaml` in the repo `dynamo`), named as clients will call it: `image` (from `nvcr.io/nvidia/ai-dynamo/`), `command` (its flags), and in `x-flywheel` the registered model, version, ports no other model uses and placement (`trays`; a single-node `{node, gpus, share}` needs a budget for that node in the top-level `x-flywheel.gpus`, and a node that isn't Triton's). Check the shares on its GPUs fit the budget.
 3. Push; the sync starts it (above).
 
 ## Before the first start
@@ -64,7 +66,7 @@ A sync refuses two tray models at once (each takes all 8 GPUs); it then serves n
 ## Notes
 
 - **Who may deploy:** the admins, and the accounts `services/ctl.sh user add <name> --deployer` makes (Gitea only, no Keycloak, a random password printed once): they may push the repos `dynamo` and `triton` and nothing else, so they choose which registered versions are served and with which flags, but registering weights in MLflow stays an admin's job. The repos run no workflows themselves; their webhooks start the admin's syncs (`services/ctl.sh up` makes repos, webhooks and tokens).
-- **`sync-dynamo`** logs in to the service node over ssh as the service account and runs `ctl.sh dynamo up`: it pulls the repo `dynamo`, `render.py` checks its `models.yaml` (images from `nvcr.io/nvidia/ai-dynamo/`, known keys only, no `LD_*` or `PYTHON*` env: whoever can push the spec chooses what runs on the GPU nodes), looks up each version's weights in MLflow, and writes the nodes' compose files, then each node's services are brought up (unchanged ones keep running). Its key (`$STATE_DIR/dynamo/sync_key`, Gitea secret `DYNAMO_SSH_KEY`, made by `ctl.sh up`) is in `~/.ssh/authorized_keys` with [`tools/bin/dynamo-up`](../../tools/bin/README.md) forced, so it can do nothing else. Only one `up` runs at a time.
+- **`sync-dynamo`** logs in to the service node over ssh as the service account and runs `ctl.sh dynamo up`: it pulls the repo `dynamo`, `render.py` checks its `compose.yaml` (images from `nvcr.io/nvidia/ai-dynamo/`, only the fields above, no mounts, devices or privileges, no `LD_*` or `PYTHON*` env: whoever can push the spec chooses what runs on the GPU nodes), looks up each version's weights in MLflow, and writes the nodes' compose files, then each node's services are brought up (unchanged ones keep running). Its key (`$STATE_DIR/dynamo/sync_key`, Gitea secret `DYNAMO_SSH_KEY`, made by `ctl.sh up`) is in `~/.ssh/authorized_keys` with [`tools/bin/dynamo-up`](../../tools/bin/README.md) forced, so it can do nothing else. Only one `up` runs at a time.
 - **Linger:** `dynamo up` turns on systemd linger for the service account on every node it uses. Without it logind deletes the engines' `/dev/shm` files whenever the account's last ssh session to a node ends, and the engines die at start (`FileNotFoundError` in `SemLock._rebuild` or `ShmRingBuffer`).
 - **Between GPUs:** the NVLink fabric memory (NCCL's MNNVL, NVLS, FlashInfer's MNNVL all-reduce, torch symmetric memory across trays) hangs on rack 02 (rack 01 trays pass), and NCCL's MNNVL hung within one tray too; plain P2P within a tray is used, and can break on its own: check a tray with [`nvlink_test/`](nvlink_test/README.md) before serving on it. So engines turn those off (`common_env`) and talk between trays over InfiniBand (`/dev/infiniband`, ~210 GiB/s all-reduce bus bandwidth vs ~3 over TCP). FlashInfer's `CUDA_ERROR_NOT_PERMITTED` warning is expected.
 - **Host memory:** engines run under `numactl --membind` on the nodes' CPU NUMA nodes (`host_numa_nodes`), so their host buffers and the file cache of the weights they read stay out of the GPUs' memory.

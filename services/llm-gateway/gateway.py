@@ -1,5 +1,5 @@
 """The LLM gateway: one OpenAI-compatible endpoint for Dynamo's served model, with access tokens and a critical-traffic
-flag. Which model is served is decided by the spec, not by requests: models.yaml in the Gitea repo dynamo
+flag. Which model is served is decided by the spec, not by requests: compose.yaml in the Gitea repo dynamo
 (services/dynamo/README.md); a push of it swaps the model (sync-dynamo restarts the engines).
 
     POST /v1/chat/completions, /v1/completions, /v1/responses, ...   forwarded to the frontend of the body's `model`
@@ -14,7 +14,7 @@ Each node that serves models runs a gateway; the one on DYNAMO_HEAD (Caddy's llm
 models to their gateway, which classifies and counts the request.
 
 Config: GATEWAY_CONFIG (JSON: models {name: {frontend, system} served here, or {gateway} on another node's gateway},
-known [names in models.yaml]), GATEWAY_LISTEN host:port.
+known [names in the spec]), GATEWAY_LISTEN host:port.
 """
 import json
 import os
@@ -63,7 +63,7 @@ async def forward(request):
     if name not in MODELS:
         if name in CFG.get("known", []):
             raise web.HTTPServiceUnavailable(text=f"{name} is not served now (served: {served}); the served model is "
-                                                  "chosen in the Gitea repo dynamo's models.yaml")
+                                                  "chosen in the Gitea repo dynamo's compose.yaml")
         raise web.HTTPNotFound(text=f"unknown model {name!r} (served: {served})")
     if "gateway" in MODELS[name]:   # another node's: its gateway classifies and counts it
         return await proxy(request, MODELS[name]["gateway"],
@@ -96,7 +96,7 @@ async def proxy(request, base, headers, body):
 
 async def describe(name):
     """A model's entry in /v1/models: ready, its context window (from its frontend, or another node's gateway) and the
-    info models.yaml gives (licence, about, images, reasoning, tools)."""
+    info the spec gives (licence, about, images, reasoning, tools)."""
     entry = {"id": name, "object": "model", "owned_by": "flywheel", "ready": False, "context_window": None,
              **MODELS[name].get("info", {})}
     try:

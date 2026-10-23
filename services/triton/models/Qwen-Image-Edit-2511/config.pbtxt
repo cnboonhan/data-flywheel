@@ -1,0 +1,15 @@
+# Qwen-Image-Edit-2511 on the Python backend (1/model.py): Triton's model configuration format. The weights are the MLflow
+# registered model and version below, which sync.py reads in place from /mlflow (it adds the parameter `weights`).
+# One instance on every GPU Triton sees; `gpus: [ N ]` in instance_group pins it to one.
+backend: "python"
+max_batch_size: 0
+input { name: "images" data_type: TYPE_STRING dims: [ -1 ] }
+input { name: "prompt" data_type: TYPE_STRING dims: [ 1 ] }
+input { name: "negative_prompt" data_type: TYPE_STRING dims: [ 1 ] optional: true }
+input { name: "steps" data_type: TYPE_INT32 dims: [ 1 ] optional: true }
+input { name: "seed" data_type: TYPE_INT32 dims: [ 1 ] optional: true }
+input { name: "true_cfg_scale" data_type: TYPE_FP32 dims: [ 1 ] optional: true }
+output { name: "image" data_type: TYPE_STRING dims: [ 1 ] }
+instance_group [ { count: 1, kind: KIND_GPU } ]
+parameters { key: "mlflow_model" value { string_value: "Qwen-Image-Edit-2511" } }
+parameters { key: "mlflow_version" value { string_value: "1" } }

@@ -58,8 +58,8 @@ keep_off_gpu_memory() {
   docker update --cpuset-mems "$(IFS=,; echo "${mems[*]}")" $("${compose[@]}" ps -q) >/dev/null
 }
 
-# Dynamo (dynamo/README.md): serves what the spec, models.yaml in the Gitea repo dynamo, gives a version, where it
-# places them (the trays, or a node's GPUs). render: pull that repo's clone ($STATE_DIR/specs/dynamo, bootstrap_specs)
+# Dynamo (dynamo/README.md): serves what the spec, compose.yaml in the Gitea repo dynamo, lists, where it places
+# them (the trays, or a node's GPUs). render: pull that repo's clone ($STATE_DIR/specs/dynamo, bootstrap_specs)
 # and write each node's compose file from its spec (dynamo/render.py).
 # up: render, remove the engines no longer served (they hold GPUs), take down nodes left with nothing, bring every
 # node's services up (unchanged ones keep running) and wait for each served model. The Gitea workflow sync-dynamo runs
@@ -76,7 +76,7 @@ dynamo() {
       mkdir -p "$out/cache"
       git -C "$STATE_DIR/specs/dynamo" pull -q --ff-only || { echo "dynamo: can't update $STATE_DIR/specs/dynamo (the spec's repo)" >&2; return 1; }
       (set -a; . "$STATE_DIR/flywheel.env"
-       uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out" "$STATE_DIR/specs/dynamo/models.yaml") || return 1
+       uv run -q --with pyyaml==6.0.2 python3 "$here/dynamo/render.py" "$out" "$STATE_DIR/specs/dynamo/compose.yaml") || return 1
       for m in $(q '" ".join(d["served"])'); do mkdir -p "$out/cache/$m"; done
       for node in $(q '" ".join(d["nodes"])'); do mkdir -p "$out/etcd-$node"; done ;;   # else dockerd makes them, root-owned
     up)
@@ -250,10 +250,11 @@ bootstrap_gitea() {
 }
 
 # The deployment specs, each in a repo of its own so that deployers can edit them without the pipelines repo's
-# workflows and secrets: dynamo (models.yaml) and triton (models.yaml, backends/). Actions are off in both, so nothing
+# workflows and secrets: dynamo (compose.yaml, a restricted Docker Compose file) and triton (a Triton model repository
+# whose configs name their weights in MLflow). Actions are off in both, so nothing
 # pushed there runs with secrets; a push runs the pipelines repo's sync-dynamo / sync-triton through a webhook, with an
 # admin token the deployers can't read (webhooks are visible to repo admins only). Seeded once from this checkout
-# (dynamo/models.yaml, triton/models.yaml, triton/backends/); edited there afterwards. sync-triton reads the triton repo
+# (dynamo/compose.yaml, triton/models/); edited there afterwards. sync-triton reads the triton repo
 # with the read-only token SPEC_READ_TOKEN; ctl.sh dynamo reads the dynamo repo from its clone in $STATE_DIR/specs/.
 bootstrap_specs() {
   local api="http://localhost:3000/gitea/api/v1" auth="$ADMIN_USER:$ADMIN_PASSWORD" g=("${compose[@]}" exec -T gitea curl -fs)
@@ -267,8 +268,9 @@ bootstrap_specs() {
     fi
     "${g[@]}" -u "$auth" -X PATCH -H 'Content-Type: application/json' -d '{"has_actions":false}' "$api/repos/$ADMIN_USER/$repo" >/dev/null
   done
-  for f in dynamo/models.yaml triton/models.yaml triton/backends/*.py; do
-    repo=${f%%/*} path=${f#*/}
+  # each file: <repo>/<its path there>, from dynamo/compose.yaml and the model repository triton/models/
+  for f in dynamo/compose.yaml $(cd triton/models && find . -type f -not -path '*/__pycache__/*' | sed 's#^\./#triton/models/#'); do
+    repo=${f%%/*} path=${f#*/}; path=${path#models/}
     "${g[@]}" -u "$auth" "$api/repos/$ADMIN_USER/$repo/contents/$path" >/dev/null 2>&1 && continue
     "${g[@]}" -u "$auth" -H 'Content-Type: application/json' -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $path\"}" \
       "$api/repos/$ADMIN_USER/$repo/contents/$path" >/dev/null

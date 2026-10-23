@@ -1,0 +1,60 @@
+# What Dynamo serves (services/dynamo/README.md), as a Docker Compose file (the Compose Specification), one service per
+# model, on the two trays DYNAMO_HEAD + DYNAMO_WORKER only (TRITON_NODE is Triton's): a vLLM engine over both trays' 8
+# GPUs (rank 0 on the head, rank 1 headless on the worker), one at a time. This file in data-flywheel is the seed: the
+# live copy is compose.yaml in the Gitea repo dynamo, and a push of it runs sync-dynamo (the old engines stop and the
+# new model cold-starts, minutes). The weights must be registered in MLflow first (download-models-hf, by an admin).
+#
+# dynamo/render.py reads it and writes the compose files the nodes run, adding what a spec may not set (the weights'
+# path, GPUs and InfiniBand, mounts, user, health checks, the frontend, etcd and the gateway). Per service it accepts
+# only:
+#   image         Dynamo's vLLM runtime for that model, from nvcr.io/nvidia/ai-dynamo/ only (its frontend uses it too)
+#   command       the engine's flags (vLLM's and Dynamo's), after x-flywheel's common_args
+#   environment   the engine's environment, over x-flywheel's common_env (no LD_* or PYTHON*)
+#   deploy        replicas only: 0 stops the model (it stays listed), 1 or absent serves it
+#   x-flywheel    what Compose has no field for: registered (the MLflow registered model) and version (served at that
+#                 version), ports (frontend, worker system API, vLLM rendezvous; all on the head's localhost except the
+#                 rendezvous, which the worker tray reaches), frontend_args, placement (trays, the default, or
+#                 {node, gpus, share}), and licence and about (shown with the model's context window and inputs on the
+#                 landing page, through the gateway's /v1/models)
+# The service's name is the model's name (the OpenAI `model` clients send). Flags follow Dynamo's and vLLM's recipes
+# for these models (services/dynamo/README.md); none is tuned here yet.
+
+x-flywheel:
+  # The trays' CPU-memory NUMA nodes (`numactl -H`: the nodes with CPUs; each GPU's memory is a node too). Engines are
+  # bound to them, so their host buffers and the file cache of the weights they read can't fill a GPU's memory.
+  host_numa_nodes: "0,1"
+  common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp,
+                --scheduling-policy, priority, --enable-prefix-caching, --disable-custom-all-reduce]
+  common_env:
+    NCCL_SOCKET_IFNAME: bond0          # the trays' 10.80.81.x network (`ip -4 addr`); untuned
+    GLOO_SOCKET_IFNAME: bond0
+    # NVLink-fabric memory (MNNVL) and NVLS hang NCCL on these racks, even within one tray (README: notes); the trays
+    # talk over InfiniBand instead, GPUs within a tray over plain P2P
+    NCCL_MNNVL_ENABLE: "0"
+    NCCL_NVLS_ENABLE: "0"
+    VLLM_ALLREDUCE_USE_SYMM_MEM: "0"
+    VLLM_USE_NCCL_SYMM_MEM: "0"        # Dynamo's GB300 recipe: symm-mem breaks CUDA-graph capture
+
+services:
+  kimi-k3:
+    image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-kimi-k3-dev.1   # carries the K3 patch set and Dynamo's K3 parsers
+    # TP8 with expert parallelism: with the experts split by TP, K3's MoE tail fusion switches on at TP8 and shares
+    # memory over all 8 GPUs (torch symmetric memory), which across trays needs the NVLink fabric that hangs here
+    # (README: notes); with EP the experts exchange tokens over InfiniBand instead (~50 tok/s for one request).
+    # max-model-len 262144: a quarter of K3's 1M; at 0.85 of each GPU that leaves ~1.08M tokens of KV cache (4 requests
+    # at full length). max-num-seqs 64: untuned. bf16 KV cache: with fp8, K3's attention asserts on an fp8 prefill query.
+    command: [--max-model-len, "262144", --gpu-memory-utilization, "0.85", --max-num-seqs, "64", --enable-multimodal,
+              --limit-mm-per-prompt, '{"image": 4}', --enable-expert-parallel,
+              --load-format, fastsafetensors, --attention-backend, FLASHINFER_MLA,
+              --scheduler-cls, vllm.v1.core.sched.async_scheduler.AsyncScheduler,
+              --dyn-tool-call-parser, kimi_k3, --reasoning-parser, kimi_k3, --dyn-reasoning-parser, kimi_k3]
+    environment: {}   # the image's other symmetric-memory kernel (VLLM_KIMI_K3_GEMM_RS) is off by default
+    x-flywheel:
+      registered: Kimi-K3
+      version: 1
+      ports: {frontend: 8191, system: 9311, rendezvous: 29511}
+      # Dynamo's chat processor: vLLM's (in Dynamo 1.6's vLLM 0.31 image) builds K3's config without prefix caching
+      # and refuses it (`--mamba-block-size can only be set with --enable-prefix-caching`)
+      frontend_args: [--dyn-chat-processor, dynamo]
+      licence: "Kimi K3 licence (modified MIT)"
+      about: "Moonshot's largest MoE: long context, agents, images"

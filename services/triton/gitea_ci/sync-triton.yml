@@ -1,6 +1,6 @@
-# Serve models on Triton (services/triton/sync.py) as the Gitea repo triton's models.yaml says, with its Python backends
-# (backends/): every listed registered model version is packaged into s3://triton/models/ and loaded (again when its
-# options or backend changed); a model no longer listed is unloaded. The outcome goes to s3://triton/sync/ (status.json,
+# Serve the Gitea repo triton on Triton (services/triton/sync.py): a Triton model repository whose configs name their
+# weights as MLflow registered versions; every model is copied into s3://triton/models/ with its weights' path and
+# loaded (again when its files or version changed); a model no longer in the repo is unloaded. The outcome goes to s3://triton/sync/ (status.json,
 # log/) and each model's Triton config. A push to the triton repo dispatches it (its webhook, ctl.sh bootstrap_specs),
 # or run it by hand.
 name: sync-triton
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Registered models to repackage and reload even if unchanged (space-separated)"
+        description: "Models to reload even if unchanged (space-separated)"
         default: ""
       dry_run:
         description: "Only report what would change (true/false)"
@@ -40,8 +40,8 @@ jobs:
       GIT_PYTHON_REFRESH: quiet
       PYTHONDONTWRITEBYTECODE: "1"   # the job runs as root; don't leave root-owned __pycache__ in the checkout
     steps:
-      - name: spec and backends
-        # the triton repo's main (models.yaml, backends/), read with a read-only token, into ./triton
+      - name: the model repository
+        # the triton repo's main (the model repository), read with a read-only token, into ./triton
         env:
           URL: ${{ github.api_url }}/repos/${{ github.repository_owner }}/triton/archive/main.tar.gz
           TOKEN: ${{ secrets.SPEC_READ_TOKEN }}
@@ -57,7 +57,7 @@ jobs:
           PY
       - shell: bash
         run: |
-          export TRITON_SPEC=$PWD/triton/models.yaml TRITON_BACKENDS=$PWD/triton/backends
+          export TRITON_REPO=$PWD/triton
           args=()
           [[ "${{ inputs.dry_run }}" == true ]] && args+=(--dry-run)
           [[ -n "${{ inputs.force }}" ]] && args+=(--force ${{ inputs.force }})
