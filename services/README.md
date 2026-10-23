@@ -73,6 +73,14 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
    services/ctl.sh user add <name> [<email> or - [password]]
    ```
    Without an email, Keycloak asks the user for it at first login.
+2. Give someone only the right to change what is served (no Keycloak account): a Gitea account that may push the spec repos `dynamo` and `triton`, password printed once ([dynamo/](dynamo/README.md), [triton/](triton/README.md)).
+   ```bash
+   services/ctl.sh deployer add <name>
+   ```
+3. List every account and what it reaches: Keycloak groups (every web UI, MLflow included), Gitea (local-only or Keycloak, admin, access to the admin's repos) and S3 (what the bucket policies give it).
+   ```bash
+   services/ctl.sh user list
+   ```
 
 ## State
 
