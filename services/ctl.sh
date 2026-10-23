@@ -4,7 +4,7 @@
 #   services/ctl.sh up        start (or update) the stack
 #   services/ctl.sh down      stop it
 #   services/ctl.sh setup     (re)build the Slurm-side environments (Gitea workflow setup-envs)
-#   services/ctl.sh s3-policies  re-apply the S3 bucket policies (after editing versitygw/upload-only.txt)
+#   services/ctl.sh s3-policies  re-apply the S3 bucket policies (after editing S3_SCOPED_USERS below)
 #   services/ctl.sh ps|logs|pull|config|<any compose args>
 #   services/ctl.sh triton <compose args>   Triton's own project on TRITON_NODE (ps, logs, build, ...)
 #   services/ctl.sh dynamo render|up|down|<compose args>   the LLMs on DYNAMO_HEAD + DYNAMO_WORKER (dynamo/README.md)
@@ -376,22 +376,23 @@ bootstrap_grafana() {
 }
 
 # S3 access: every gateway user (role `user`, from `user add`) reads and writes the shared buckets below, except the
-# upload-only users in versitygw/upload-only.txt, who may only upload into their prefix. Everything else (mlflow,
-# triton) has no policy, so only the root key (ADMIN_USER) reaches it. Rewritten on every `up`, `user add` and
-# `s3-policies`.
+# scoped users in S3_SCOPED_USERS, who read and write (list, get, put, delete) only under their one prefix, and nothing
+# else. Everything else (mlflow, triton) has no policy, so only the root key (ADMIN_USER) reaches it. Rewritten on every
+# `up`, `user add` and `s3-policies`.
 S3_SHARED_BUCKETS="raw processed"
+S3_SCOPED_USERS="mistral_galaxea_1=raw/internal_datasets/h2rc/mistral"   # <user>=<bucket>/<prefix>, space-separated
 apply_s3_policies() {
   local users
   users=$("${compose[@]}" exec -T versitygw versitygw admin -a "$ADMIN_USER" -s "$ADMIN_PASSWORD" -er http://localhost:7070 list-users \
           | awk 'NR > 2 && $2 == "user" {print $1}' | paste -sd,)   # NR > 2: skip the table's two header lines
-  "${compose[@]}" exec -T -e USERS="$users" -e BUCKETS="$S3_SHARED_BUCKETS" -e UPLOAD_ONLY="$(grep -v '^\s*#' versitygw/upload-only.txt 2>/dev/null)" \
+  "${compose[@]}" exec -T -e USERS="$users" -e BUCKETS="$S3_SHARED_BUCKETS" -e SCOPED="$S3_SCOPED_USERS" \
     -e AWS_ACCESS_KEY_ID="$ADMIN_USER" -e AWS_SECRET_ACCESS_KEY="$ADMIN_PASSWORD" -e AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}" mlflow python -c '
 import boto3, json, os, sys
 s3 = boto3.client("s3", endpoint_url="http://versitygw:7070")
-upload = [l.split() for l in os.environ["UPLOAD_ONLY"].splitlines() if l.strip()]   # [user, bucket/prefix]
-restricted = {u for u, _ in upload}
+scoped = [e.split("=", 1) for e in os.environ["SCOPED"].split()]   # [user, bucket/prefix]
+restricted = {u for u, _ in scoped}
 users = [u for u in os.environ["USERS"].split(",") if u and u not in restricted]
-buckets = set(os.environ["BUCKETS"].split()) | {t.split("/", 1)[0] for _, t in upload}
+buckets = set(os.environ["BUCKETS"].split()) | {t.split("/", 1)[0] for _, t in scoped}
 for b in sorted(buckets):
     st = []
     if users and b in os.environ["BUCKETS"].split():
@@ -399,13 +400,14 @@ for b in sorted(buckets):
                    "Action": ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetObject", "s3:PutObject", "s3:DeleteObject",
                               "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
                    "Resource": [f"arn:aws:s3:::{b}", f"arn:aws:s3:::{b}/*"]})
-    for u, t in upload:
+    for u, t in scoped:
         tb, prefix = (t.split("/", 1) + [""])[:2]
         if tb != b:
             continue
         prefix = prefix.strip("/")
         st.append({"Effect": "Allow", "Principal": {"AWS": [u]},
-                   "Action": ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+                   "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload",
+                              "s3:ListMultipartUploadParts"],
                    "Resource": [f"arn:aws:s3:::{b}/{prefix}/*"]})
         st.append({"Effect": "Allow", "Principal": {"AWS": [u]}, "Action": ["s3:ListBucket"], "Resource": [f"arn:aws:s3:::{b}"],
                    "Condition": {"StringLike": {"s3:prefix": [prefix, f"{prefix}/*"]}}})
@@ -413,7 +415,7 @@ for b in sorted(buckets):
         s3.put_bucket_policy(Bucket=b, Policy=json.dumps({"Version": "2012-10-17", "Statement": st}))
     else:
         s3.delete_bucket_policy(Bucket=b)
-print("s3:", len(users), "users read/write", os.environ["BUCKETS"] + ";", len(upload), "upload-only", file=sys.stderr)
+print("s3:", len(users), "users read/write", os.environ["BUCKETS"] + ";", len(scoped), "scoped to a prefix", file=sys.stderr)
 for b in sorted(x["Name"] for x in s3.list_buckets()["Buckets"]):   # what the gateway now holds, for the local copy
     try:
         print(b, json.dumps(json.loads(s3.get_bucket_policy(Bucket=b)["Policy"])))

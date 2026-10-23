@@ -4,7 +4,7 @@ Versity S3 gateway over plain directories: `$STATE_DIR/versitygw/buckets/<bucket
 
 | Bucket | Holds | S3 access |
 |---|---|---|
-| `raw` | collected data as it arrived | every gateway user, read/write (upload-only users: their prefix) |
+| `raw` | collected data as it arrived | every gateway user, read/write (a scoped user: only its prefix) |
 | `processed` | converted datasets, splats, recordings | every gateway user, read/write |
 | `mlflow` | MLflow artifacts and checkpoints | root key only |
 | `triton` | Triton's model repository and sync records | root key only |
@@ -67,7 +67,7 @@ mv <dir> $STATE_DIR/versitygw/buckets/raw/internal_datasets/<dataset>
 
 - `sync` copies the folder's contents into the target prefix, not into a subfolder named after the source, so name the target folder in the destination. Add `--delete` only when you want target files that are gone from the source removed.
 - Copy between two S3 prefixes from a local copy or on the node (`cp -r` in the bucket directories), not with `aws s3 cp/sync s3://... s3://...`: the gateway answers server-side copies (CopyObject) with `InternalError`.
-- **Access control.** Don't edit the `raw` and `processed` bucket policies by hand: `ctl.sh up` and `user add` regenerate them from the gateway's user list (`apply_s3_policies`; change `S3_SHARED_BUCKETS` in `ctl.sh` to share other buckets). `mlflow` and `triton` have no policy, so only the root key (`ADMIN_USER` / `ADMIN_PASSWORD`) reaches them. To make a user upload-only into one prefix (upload and list there, nothing else), add a line `<user> <bucket>/<prefix>` to [`upload-only.txt`](upload-only.txt) and run `services/ctl.sh s3-policies`. Each apply saves a copy of every bucket's policy in `policies/<bucket>.json` (gitignored).
+- **Access control.** Don't edit the `raw` and `processed` bucket policies by hand: `ctl.sh up` and `user add` regenerate them from the gateway's user list (`apply_s3_policies`; change `S3_SHARED_BUCKETS` in `ctl.sh` to share other buckets). `mlflow` and `triton` have no policy, so only the root key (`ADMIN_USER` / `ADMIN_PASSWORD`) reaches them. To limit a user to one prefix (read, write, delete and list there, nothing else, no other bucket), add `<user>=<bucket>/<prefix>` to `S3_SCOPED_USERS` in `ctl.sh` and run `services/ctl.sh s3-policies`; `mistral_galaxea_1` is limited to `raw/internal_datasets/h2rc/mistral/`. Each apply saves a copy of every bucket's policy in `policies/<bucket>.json` (gitignored).
 - Policies only govern S3 requests. Anyone on the node, and FiftyOne, Rerun and the Slurm jobs, read the bucket directories on disk directly.
 - Leave `$STATE_DIR/versitygw/meta/` (object metadata in sidecar files, since `/tier1` has no xattrs) and `iam/` (the users) alone. The gateway deletes a folder once its last object is gone, so if a service needs a folder to exist, keep a placeholder object in it.
 - `ctl.sh up` creates the buckets `raw`, `processed`, `mlflow` and `triton/models`.
