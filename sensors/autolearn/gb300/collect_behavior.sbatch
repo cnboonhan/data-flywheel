@@ -15,7 +15,7 @@ set -euo pipefail
 A=/home/htx_boonhan/workspaces/data-flywheel/sensors/autolearn   # sbatch runs a copy of this file
 set -a; . "$A/gb300/behavior.env"; set +a
 policy=$(realpath "$1"); first=$2; last=$3; shift 3
-suite=turning_on_radio; args=("$@")
+suite=picking_up_cup; args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [[ ${args[i]} == --suite ]] && suite=${args[i+1]}; done
 # Slurm here sets CUDA_VISIBLE_DEVICES to the allocated GPU but leaves every GPU visible; Isaac's renderer counts all
 # of them, so keep them all visible and point OmniGibson's render and physics GPU at the allocated one

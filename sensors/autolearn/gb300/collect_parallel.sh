@@ -10,7 +10,7 @@
 set -euo pipefail
 A="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 policy=$(realpath "$1"); first=$2; last=$3; jobs=$4; target=$5; shift 5
-suite=turning_on_radio; args=("$@")
+suite=picking_up_cup; args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [[ ${args[i]} == --suite ]] && suite=${args[i+1]}; done
 n=$((last - first + 1)); per=$(( (n + jobs - 1) / jobs ))
 ranges=$(( (n + per - 1) / per )); each=$(( (target + ranges - 1) / ranges ))   # the ranges, not the jobs asked for, share the target

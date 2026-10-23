@@ -4,7 +4,7 @@
 # tick, three videos); behavior_to_lerobot.py turns the successful ones into a dataset. Success is outcome.json's
 # task_success (the pickup witness) or, where a task's witness writes only protocol_success (the door tasks), that.
 #
-#   adapter/collect_behavior.sh <policy.py> <first seed> <last seed> [--target N] [--repeats R] [--suite turning_on_radio] [--out DIR] [--grace TICKS]
+#   adapter/collect_behavior.sh <policy.py> <first seed> <last seed> [--target N] [--repeats R] [--suite picking_up_cup] [--out DIR] [--grace TICKS]
 #
 # Seeds are task-instance ids (0-299 exist); a campaign's evaluation seeds (1-25) are left alone by choosing 36 up.
 # Each seed is run up to R times (default 1); the loop stops at N successes (default 100). Outcomes append to
@@ -12,7 +12,7 @@
 set -euo pipefail
 A="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 policy="$(realpath "$1")"; first=$2; last=$3; shift 3
-target=100; repeats=1; suite=turning_on_radio; out=""; grace=300
+target=100; repeats=1; suite=picking_up_cup; out=""; grace=300
 while [[ $# -gt 0 ]]; do
   case $1 in
     --target) target=$2; shift 2 ;;
