@@ -30,13 +30,14 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv:ro
+      - ./browse:/etc/caddy/browse:ro   # Browse Data's listing template (services/browse), outside /srv so it is never served
       - ../assets/bufo/all-the-bufo:/srv/bufo:ro   # submodule assets/bufo: the landing page's hover images
       - ../assets:/srv/assets:ro   # the architecture diagram and the role pages (devroles/, included on hover, not served: Caddyfile) on the landing page; a folder, since git replaces files and a file mount would go stale
       - ${STATE_DIR}/caddy/data:/data
       - ${STATE_DIR}/caddy/config:/config
       - ${STATE_DIR}/versitygw/buckets/raw:/raw:ro   # raw files Rerun imports by URL, served on rerun.<host>/raw/
       - ${STATE_DIR}/versitygw/buckets/processed:/processed:ro   # the same for the processed bucket, on rerun.<host>/processed/
-      - ${STATE_DIR}/versitygw/buckets/raw:/buckets/raw:ro   # both buckets under one folder for rerun.<host>/browse/
+      - ${STATE_DIR}/versitygw/buckets/raw:/buckets/raw:ro   # both buckets under one folder for Browse Data (<host>/data/)
       - ${STATE_DIR}/versitygw/buckets/processed:/buckets/processed:ro
     depends_on: [mlflow, grafana, loki, versitygw, gitea, keycloak, oauth2-proxy]
 

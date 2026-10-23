@@ -5,7 +5,8 @@ web viewer: it opens one file by URL, not a LeRobot folder.
     GET /lerobot-processed/<path>/<root>/episode_<N>.rrd              one in the processed bucket
     (Caddy strips its path token first)
     GET /dataset/<raw|processed>/<path to root>                       a dataset's page: summary and episodes, each
-    linked into the viewer (behind SSO; Caddy passes the path token in X-Rerun-Token for the links)
+    linked into the viewer (Browse Data's /data/dataset/..., behind SSO: services/browse). Caddy passes the path token
+    (X-Rerun-Token), the viewer's host (X-Viewer-Host) and Browse Data's path (X-Browse-Base) for the links.
 
 Reads /raw/<group>/<dataset>/<root> or /processed/<path>/<root> (read-only): the episode's row in meta/episodes (meta/episodes.jsonl in v2.x),
 its frames in data/, and each camera's span of the chunk video (v2.x: the episode's own video), as its own H.264 file.
@@ -159,7 +160,7 @@ def episodes(root, v2):
     return sorted(out)
 
 
-def dataset_page(bucket, rel, host, token, page):
+def dataset_page(bucket, rel, host, token, page, browse_base):
     """A dataset's summary and episode table, each episode linked into the viewer."""
     kind = KIND[bucket]
     root = dataset_root(kind, rel)
@@ -194,7 +195,7 @@ def dataset_page(bucket, rel, host, token, page):
                ("Frames", f"{frames} ({frames / fps / 3600:.2f} h)" if fps else str(frames)),
                ("Tasks", str(len({x for _, t, _ in eps for x in t}))),
                ("Cameras", ", ".join(c.removeprefix("observation.images.") for c in cams) or "none")]
-    browse = f"{viewer}/browse/{bucket}/{rel}/"
+    browse = f"{browse_base}/{bucket}/{rel}/"   # Browse Data, on the host that serves this page
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1"><title>{e(rel.split('/')[-1])}</title><style>
 :root {{ --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#e5e5ea; --link:#0a64d6; --pill:#eef4ff; }}
@@ -248,8 +249,8 @@ class Handler(BaseHTTPRequestHandler):
         if d:
             try:
                 page = int(urllib.parse.parse_qs(url.query).get("page", ["0"])[0])
-                body = dataset_page(d["bucket"], d["root"], self.headers.get("Host", ""),
-                                    self.headers.get("X-Rerun-Token", ""), page)
+                body = dataset_page(d["bucket"], d["root"], self.headers.get("X-Viewer-Host") or self.headers.get("Host", ""),
+                                    self.headers.get("X-Rerun-Token", ""), page, self.headers.get("X-Browse-Base", "/data"))
             except (FileNotFoundError, ValueError) as e:
                 return self.reply(404, f"not a LeRobot dataset: {e}".encode(), "text/plain")
             except Exception as e:   # noqa: BLE001  report, keep serving

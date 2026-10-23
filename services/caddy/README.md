@@ -7,11 +7,12 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 | `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/`; hovering the title shows `site/flywheel.gif`, the line below it `assets/architecture.svg` (repo `assets/` at `/assets/`), and hovering a developer role pops up its [devroles](../../assets/devroles/) page, which the template includes and renders (`/assets/devroles/` itself answers 404: the pages are only shown through the landing page) |
 | `/status/models`, `/status/load` | the landing page's model tables: the LLM gateway's `/v1/models` (context window, inputs, licence per model, from `dynamo/models.yaml`), and one fixed Prometheus query (requests, tokens, generation speed and requests in progress per model on Dynamo and Triton, GPU use of their nodes); nothing else of Prometheus or the gateway is reachable without login |
 | `/gitea`, `/mlflow`, `/grafana`, `/loki` | the service |
+| `/data` | Browse Data, behind SSO ([browse/](../browse/README.md)) |
 | `/auth`, `/oauth2` | Keycloak, oauth2-proxy |
 | `/pushgateway/metrics/job/...` (PUT, POST, DELETE) | Pushgateway, bearer token `PUSHGATEWAY_TOKEN` ([slurm-exporter/](../slurm-exporter/README.md)) |
 | `/ca.crt` | root certificate of the local CA |
 | `https://fiftyone.$SERVICE_HOST` | FiftyOne |
-| `https://rerun.$SERVICE_HOST` | Rerun ([rerun/](../rerun/README.md)); `/browse/` lists the `raw` and `processed` buckets with open-in-Rerun links (`site/rerun-browse.html`) |
+| `https://rerun.$SERVICE_HOST` | Rerun ([rerun/](../rerun/README.md)) |
 | `https://s3.$SERVICE_HOST` (`/ui/` behind SSO) | Versity S3 gateway |
 | `https://triton.$SERVICE_HOST` | Triton: inference and metadata open, no token; admin calls (load, unload, settings) refused, as `sync-triton` manages the models ([triton/](../triton/README.md)) |
 

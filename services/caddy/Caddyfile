@@ -140,9 +140,31 @@ https://{$SERVICE_HOST}:8443 {
 	handle /assets/devroles/* {
 		respond 404
 	}
-	# rerun.<host>/browse/'s listing template: it reads RERUN_RAW_TOKEN, so only that site (behind SSO) renders it
-	handle /rerun-browse.html {
-		respond 404
+	# Browse Data (services/browse): the raw and processed buckets as folders, behind SSO. Its links open bags and LeRobot
+	# episodes in the viewer on rerun.<host> with the path token, and each LeRobot dataset's page (rerun-lerobot, from its
+	# meta/) is at /data/dataset/<bucket>/<path>/; only Caddy adds the token (header_up replaces any the client sent).
+	redir /data /data/
+	handle /data/dataset/* {
+		route {
+			import sso
+			uri strip_prefix /data
+			reverse_proxy rerun-lerobot:8080 {
+				header_up X-Rerun-Token {env.RERUN_RAW_TOKEN}
+				header_up X-Viewer-Host rerun.{$SERVICE_HOST}:{$CADDY_PORT}
+				header_up X-Browse-Base /data
+			}
+		}
+	}
+	handle /data/* {
+		route {
+			import sso
+			uri strip_prefix /data
+			root * /buckets
+			file_server {
+				browse /etc/caddy/browse/browse.html
+				hide .*
+			}
+		}
 	}
 	# Local apps (site/local/, gitignored; README: local apps): *.routes are handle blocks on this host. The folder is
 	# only read by Caddy and the landing page's template, never served: its files name hosts and ports outside the stack.
@@ -234,29 +256,12 @@ https://rerun.{$SERVICE_HOST}:8443 {
 			file_server
 		}
 	}
-	# A LeRobot dataset's page (rerun-lerobot: summary and episodes from meta/, each linked into the viewer). Behind SSO;
-	# the links carry the path token, which only Caddy adds (header_up replaces any the client sent).
-	handle /dataset/* {
-		route {
-			import sso
-			reverse_proxy rerun-lerobot:8080 {
-				header_up X-Rerun-Token {env.RERUN_RAW_TOKEN}
-			}
-		}
+	# Browse Data and the dataset pages moved to the main host (services/browse): old links redirect there
+	handle_path /browse* {
+		redir https://{$SERVICE_HOST}:{$CADDY_PORT}/data{uri} 302
 	}
-	# The raw and processed buckets as folders, bags and LeRobot v2.x episodes linked into the viewer
-	# (site/rerun-browse.html)
-	redir /browse /browse/
-	handle /browse/* {
-		route {
-			import sso
-			uri strip_prefix /browse
-			root * /buckets
-			file_server {
-				browse /srv/rerun-browse.html
-				hide .*
-			}
-		}
+	handle_path /dataset/* {
+		redir https://{$SERVICE_HOST}:{$CADDY_PORT}/data/dataset{uri} 302
 	}
 	handle {
 		import sso

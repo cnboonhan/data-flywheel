@@ -12,6 +12,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Versity S3 gateway: buckets | [versitygw/](versitygw/README.md) | `https://s3.$SERVICE_HOST:$CADDY_PORT/` |
 | FiftyOne (+ Mongo): dataset browser | [fiftyone/](fiftyone/README.md) | `https://fiftyone.$SERVICE_HOST:$CADDY_PORT/` |
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
+| Browse Data: the buckets as folders, LeRobot dataset pages | [browse/](browse/README.md) | `/data` |
 | Triton: image models and robot policies from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (no token) |
 | Dynamo + LLM gateway: the language models (GLM-5.3, the Qwen LLMs and VLMs), chosen by MLflow alias | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |

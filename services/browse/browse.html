@@ -1,10 +1,10 @@
 <!doctype html>
-{{- /* Caddy file_server browse template for rerun.<host>/browse/ (Caddyfile): the raw and processed buckets as folders,
-       each bag and LeRobot v2.x episode linked into the Rerun viewer with the path token (RERUN_RAW_TOKEN), so nobody
-       types it. */ -}}
+{{- /* Caddy file_server browse template for Browse Data, $SERVICE_HOST/data/ (services/browse, Caddyfile): the raw and
+       processed buckets as folders, each bag and LeRobot v2.x episode linked into the Rerun viewer on rerun.<host> with
+       the path token (RERUN_RAW_TOKEN), so nobody types it, and each LeRobot dataset folder linked to its page. */ -}}
 {{- $token := env "RERUN_RAW_TOKEN" -}}
-{{- $base := printf "https://%s" .Req.Host -}}
-{{- $dir := trimPrefix "/browse" .Path | trimSuffix "/" -}}
+{{- $base := printf "https://rerun.%s:%s" (env "SERVICE_HOST") (env "CADDY_PORT") -}}   {{- /* the viewer and its file routes */ -}}
+{{- $dir := trimPrefix "/data" .Path | trimSuffix "/" -}}
 {{- /* <bucket>/<path>: bags are served at /<bucket>/<token>/<path>, episodes built at /lerobot/<token>/<root> (raw)
        or /lerobot-processed/<token>/<root> (processed) */ -}}
 {{- $bucket := regexFind "^/[^/]+" $dir | trimPrefix "/" -}}
@@ -20,7 +20,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rerun browse {{ $dir }}/</title>
+<title>Browse Data {{ $dir }}/</title>
 <style>
   :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #e5e5ea; --link: #0a64d6; --pill: #eef4ff; }
   @media (prefers-color-scheme: dark) { :root { --bg: #161618; --fg: #f2f2f7; --muted: #98989f; --line: #2c2c2e; --link: #6aa8ff; --pill: #1f2a3d; } }
@@ -44,7 +44,7 @@
 <h1>{{ if $dir }}{{ trimPrefix "/" $dir }}/{{ else }}Buckets{{ end }}</h1>
 <p class="hint">Bags (.mcap, .bag) and LeRobot v2.x episodes (under <code>data/chunk-*</code>) open in Rerun. A LeRobot dataset folder (v2.x or v3) links its dataset page: summary, episodes and tasks, each episode openable.</p>
 {{- if and $bucket $dataset }}
-<p><a class="open" href="/dataset/{{ $bucket }}{{ $dataset }}/">dataset page</a></p>
+<p><a class="open" href="/data/dataset/{{ $bucket }}{{ $dataset }}/">dataset page</a></p>
 {{- end }}
 <table>
 {{- if .CanGoUp }}
