@@ -225,7 +225,7 @@ bootstrap_gitea() {
   # Repo variables the workflows read (secrets hold credentials; these are plain URLs).
   for v in "RERUN_BASE=https://rerun.$SERVICE_HOST:$CADDY_PORT" "SERVICE_URL=https://$SERVICE_HOST:$CADDY_PORT" \
            "STATE_DIR=$STATE_DIR" "FLYWHEEL_ROOT=$(cd "$here/.." && pwd)" "USER_LOCAL=$HOME/.local" "RUN_UID=$SERVICE_UID" "RUN_GID=$SERVICE_GID" \
-           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_PYTHON_GPU=0" "TRITON_VLLM_GPU=1" \
+           "TRITON_URL=http://$TRITON_ADDR:8100" "TRITON_VLLM_GPU=2" \
            "DYNAMO_SSH_HOST=$SERVICE_ADDR" "DYNAMO_SSH_USER=$USER" "DYNAMO_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)" \
            "SERVICE_SSH_HOST=$SERVICE_ADDR" "SERVICE_SSH_USER=$USER" "SERVICE_KNOWN_HOSTS=$(ssh-keyscan "$SERVICE_ADDR" 2>/dev/null)"; do   # setup-envs' ssh   # Triton's one GPU is 0 inside it
     body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")

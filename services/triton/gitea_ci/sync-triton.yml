@@ -36,7 +36,6 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
       TRITON_URL: ${{ vars.TRITON_URL }}               # TRITON_NODE's Triton (ctl.sh up)
       TRITON_KEY: ${{ secrets.TRITON_KEY }}
-      TRITON_PYTHON_GPU: ${{ vars.TRITON_PYTHON_GPU }}
       TRITON_VLLM_GPU: ${{ vars.TRITON_VLLM_GPU }}
       FLYWHEEL_ROOT: ${{ vars.FLYWHEEL_ROOT }}
       GIT_PYTHON_REFRESH: quiet

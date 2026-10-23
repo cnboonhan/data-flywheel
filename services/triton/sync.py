@@ -138,7 +138,7 @@ def package_mlp(mv, run, ckpt, dst, params, opts):
 # of GPU 1, the Python-backend models share GPU 2 (~71 GB together); which index is a choice, not tuned.
 VLLM_ENGINE = {"max_model_len": 32768, "gpu_memory_utilization": 0.9, "limit_mm_per_prompt": {"image": 4},
                "max_num_seqs": 32}
-VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "1")   # TRITON_LLM_GPU, Triton's second GPU (index 1 inside)
+VLLM_GPU = os.environ.get("TRITON_VLLM_GPU", "2")   # one whole GPU (TRITON_GPU_C, index 2 inside) unless the spec's `gpu`
 
 
 def package_vllm(mv, run, ckpt, dst, params, opts):
@@ -160,14 +160,14 @@ def package_vllm(mv, run, ckpt, dst, params, opts):
 
 
 # Hugging Face models served by a Python backend (services/triton/backends/<name>.py) instead of vLLM, keyed by repo;
-# the spec's `backend` names one for any other repo. Each loads its weights in place from /mlflow, on one GPU (the
-# spec's `gpu`, default TRITON_PYTHON_GPU), takes encoded images as BYTES and has no batch dimension.
+# the spec's `backend` names one for any other repo. Each loads its weights in place from /mlflow, as one instance on
+# every GPU Triton sees (Triton spreads requests over them), or on one GPU when the spec's `gpu` pins it, takes encoded
+# images as BYTES and has no batch dimension.
 # (name, type, dims, optional); SMOKE: what smoke_test sends ("image": a 64x64 grey PNG). It checks that a model runs,
 # not how well, so few steps (2, 4) and faces (1000) keep it quick; fov_x and the box are any valid ones.
 HF_BACKENDS = {"Qwen/Qwen-Image-Edit-2511": "qwen_image_edit", "Ruicheng/moge-3-vitg": "moge",
                "Ruicheng/moge-2-vitl-normal": "moge", "iSEE-Laboratory/llmdet_large": "llmdet",
                "facebook/sam2.1-hiera-large": "sam2", "VAST-AI/TripoSG": "triposg"}
-PYTHON_GPU = os.environ.get("TRITON_PYTHON_GPU", "0")
 PYTHON_IO = {
     "qwen_image_edit": ([("images", "STRING", [-1]), ("prompt", "STRING", [1]), ("negative_prompt", "STRING", [1], True),
                          ("steps", "INT32", [1], True), ("seed", "INT32", [1], True), ("true_cfg_scale", "FP32", [1], True)],
@@ -204,9 +204,9 @@ def package_python(backend, mv, run, ckpt, dst, params, opts):
     t = lambda kind, n, ty, d, opt=False: (f'{kind} {{ name: "{n}" data_type: TYPE_{ty} dims: [ {", ".join(map(str, d))} ]'
                                            + (" optional: true" if opt else "") + " }")
     ins, outs = PYTHON_IO[backend]
-    gpu = int(opts.get("gpu", PYTHON_GPU))
     lines = ['backend: "python"', "max_batch_size: 0"] + [t("input", *i) for i in ins] + [t("output", *o) for o in outs]
-    lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU, gpus: [ {gpu} ] }} ]")
+    pin = f", gpus: [ {int(opts['gpu'])} ]" if "gpu" in opts else ""   # without gpus: one instance on every GPU
+    lines.append(f"instance_group [ {{ count: 1, kind: KIND_GPU{pin} }} ]")
     in_place = lambda m: "/mlflow/" + m.source.removeprefix("mlflow-artifacts:/").lstrip("/")
     params = {**params, "weights": in_place(mv), "hf_repo": run.data.params.get("hf_repo", "")}
     return "\n".join(lines + param_lines(params)) + "\n"

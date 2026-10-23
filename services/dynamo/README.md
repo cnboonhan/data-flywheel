@@ -1,6 +1,6 @@
 # dynamo
 
-The stack's large language model on NVIDIA Dynamo, behind the [LLM gateway](../llm-gateway/README.md) at `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (OpenAI API), on two nodes: the trays `DYNAMO_HEAD` + `DYNAMO_WORKER`. What is served is set by the spec `dynamo/models.yaml` in the Gitea `pipelines` repo: each model with a `version` is served, that version of its MLflow registered model; pushing the spec applies it. The weights must be in the MLflow registry first (an admin registers them). `TRITON_NODE` is Triton's: image models, robot policies and `qwen3.5-122b-a10b` are on [Triton](../triton/README.md).
+The stack's large language model on NVIDIA Dynamo, behind the [LLM gateway](../llm-gateway/README.md) at `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (OpenAI API), on two nodes: the trays `DYNAMO_HEAD` + `DYNAMO_WORKER`. What is served is set by the spec `dynamo/models.yaml` in the Gitea `pipelines` repo: each model with a `version` is served, that version of its MLflow registered model; pushing the spec applies it. The weights must be in the MLflow registry first (an admin registers them). `TRITON_NODE` is Triton's: image models and robot policies are on [Triton](../triton/README.md).
 
 ```mermaid
 flowchart LR

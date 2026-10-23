@@ -5,13 +5,8 @@
 #
 # Per model: name (the MLflow registered model, also the Triton model's name) and version (its MLflow model version),
 # and optionally backend (a Python backend in services/triton/backends/, or vllm; default by the Hugging Face repo, see
-# HF_BACKENDS in sync.py), gpu (the GPU index inside Triton; default TRITON_PYTHON_GPU or TRITON_VLLM_GPU) and vllm (vLLM
-# engine arguments over sync.py's VLLM_ENGINE).
+# HF_BACKENDS in sync.py), gpu (pin it to one GPU, the index inside Triton, 0-2; by default an image model runs on all
+# three, a vLLM model on TRITON_VLLM_GPU) and vllm (vLLM engine arguments over sync.py's VLLM_ENGINE).
 
 models:
   - {name: Qwen-Image-Edit-2511, version: 1}
-  - {name: Qwen3.5-122B-A10B, version: 1}
-  - {name: TripoSG, version: 1}
-  - {name: llmdet_large, version: 1}
-  - {name: moge-3-vitg, version: 1}
-  - {name: sam2.1-hiera-large, version: 1}
