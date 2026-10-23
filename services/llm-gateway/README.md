@@ -37,3 +37,4 @@ services/ctl.sh dynamo on <node> logs -f gateway             # another node's
 - It keeps Dynamo off the network: Dynamo has no authentication, so its frontends, etcd and the engines' system APIs (stop, sleep, load weights) listen on 127.0.0.1 only, and the gateway is what listens on the node's address.
 - Each request is counted by the gateway on the model's node; `DYNAMO_HEAD`'s only forwards other nodes' requests, so the counts in Prometheus aren't doubled.
 - Env: `GATEWAY_CONFIG`, `GATEWAY_LISTEN` (host:port), `LLM_CRITICAL_TOKEN`.
+- To check whether the gateways or Caddy slow a model down, run [`profile/`](profile/README.md): it times the same request through every hop. They add a few ms to the first token and nothing to the decode speed.
