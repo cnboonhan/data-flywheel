@@ -4,7 +4,7 @@ TLS termination, routing and the local CA, all on `$CADDY_PORT`. Apps that work 
 
 | URL | Upstream |
 |---|---|
-| `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/`; hovering the title shows `site/flywheel.gif`, the line below it `assets/architecture.svg` (repo `assets/` at `/assets/`), and hovering a developer role pops up its [devroles](../../devroles/) page, which the template includes and renders (`/devroles/` itself answers 404: the folder also holds private notes) |
+| `/` | landing page (`site/index.html`); hovering a link pops up a random bufo from the `assets/bufo` submodule, served at `/bufo/`; hovering the title shows `site/flywheel.gif`, the line below it `assets/architecture.svg` (repo `assets/` at `/assets/`), and hovering a developer role pops up its [devroles](../../assets/devroles/) page, which the template includes and renders (`/assets/devroles/` itself answers 404: the folder also holds private notes) |
 | `/status/models`, `/status/load` | the landing page's model tables: the LLM gateway's `/v1/models` (context window, inputs, licence per model, from `dynamo/models.yaml`), and one fixed Prometheus query (requests, tokens, generation speed and requests in progress per model on Dynamo and Triton, GPU use of their nodes); nothing else of Prometheus or the gateway is reachable without login |
 | `/gitea`, `/mlflow`, `/grafana`, `/loki` | the service |
 | `/auth`, `/oauth2` | Keycloak, oauth2-proxy |

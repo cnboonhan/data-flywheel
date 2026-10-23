@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Write architecture.svg from architecture.html (the source), so the README can show the diagram inline, and one
-variant per role (architecture-<role>.svg) with the boxes that role covers (data-roles) in green, for devroles/.
+variant per role (architecture-<role>.svg) with the boxes that role covers (data-roles) in green, for assets/devroles/.
 
     python3 tools/architecture_svg.py [assets/architecture.html [assets/]]
 

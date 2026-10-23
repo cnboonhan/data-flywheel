@@ -17,8 +17,7 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
 | [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
 | [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
 | [`services/`](services/README.md) | Infra stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
-| [`devroles/`](devroles/) | The developer roles that push the flywheel along: [Scientist](devroles/scientist.md), [Engineering](devroles/engineering.md) |
-| `assets/` | The architecture diagram and its role variants, quickstart screenshots, and the `bufo` image submodule |
+| `assets/` | The architecture diagram and its role variants, the developer roles that push the flywheel along ([Scientist](assets/devroles/scientist.md), [Engineering](assets/devroles/engineering.md)), the quickstart's landing-page screenshot, and the `bufo` image submodule |
 | `tools/` | Repo maintenance scripts |
 
 ## Setup

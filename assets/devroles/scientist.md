@@ -6,7 +6,7 @@ Turns raw data into better models: processes it into training sets, experiments 
 
 ## Responsibilities
 
-![The flywheel with the scientist's areas: data processing, architecture experiments, model training and pre-evals, optimizations, distillation and the deploy into the model registry in blue; off-robot data collection, public datasets and their upload, and virtual evals, shared with Engineering, in green](../assets/architecture-scientist.svg)
+![The flywheel with the scientist's areas: data processing, architecture experiments, model training and pre-evals, optimizations, distillation and the deploy into the model registry in blue; off-robot data collection, public datasets and their upload, and virtual evals, shared with Engineering, in green](/assets/architecture-scientist.svg)
 
 | Item | Description |
 |---|---|

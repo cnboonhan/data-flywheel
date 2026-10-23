@@ -6,7 +6,7 @@ Builds and runs what the flywheel stands on: the tooling that collects data and 
 
 ## Responsibilities
 
-![The flywheel with engineering's areas: tooling, infra, the sync specs, backup and restore, the deploy to inference compute, physical evals, the reset automation, the eval logs, the feedback loop and the upload and sync from off-robot collection and teleoperation in red; off-robot data collection, public datasets and their upload, and virtual evals, shared with the Scientist, in green](../assets/architecture-engineering.svg)
+![The flywheel with engineering's areas: tooling, infra, the sync specs, backup and restore, the deploy to inference compute, physical evals, the reset automation, the eval logs, the feedback loop and the upload and sync from off-robot collection and teleoperation in red; off-robot data collection, public datasets and their upload, and virtual evals, shared with the Scientist, in green](/assets/architecture-engineering.svg)
 
 | Item | Description |
 |---|---|

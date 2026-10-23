@@ -29,7 +29,7 @@
   #flyer { width: min(518px, 90vw); }   /* the GIF's own width */
   #arch { width: min(1100px, 94vw); left: 3vw; }   /* the SVG is 1570 px wide; centred under a 720 px column */
   #archText, .role > span { border-bottom: 1px dotted var(--muted); }
-  /* a role's page (devroles/*.md) pops up over the word; it is a child of the word, so the pointer can move into it and scroll */
+  /* a role's page (assets/devroles/*.md) pops up over the word; it is a child of the word, so the pointer can move into it and scroll */
   #roles { position: relative; color: var(--muted); margin: -16px 0 24px; }   /* the cards align with the column, not the word */
   .role { cursor: default; }
   .role .card { position: absolute; z-index: 10; display: none; top: 100%; left: 0; width: min(900px, 92vw); max-height: 75vh; overflow: auto;
@@ -55,8 +55,8 @@
   <h1><span id="flywheel" class="hover">Data Flywheel</span><img id="flyer" class="shown" alt="The Singapore Flyer with a bufo in every capsule"></h1>
   <p><span id="archText" class="hover">Implementation of this architecture</span><img id="arch" class="shown" src="/assets/architecture.svg" alt="The data flywheel architecture: Tooling, Infra, Processed, Train, Evaluate"></p>
   <div id="roles">Developer roles:
-    <span class="role"><span>Scientist</span><div class="card">{{include "/devroles/scientist.md" | markdown}}</div></span>,
-    <span class="role"><span>Engineering</span><div class="card">{{include "/devroles/engineering.md" | markdown}}</div></span>
+    <span class="role"><span>Scientist</span><div class="card">{{include "/assets/devroles/scientist.md" | markdown}}</div></span>,
+    <span class="role"><span>Engineering</span><div class="card">{{include "/assets/devroles/engineering.md" | markdown}}</div></span>
   </div>
   <ul>
     <li><a href="/gitea/">Gitea</a> <small>Pipelines repo and Actions runners for processing and mixing datasets</small></li>
