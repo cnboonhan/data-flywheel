@@ -30,6 +30,7 @@
   p.hint { color: var(--muted); margin: 0 0 16px; }
   a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  a.logout { position: absolute; top: 12px; right: 16px; font-size: 13px; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
   td.size, td.time { color: var(--muted); white-space: nowrap; text-align: right; }
@@ -40,6 +41,7 @@
 </style>
 </head>
 <body>
+<a class="logout" href="/logout" title="End the login session for every app behind it">Log out</a>
 <main>
 <h1>{{ if $dir }}{{ trimPrefix "/" $dir }}/{{ else }}Buckets{{ end }}</h1>
 {{- if and $bucket $dataset }}

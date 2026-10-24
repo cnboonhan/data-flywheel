@@ -402,6 +402,10 @@ bootstrap_keycloak() {
       | "${kc[@]}" create clients -r flywheel -f - >/dev/null && echo "keycloak: created client $c"
   done
   "${kc[@]}" update realms/flywheel -s loginTheme=flywheel >/dev/null 2>&1 || echo "warning: could not set the login theme" >&2
+  # Where Keycloak may send a browser after logout (Caddy's /logout), also on a realm imported before this was in it
+  c=$("${kc[@]}" get clients -r flywheel -q clientId=oauth2-proxy --fields id 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
+  "${kc[@]}" update "clients/$c" -r flywheel -s "attributes.\"post.logout.redirect.uris\"=https://$SERVICE_HOST:$CADDY_PORT/" >/dev/null 2>&1 \
+    || echo "warning: could not set oauth2-proxy's post-logout address" >&2
   # Group admins administers the flywheel realm in its own admin console (/auth/admin/flywheel/console/).
   "${kc[@]}" add-roles -r flywheel --gname admins --cclientid realm-management --rolename realm-admin >/dev/null 2>&1 \
     || echo "warning: could not give group admins the realm-admin role" >&2
