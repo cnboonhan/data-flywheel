@@ -15,6 +15,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Browse Data: the buckets as folders, LeRobot dataset pages | [browse/](browse/README.md) | `/data` |
 | Triton: image models and robot policies from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (no token) |
 | Dynamo + LLM gateway: the large language model (Kimi K3, on the two trays), chosen in the Gitea repo `dynamo` (`compose.yaml`) | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
+| Codex agent: an autonomous coding agent on the self-hosted LLM, working in a folder you mount (yolo mode, in a container) | [codex-agent/](codex-agent/README.md) | `services/codex-agent/run.sh <folder> [task]` |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
 ## Run
