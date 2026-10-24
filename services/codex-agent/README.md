@@ -22,6 +22,7 @@ An autonomous coding agent on the stack's self-hosted LLM: OpenAI's [Codex CLI](
 | `LLM_URL` | the stack's gateway | the OpenAI-compatible endpoint (`/v1`) |
 | `FLYWHEEL_CA` | the admin's `services/.env` | the stack's CA ([quickstart](../../quickstart.md)) |
 | `AGENT_PROMPT`, `AGENT_TASK_FILE` | `TASK.md` | the task when no arguments are given |
+| `<folder>/.env` | — | sourced per run; its variables reach the agent's environment and override the settings above |
 | `CODEX_AGENT_IMAGE` | `flywheel-codex-agent:0.162.1` | the image |
 
 ## Notes
