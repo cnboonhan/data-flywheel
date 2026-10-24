@@ -17,6 +17,7 @@
   ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
   li { background: var(--box); border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 8px; padding: 12px 16px; }
   a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  a.logout { position: absolute; top: 12px; right: 16px; font-size: 13px; font-weight: 500; }
   a:hover { text-decoration: underline; }
   code { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
   small { display: block; color: var(--muted); }
@@ -51,6 +52,7 @@
 </style>
 </head>
 <body>
+<a class="logout" id="logout" href="/logout" title="End the login session for every app behind it" hidden>Log out</a>
 <main>
   <h1><span id="flywheel" class="hover">Data Flywheel</span><img id="flyer" class="shown" alt="The Singapore Flyer with a bufo in every capsule"></h1>
   <p><span id="archText" class="hover">Implementation of this architecture</span><img id="arch" class="shown" src="/assets/architecture.svg" alt="The data flywheel architecture: Tooling, Infra, Processed, Train, Evaluate"></p>
@@ -153,6 +155,8 @@ open("edited.png", "wb").write(r.as_numpy("image")[0])</pre>
     document.getElementById("loadGpus").textContent = gpus.length ? "GPU use on their nodes: " + gpus.sort().join(" · ") : "";
   }
   load(); setInterval(load, 15000);
+  // Log out shows only to a signed-in browser: oauth2-proxy's /oauth2/auth answers 202 with its login cookie, 401 without
+  fetch("/oauth2/auth", { credentials: "same-origin" }).then(r => { if (r.ok) document.getElementById("logout").hidden = false; }).catch(() => {});
 </script>
 </body>
 </html>

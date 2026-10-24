@@ -90,6 +90,7 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": ["https://${SERVICE_HOST}:${CADDY_PORT}/oauth2/callback"],
+      "attributes": {"post.logout.redirect.uris": "https://${SERVICE_HOST}:${CADDY_PORT}/"},
       "webOrigins": ["https://${SERVICE_HOST}:${CADDY_PORT}"],
       "protocolMappers": [
         {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
