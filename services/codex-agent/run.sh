@@ -24,7 +24,13 @@ ca=${FLYWHEEL_CA:-${STATE_DIR:+$STATE_DIR/caddy/data/caddy/pki/authorities/local
 [[ -f $ca ]] || { echo "no CA: set FLYWHEEL_CA (quickstart section 1)" >&2; exit 2; }
 llm=${LLM_URL:-${SERVICE_HOST:+https://llm.$SERVICE_HOST:$CADDY_PORT/v1}}
 tty=(); [[ -t 0 && -t 1 ]] && tty=(-it)
-exec docker run --gpus all --rm "${tty[@]}" --user "$(id -u):$(id -g)" \
+gpus=()
+
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+  gpus=("--gpus" "all")
+fi
+
+exec docker run --rm "${tty[@]}" "${gpus[@]}" --user "$(id -u):$(id -g)" \
   -v "$folder:/workspace" -v "$ca:/ca/root.crt:ro" \
   -e CODEX_MODEL="${CODEX_MODEL:-}" -e LLM_URL="$llm" \
   -e AGENT_PROMPT="${AGENT_PROMPT:-}" -e AGENT_TASK_FILE="${AGENT_TASK_FILE:-TASK.md}" \
