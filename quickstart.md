@@ -111,9 +111,9 @@ export MLFLOW_TRACKING_USERNAME=$FLYWHEEL_USER MLFLOW_TRACKING_PASSWORD=$FLYWHEE
 mlflow experiments search                                        # experiments and their IDs
 mlflow runs list --experiment-id <id>                            # runs of one experiment
 uv run --with mlflow-skinny python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry
-mlflow artifacts download --artifact-uri models:/<model>/<version> --dst-path ./model      # a registered model
-mlflow artifacts download --artifact-uri models:/<model>@<alias> --dst-path ./model        # by alias
-mlflow artifacts download --artifact-uri runs:/<run id>/<path> --dst-path ./out            # a run's artifacts
+mlflow artifacts download --artifact-uri models:/<model>/<version> --dst-path ./<model>    # a registered model, into ./<model>
+mlflow artifacts download --artifact-uri models:/<model>@<alias> --dst-path ./<model>      # by alias
+mlflow artifacts download --artifact-uri runs:/<run id>/<path> --dst-path ./<run id>       # a run's artifacts, into ./<run id>
 ```
 
 Registering, aliasing and logging go through the Python client (`mlflow.MlflowClient()`; in a script, `uv run --with mlflow-skinny python script.py`), which reads the same variables; see [mlflow/](services/mlflow/README.md) and, to serve a model, [triton/](services/triton/README.md) (what Dynamo and Triton serve is set in the Gitea repos `dynamo` and `triton`, not by alias).
