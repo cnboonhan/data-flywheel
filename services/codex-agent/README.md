@@ -25,7 +25,7 @@ Set them in the environment or in `<folder>/.env`, which wins. Every variable in
 
 ## On Slurm
 
-Import the image once on C03, then run it with Pyxis:
+Import the image once on a node with Docker, then run it with Pyxis:
 
 ```bash
 enroot import -o codex-agent.sqsh dockerd://flywheel-codex-agent:0.162.1-noble   # ENROOT_*_PATH under /tmp/$USER
