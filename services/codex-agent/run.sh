@@ -34,9 +34,9 @@ bundle=$(dirname "$FLYWHEEL_CA")/codex-agent-ca-bundle.crt
 cat /etc/ssl/certs/ca-certificates.crt "$FLYWHEEL_CA" > "$bundle"
 
 # The image: Codex 0.162.1 (the newest release at least two weeks old when added) on Node 22, with the tools such work
-# usually needs. Ubuntu 24.04 as the GB300 nodes run it, so the BEHAVIOR environment built there runs inside too
-# (services/codex-agent/README.md, Slurm); libgomp and the X/GL libraries are what Isaac Sim loads from the system, and
-# the Vulkan and EGL entries name the NVIDIA driver libraries that the container runtime mounts in (as the hosts do).
+# usually needs. Ubuntu 24.04 like the cluster nodes, so environments built there run inside it too (README, On Slurm):
+# libgomp and the X/GL libraries are what Isaac Sim loads from the system, libgfortran what open3d's aarch64 wheel does,
+# and the Vulkan and EGL entries name the NVIDIA driver libraries that the container runtime mounts in.
 # HOME is world-writable as the container runs as you, and Codex won't put its helpers under /tmp.
 docker image inspect "$image" &>/dev/null || docker build -t "$image" - <<'EOF'
 FROM node:22.20.0-bookworm-slim AS node
@@ -45,9 +45,9 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates curl jq ripgrep python3 python3-venv python3-pip build-essential less procps openssl \
+      git ca-certificates curl jq ripgrep python3 python3-venv python3-pip build-essential less procps openssl ffmpeg \
       libgomp1 libglib2.0-0t64 libx11-6 libxext6 libxrender1 libxt6t64 libxrandr2 libxi6 libxinerama1 libxcursor1 \
-      libsm6 libice6 libgl1 libegl1 libglu1-mesa libopengl0 libvulkan1 libxkbcommon0 libnss3 \
+      libsm6 libice6 libgl1 libegl1 libglu1-mesa libopengl0 libvulkan1 libxkbcommon0 libnss3 libgfortran5 \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @openai/codex@0.162.1 \
  && pip install --no-cache-dir --break-system-packages uv==0.12.8 \
