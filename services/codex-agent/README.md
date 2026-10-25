@@ -1,6 +1,6 @@
 # codex-agent
 
-An autonomous coding agent on the stack's self-hosted LLM: OpenAI's [Codex CLI](https://github.com/openai/codex) (Apache-2.0) in a container, pointed at the [LLM gateway](../llm-gateway/README.md) (`kimi-k3` by default), working in a folder you mount, in yolo mode (no confirmations, no Codex sandbox: the container is the boundary and sees only that folder). Give it a task; it reads, edits, runs commands and tests in the folder until done, as ASPIRE's agents do in [autolearn](../../sensors/autolearn/README.md). Everything is in [`run.sh`](run.sh), including the image, which it builds on first use.
+An autonomous coding agent on the stack's self-hosted LLM: OpenAI's [Codex CLI](https://github.com/openai/codex) (Apache-2.0) in a container, pointed at the [LLM gateway](../llm-gateway/README.md) (`kimi-k3` by default), working in a folder you mount, in yolo mode (no confirmations, no Codex sandbox: the container is the boundary and sees only that folder). Give it a task; it reads, edits, runs commands and tests in the folder until done. Everything is in [`run.sh`](run.sh), including the image, which it builds on first use.
 
 ## Run
 
