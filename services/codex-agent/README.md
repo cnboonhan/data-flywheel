@@ -23,6 +23,20 @@ An autonomous coding agent on the stack's self-hosted LLM: OpenAI's [Codex CLI](
 
 Set them in the environment or in `<folder>/.env`, which wins. Every variable in `<folder>/.env` also reaches the agent's environment.
 
+## On Slurm (GB300 GPUs)
+
+The nodes have no Docker, but Slurm runs images through Pyxis/enroot. The image is Ubuntu 24.04 like the nodes, so environments built there (BEHAVIOR's Isaac Sim venvs) run inside it.
+
+1. Import the image as a squashfs file on a node with Docker (C03), once per image change:
+   ```bash
+   export ENROOT_RUNTIME_PATH=/tmp/$USER/enroot/run ENROOT_DATA_PATH=/tmp/$USER/enroot/data ENROOT_CACHE_PATH=/tmp/$USER/enroot/cache ENROOT_TEMP_PATH=/tmp/$USER/enroot/tmp
+   enroot import -o <dir>/codex-agent-0.162.1-noble.sqsh dockerd://flywheel-codex-agent:0.162.1-noble
+   ```
+2. Run in it with `srun --container-image=<file>.sqsh --no-container-mount-home --container-mounts=<src>:<dst>[:ro],...`. Pass `--export=USER=$USER,NVIDIA_VISIBLE_DEVICES=all,NVIDIA_DRIVER_CAPABILITIES=all`: the NVIDIA pair mounts the GPUs and driver, and a narrow export keeps your login's cache paths out.
+3. Write Codex's settings to `$CODEX_HOME/config.toml` (the `-c` values in `run.sh`) so the workers an agent starts with `codex exec` get them too.
+
+Mount only what the agent needs, read-only where it can be; it runs as you. Isaac Sim rewrites files in its venv's `isaacsim/apps/` at start, so that folder needs a writable mount. Exit status 11 or 139 after `outcome.json` is a complete Isaac run.
+
 ## Notes
 
 - **Certificates:** the agent trusts the host's CAs (`/etc/ssl/certs/ca-certificates.crt`, as `update-ca-certificates` saves them) plus `FLYWHEEL_CA`. If that file is missing, `run.sh` downloads it from `https://<gateway>/ca.crt` and prints its fingerprint (trust on first use); compare it with the admin's if in doubt.
