@@ -50,6 +50,9 @@ The stack listens on one HTTPS port on `SERVICE_NODE`, reachable through a login
      HostName <login-node>
      User <your cluster user>
      LocalForward 8443 <SERVICE_NODE>:8443
+     # a keepalive every 30 s, and give up after 3 unanswered (~90 s), so a dropped tunnel exits instead of hanging
+     ServerAliveInterval 30
+     ServerAliveCountMax 3
    ```
 2. Point the stack's names at the tunnel (once):
    ```bash
