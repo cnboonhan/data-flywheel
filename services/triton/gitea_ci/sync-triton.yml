@@ -28,9 +28,10 @@ jobs:
         - /home/htx_boonhan/workspaces/data-flywheel:/home/htx_boonhan/workspaces/data-flywheel:ro
     timeout-minutes: 60   # a sync that loads the 122B takes ~4 min (services/triton/README.md); untuned
     env:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      MLFLOW_TRACKING_USERNAME: ${{ vars.MLFLOW_USERNAME }}
-      MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TOKEN }}
+      # the registry the configs name (ctl.sh up: DEPLOY_MLFLOW_* in services/.env, else the stack's MLflow)
+      MLFLOW_TRACKING_URI: ${{ vars.DEPLOY_MLFLOW_JOB_URI }}
+      MLFLOW_TRACKING_USERNAME: ${{ vars.DEPLOY_MLFLOW_TRACKING_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DEPLOY_MLFLOW_TRACKING_PASSWORD }}
       AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
       TRITON_URL: ${{ vars.TRITON_URL }}               # TRITON_NODE's Triton (ctl.sh up)

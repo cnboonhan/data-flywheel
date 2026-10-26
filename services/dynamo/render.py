@@ -19,7 +19,9 @@ main gateway, which forwards other nodes' models to their gateway), OUT_DIR/node
 $STATE_DIR/prometheus-sd/dynamo.json. Everything runs on the host network; etcd, the frontends and the engines' system
 APIs listen on 127.0.0.1 (Dynamo has no authentication of its own), and only the gateways (with the tokens) and the
 vLLM rendezvous listen on the node's address. Env: STATE_DIR, SERVICE_UID, SERVICE_GID, DYNAMO_HEAD, DYNAMO_WORKER,
-MLFLOW_TRACKING_URI/USERNAME/PASSWORD (+ MLFLOW_TRACKING_SERVER_CERT_PATH), and what the spec names with $VAR.
+MLFLOW_TRACKING_URI/USERNAME/PASSWORD (+ MLFLOW_TRACKING_SERVER_CERT_PATH), and what the spec names with $VAR. The
+registry is DEPLOY_MLFLOW_TRACKING_URI/USERNAME/PASSWORD and its artifacts' directory DEPLOY_MLFLOW_ARTIFACTS when set
+(services/.env.example), else the stack's MLflow and the mlflow bucket.
 """
 import base64
 import hashlib
@@ -48,9 +50,17 @@ def addr(node):
     return socket.gethostbyname(node)
 
 
+def deploy_env(name):
+    """The deployments' registry setting DEPLOY_<name>, else the stack's MLflow's <name>."""
+    return os.environ.get("DEPLOY_" + name) or os.environ[name]
+
+
+ARTIFACTS = os.environ.get("DEPLOY_MLFLOW_ARTIFACTS") or f"{state}/versitygw/buckets/mlflow"   # mounted at /mlflow
+
+
 def mlflow(path, **query):
-    url = os.environ["MLFLOW_TRACKING_URI"].rstrip("/") + "/api/2.0/mlflow/" + path + "?" + urllib.parse.urlencode(query)
-    auth = base64.b64encode(f'{os.environ["MLFLOW_TRACKING_USERNAME"]}:{os.environ["MLFLOW_TRACKING_PASSWORD"]}'.encode())
+    url = deploy_env("MLFLOW_TRACKING_URI").rstrip("/") + "/api/2.0/mlflow/" + path + "?" + urllib.parse.urlencode(query)
+    auth = base64.b64encode(f'{deploy_env("MLFLOW_TRACKING_USERNAME")}:{deploy_env("MLFLOW_TRACKING_PASSWORD")}'.encode())
     ctx = ssl.create_default_context(cafile=os.environ.get("MLFLOW_TRACKING_SERVER_CERT_PATH"))
     req = urllib.request.Request(url, headers={"Authorization": "Basic " + auth.decode()})
     with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
@@ -117,7 +127,7 @@ def served_version(registered, version):
         raise SystemExit(f"{registered} v{version}: not in the MLflow registry (HTTP {e.code}): register it first")
     src = mv["source"]
     if not src.startswith("mlflow-artifacts:/"):
-        raise SystemExit(f"{registered} v{mv['version']}: source {src} is not in the mlflow bucket")
+        raise SystemExit(f"{registered} v{mv['version']}: source {src} is not in the registry's artifact store")
     return "/mlflow/" + src.removeprefix("mlflow-artifacts:/").lstrip("/")
 
 
@@ -160,7 +170,7 @@ def engine(m, path, rank=None):
             **({"healthcheck": health} if rank is None else {}),   # engines sharing a GPU wait on it (below)
             "devices": devices, "cap_add": ["IPC_LOCK", "SYS_NICE"],   # IB; numactl
             "ulimits": {"memlock": -1, "stack": 67108864},
-            "volumes": [f"{state}/versitygw/buckets/mlflow:/mlflow:ro", f"{state}/dynamo/cache/{m['name']}:/cache"]}
+            "volumes": [f"{ARTIFACTS}:/mlflow:ro", f"{state}/dynamo/cache/{m['name']}:/cache"]}
 
 
 def info(m):
@@ -182,7 +192,7 @@ def frontend(m):
             "depends_on": ["etcd"],
             # Dynamo's own chat processor reads the tokenizer and config from the engine's model path (vLLM's gets them
             # from the engine), so only its frontends see the weights' directory
-            **({"volumes": [f"{state}/versitygw/buckets/mlflow:/mlflow:ro"]}
+            **({"volumes": [f"{ARTIFACTS}:/mlflow:ro"]}
                if _flag(m.get("frontend_args", []), "--dyn-chat-processor") == "dynamo" else {})}
 
 

@@ -357,6 +357,16 @@ bootstrap_jobs() {
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/MLFLOW_USERNAME" >/dev/null 2>&1 \
       || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/MLFLOW_USERNAME" >/dev/null
   fi
+  # The registry sync-triton serves from (DEPLOY_MLFLOW_* in .env, else the stack's MLflow with the jobs' token).
+  local v
+  for v in "DEPLOY_MLFLOW_JOB_URI=${DEPLOY_MLFLOW_JOB_URI:-http://mlflow:5000}" "DEPLOY_MLFLOW_TRACKING_USERNAME=${DEPLOY_MLFLOW_TRACKING_USERNAME:-$ADMIN_USER}"; do
+    body=$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "${v#*=}")
+    "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null 2>&1 \
+      || "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X POST -H 'Content-Type: application/json' -d "$body" "$api/repos/$ADMIN_USER/pipelines/actions/variables/${v%%=*}" >/dev/null
+  done
+  "${compose[@]}" exec -T gitea curl -fs -u "$auth" -X PUT -H 'Content-Type: application/json' \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"data": sys.argv[1]}))' "${DEPLOY_MLFLOW_TRACKING_PASSWORD:-$mltok}")" \
+    "$api/repos/$ADMIN_USER/pipelines/actions/secrets/DEPLOY_MLFLOW_TRACKING_PASSWORD" >/dev/null
   (umask 077; cat > "$STATE_DIR/flywheel.env" <<EOF
 MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
 MLFLOW_TRACKING_USERNAME=$ADMIN_USER

@@ -229,7 +229,7 @@ def sync(args):
             status.append({"model": name, "version": version, "status": "failed", "error": err})
             continue
         if not mv.source.startswith("mlflow-artifacts:/"):
-            err = f"{model} v{version}: source {mv.source} is not in the mlflow bucket"
+            err = f"{model} v{version}: source {mv.source} is not in the registry's artifact store"
             status.append({"model": name, "version": version, "status": "failed", "error": err})
             continue
         fp = fingerprint(d, mv)

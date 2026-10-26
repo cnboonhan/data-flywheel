@@ -40,4 +40,4 @@ services:
       stack: 67108864
     volumes:
       - ${STATE_DIR}/versitygw/buckets/triton:/triton:ro   # the bucket, not models/: the gateway deletes empty folders
-      - ${STATE_DIR}/versitygw/buckets/mlflow:/mlflow:ro   # registered weights, read in place by vLLM models (sync.py)
+      - ${DEPLOY_MLFLOW_ARTIFACTS:-${STATE_DIR}/versitygw/buckets/mlflow}:/mlflow:ro   # the registry's weights, read in place by vLLM models (sync.py)
