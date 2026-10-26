@@ -10,6 +10,7 @@ An autonomous coding agent on the stack's self-hosted LLM: OpenAI's [Codex CLI](
    services/codex-agent/run.sh <folder>                           # the task in <folder>/TASK.md
    services/codex-agent/run.sh <folder> "fix the failing tests"   # the task as arguments
    services/codex-agent/run.sh <folder> tui                       # Codex's interactive UI on the folder
+   services/codex-agent/run.sh <folder> resume ["message"]        # continue the folder's last run after an interruption
    ```
 3. Read the result in the folder; the run's log is the command's output. Expect a small task (a script, run, its output saved) in under a minute.
 
@@ -37,4 +38,5 @@ srun --gpus=1 --container-image=codex-agent.sqsh --no-container-mount-home --con
 
 - **Certificates:** the agent trusts the host's CAs (`/etc/ssl/certs/ca-certificates.crt`, as `update-ca-certificates` saves them) plus `FLYWHEEL_CA`. If that file is missing, `run.sh` downloads it from `https://<gateway>/ca.crt` and prints its fingerprint (trust on first use); compare it with the admin's if in doubt.
 - **What it can touch:** the mounted folder (as you: what it writes is yours), the GPUs when the node has any, and the network. Nothing else of the host is mounted, but it runs any command the model decides on there, so point it at a copy or a git checkout you can reset, never at shared data.
+- **Sessions** are kept in `<folder>/.codex/`, which is what `resume` continues; delete it to forget them.
 - **Pinned:** Codex 0.162.1 (the newest release at least two weeks old when added), Node 22.20.0, uv 0.12.8; bump them in `run.sh`, change the image tag and run again.

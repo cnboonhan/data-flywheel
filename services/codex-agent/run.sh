@@ -3,9 +3,10 @@
 # stack's self-hosted LLM, working there autonomously. Builds its image on first use.
 #   services/codex-agent/run.sh <folder> [prompt...]   one run on the prompt, else $AGENT_PROMPT, else <folder>/TASK.md
 #   services/codex-agent/run.sh <folder> tui           Codex's interactive UI on the folder
+#   services/codex-agent/run.sh <folder> resume [msg]  continue the folder's last session (after an interruption)
 # <folder>/.env is sourced and passed to the agent: it overrides the defaults below for this run.
 set -euo pipefail
-folder=$(realpath "${1:?usage: run.sh <folder> [prompt...|tui]}")
+folder=$(realpath "${1:?usage: run.sh <folder> [prompt...|tui|resume [msg]]}")
 shift
 [[ -d $folder ]] || { echo "$folder is not a folder" >&2; exit 2; }
 
@@ -69,6 +70,10 @@ codex=(codex -c model_provider=selfhosted -c "model=\"$CODEX_MODEL\""
   -c tui.screen_reader_detection_done=true)
 if [[ ${1:-} == tui ]]; then
   codex+=(--dangerously-bypass-approvals-and-sandbox)
+elif [[ ${1:-} == resume ]]; then
+  shift
+  codex+=(exec resume --last --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check
+    "${*:-You were interrupted; nothing you started is still running. Check where things stand, then continue the task.}")
 else
   prompt="$*"
   [[ -n $prompt ]] || prompt=${AGENT_PROMPT:-}
@@ -80,6 +85,8 @@ fi
 
 tty=(); [[ -t 0 && -t 1 ]] && tty=(-it)
 gpus=(); nvidia-smi &>/dev/null && gpus=(--gpus all)
-exec docker run --rm "${tty[@]}" "${gpus[@]}" --user "$(id -u):$(id -g)" -v "$folder:/workspace" \
+# Sessions in <folder>/.codex, so they outlive the container and `resume` finds them.
+mkdir -p "$folder/.codex"
+exec docker run --rm "${tty[@]}" "${gpus[@]}" --user "$(id -u):$(id -g)" -v "$folder:/workspace" -e CODEX_HOME=/workspace/.codex \
   -v "$bundle:/etc/ssl/certs/ca-certificates.crt:ro" -e SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
   "${envs[@]}" "$image" "${codex[@]}"
