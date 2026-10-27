@@ -9,6 +9,8 @@
 #   agibot-world/GenieSimAssets             *  GenieSimAssets      (29 GB; Genie Sim's asset pack, a pip package: sensors/autolearn)
 #   agibot-world/AgiBotWorldChallenge-2026  *  AgiBotWorldChallenge-2026   (5.7 TB, CC BY-NC-SA 4.0)
 #   agibot-world/AgiBotWorld2026            *  AgiBotWorld2026     (13.6 TB, CC BY-NC-SA 4.0; one dispatch at a time: a second cancels the first)
+#   XDOF/ABC-130k                           *  ABC-130k            (~23 TB, Apache-2.0, gated)
+#   tencent/Hy-Embodied-0.5-VLA-Data        *  Hy-Embodied-0.5-VLA-Data   (~20.7 TB, CC BY 4.0)
 # source=bucket reads a Hugging Face Bucket (huggingface.co/buckets/<id>) instead of a dataset repo.
 # Gated repos need the repo secret HF_TOKEN (a Hugging Face token whose account accepted the terms).
 name: download-datasets-hf
@@ -69,6 +71,7 @@ jobs:
           import shutil
           import tempfile
           import time
+          from concurrent.futures import ThreadPoolExecutor, as_completed
           from fnmatch import fnmatch
 
           import boto3
@@ -85,6 +88,9 @@ jobs:
               ap.add_argument("--bucket", default="raw")
               ap.add_argument("--prefix", default="open_datasets", help="grouping folder in the bucket: open_datasets or internal_datasets")
               ap.add_argument("--limit", type=int, default=0, help="max files (0 = all)")
+              # 8 parallel copies: one at a time, ABC-130k's ~58 MB files ran at ~32 GB/h, bound by per-file overhead
+              # rather than bandwidth; each copy holds one file on disk.
+              ap.add_argument("--workers", type=int, default=8, help="files copied in parallel")
               args = ap.parse_args()
 
               os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
@@ -111,22 +117,27 @@ jobs:
                   for o in page.get("Contents", []):
                       have[o["Key"]] = o["Size"]
 
-              done = skipped = 0
+              todo = [f for f in files if have.get(f"{dest}/{f.path}") != f.size]
+              skipped = len(files) - len(todo)
               started = time.time()
-              with tempfile.TemporaryDirectory() as tmp:
-                  for f in files:
-                      key = f"{dest}/{f.path}"
-                      if have.get(key) == f.size:
-                          skipped += 1
-                          continue
+
+              def copy(f, tmp):
+                  # Each file in its own temp dir, so parallel copies don't share hf_hub_download's local_dir.
+                  work = tempfile.mkdtemp(dir=tmp)
+                  try:
                       if bucket:
-                          local = os.path.join(tmp, "file")
+                          local = os.path.join(work, "file")
                           api.download_bucket_files(args.repo, [(f, local)], raise_on_missing_files=True)
                       else:
-                          local = hf_hub_download(args.repo, f.path, repo_type=args.repo_type, revision=args.revision, local_dir=tmp)
-                      s3.upload_file(local, args.bucket, key)
-                      os.remove(local)
-                      shutil.rmtree(os.path.join(tmp, ".cache"), ignore_errors=True)
+                          local = hf_hub_download(args.repo, f.path, repo_type=args.repo_type, revision=args.revision, local_dir=work)
+                      s3.upload_file(local, args.bucket, f"{dest}/{f.path}")
+                  finally:
+                      shutil.rmtree(work, ignore_errors=True)
+
+              done = 0
+              with tempfile.TemporaryDirectory() as tmp, ThreadPoolExecutor(args.workers) as pool:
+                  for fut in as_completed([pool.submit(copy, f, tmp) for f in todo]):
+                      fut.result()
                       done += 1
                       if done % 20 == 0:
                           print(f"  {done} uploaded, {skipped} skipped, {time.time() - started:.0f} s", flush=True)
