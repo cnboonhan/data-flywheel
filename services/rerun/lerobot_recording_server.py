@@ -36,6 +36,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as pads
 import pyarrow.parquet as pq
 import rerun as rr
+import rerun.blueprint as rrb
 
 import mcap_recording
 
@@ -53,6 +54,8 @@ BAG_RRD = re.compile(r"^/bag-rrd/(?P<bucket>raw|processed)/(?P<path>.+\.mcap)\.r
 BAG_BUILDS = threading.Semaphore(2)   # bags converted at once: each runs four ffmpeg encoders and a reader; untuned
 BAG_ROOT = {"raw": RAW, "processed": PROCESSED}
 _bags, _bags_guard = {}, threading.Lock()   # cache path -> job: state, read, total, started, error
+# Bumped when build() changes what a recording holds, so cached recordings are rebuilt (2: the fixed layout).
+RECORDING_VERSION = 2
 PAGE_ROWS = 2000   # episodes per dataset page: a 2000-row table still renders and filters at once; untuned
 _locks, _locks_guard = {}, threading.Lock()
 
@@ -85,6 +88,17 @@ def cut(src, start, end, dst):
                    check=True)   # crf 23, keyframe every 2 s at 25 fps: viewer-grade, small; untuned
 
 
+def layout(cams, keys):
+    """The same arrangement for every dataset, rather than the viewer's guess from each one's entities: the cameras
+    in a grid on top, and below them the task beside one plot per state or action feature."""
+    plots = rrb.Grid(*[rrb.TimeSeriesView(origin=k, name=k) for k in keys])
+    bottom = rrb.Horizontal(rrb.TextDocumentView(origin="task", name="task"), plots, column_shares=[1, 4])
+    if not cams:
+        return rrb.Blueprint(bottom)
+    cameras = rrb.Grid(*[rrb.Spatial2DView(origin=f"cameras/{k}", name=k) for k in cams])
+    return rrb.Blueprint(rrb.Vertical(cameras, bottom, row_shares=[3, 2]))   # cameras get 60% of the height; untuned
+
+
 def build(root, ep, out, rec_id):
     info = json.load(open(f"{root}/meta/info.json"))
     v2 = str(info.get("codebase_version", "")).lstrip("v").startswith("2")
@@ -98,15 +112,16 @@ def build(root, ep, out, rec_id):
     data = data.filter(pc.equal(data["episode_index"], ep))
     t = np.asarray(data["timestamp"].to_numpy(), dtype=np.float64)
     t = t - t[0]
-    rec = rr.RecordingStream("lerobot", recording_id=rec_id)
-    rec.save(out)
-    task = row.get("tasks")
-    rec.log("task", rr.TextDocument("\n".join(task) if isinstance(task, list) else str(task)), static=True)
-    time = rr.TimeColumn("time", duration=t)
     # Galaxea's v2.x collections split them into state.* (state.left_arm, state.leader_right_ee_pose, ...)
     keys = [k for k, f in info["features"].items()
             if k.startswith(("observation.state", "action", "state."))
             and f.get("dtype") in ("float32", "float64") and k in data.column_names]
+    cams = [k for k, f in info["features"].items() if f.get("dtype") == "video"]
+    rec = rr.RecordingStream("lerobot", recording_id=rec_id)
+    rec.save(out, default_blueprint=layout(cams, keys))
+    task = row.get("tasks")
+    rec.log("task", rr.TextDocument("\n".join(task) if isinstance(task, list) else str(task)), static=True)
+    time = rr.TimeColumn("time", duration=t)
     for key in keys:
         vals = np.stack(data[key].to_numpy(zero_copy_only=False)).astype(np.float64)
         vals = vals.reshape(len(vals), -1)      # a one-value feature may be stored as a plain scalar
@@ -115,7 +130,6 @@ def build(root, ep, out, rec_id):
         names = names if isinstance(names, list) and len(names) == vals.shape[1] else [str(i) for i in range(vals.shape[1])]
         for i, n in enumerate(names):
             rec.send_columns(f"{key}/{n}", indexes=[time], columns=rr.Scalars.columns(scalars=vals[:, i]))
-    cams = [k for k, f in info["features"].items() if f.get("dtype") == "video"]
     with tempfile.TemporaryDirectory(dir=CACHE) as tmp, ThreadPoolExecutor(len(cams) or 1) as pool:
         jobs = {}
         for k in cams:
@@ -322,7 +336,7 @@ poll();
 def recording(kind, rel, ep):
     base, cache_dir = BUCKETS[kind]
     root = dataset_root(kind, rel)
-    out =os.path.join(CACHE, cache_dir, rel, f"episode_{ep}.rrd")
+    out = os.path.join(CACHE, cache_dir, rel, f"episode_{ep}.v{RECORDING_VERSION}.rrd")
     with _locks_guard:
         lock = _locks.setdefault(out, threading.Lock())
     with lock:   # one build per episode; later requests wait for it and read the cache
