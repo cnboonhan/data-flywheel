@@ -21,7 +21,7 @@ export FLYWHEEL_CA=~/.flywheel/ca.crt
 export AWS_ACCESS_KEY_ID=$FLYWHEEL_USER AWS_SECRET_ACCESS_KEY=$FLYWHEEL_S3_SECRET AWS_DEFAULT_REGION=us-east-1
 export AWS_ENDPOINT_URL=https://s3.$SERVICE_HOST:$CADDY_PORT AWS_CA_BUNDLE=$FLYWHEEL_CA
 # the same buckets as folders (<bucket>/<key>) on the cluster's shared file system, where the S3 gateway keeps them
-export FLYWHEEL_BUCKET_PATH=$(sed -n 's/^STATE_DIR=//p' services/.env.example)/versitygw/buckets
+export FLYWHEEL_BUCKET_PATH=$(sed -n 's/^STATE_DIR=//p' services/.env)/versitygw/buckets
 
 # MLflow (CLI, Python client); large artifacts go through the server, else they hang
 export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow
