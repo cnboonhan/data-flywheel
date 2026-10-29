@@ -266,6 +266,66 @@
   },
   {
    "type": "stat",
+   "title": "GPU memory, no job",
+   "description": "GPUs whose processes hold memory while no running Slurm job holds the GPU: work started outside Slurm (docker run, ssh) or left behind by a job that ended. The stack's own containers (flywheel-*) are left out. Which ones: the table GPU memory without a running job, below. Empty while the Slurm job data is stale.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 35,
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "instant": true,
+     "expr": "count(count by (instance, gpu) ((sum by (instance, gpu, user, workload, slurm_job) (label_replace(gpu_process_memory_bytes{job=\"gpu_processes\", workload!~\"flywheel-.*\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) slurm_job_gpu{job=\"slurm_jobs\"}) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-01-.*\"} and on () (time() - push_time_seconds{job=\"slurm_jobs\"} < 120))) or vector(0)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 2,
+    "x": 12,
+    "y": 1
+   }
+  },
+  {
+   "type": "stat",
    "title": "GPU utilisation",
    "description": "Average over the rack's selected GPUs of the time a kernel was running (nvidia-smi's utilisation).",
    "datasource": {
@@ -276,7 +336,7 @@
    "gridPos": {
     "h": 4,
     "w": 4,
-    "x": 12,
+    "x": 14,
     "y": 1
    },
    "targets": [
@@ -323,8 +383,8 @@
    "id": 8,
    "gridPos": {
     "h": 4,
-    "w": 4,
-    "x": 16,
+    "w": 3,
+    "x": 18,
     "y": 1
    },
    "targets": [
@@ -371,8 +431,8 @@
    "id": 9,
    "gridPos": {
     "h": 4,
-    "w": 4,
-    "x": 20,
+    "w": 3,
+    "x": 21,
     "y": 1
    },
    "targets": [
@@ -662,6 +722,66 @@
   },
   {
    "type": "stat",
+   "title": "GPU memory, no job",
+   "description": "GPUs whose processes hold memory while no running Slurm job holds the GPU: work started outside Slurm (docker run, ssh) or left behind by a job that ended. The stack's own containers (flywheel-*) are left out. Which ones: the table GPU memory without a running job, below. Empty while the Slurm job data is stale.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 36,
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "instant": true,
+     "expr": "count(count by (instance, gpu) ((sum by (instance, gpu, user, workload, slurm_job) (label_replace(gpu_process_memory_bytes{job=\"gpu_processes\", workload!~\"flywheel-.*\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) slurm_job_gpu{job=\"slurm_jobs\"}) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance=~\"C2-GB300-02-.*\"} and on () (time() - push_time_seconds{job=\"slurm_jobs\"} < 120))) or vector(0)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 2,
+    "x": 12,
+    "y": 6
+   }
+  },
+  {
+   "type": "stat",
    "title": "GPU utilisation",
    "description": "Average over the rack's selected GPUs of the time a kernel was running (nvidia-smi's utilisation).",
    "datasource": {
@@ -672,7 +792,7 @@
    "gridPos": {
     "h": 4,
     "w": 4,
-    "x": 12,
+    "x": 14,
     "y": 6
    },
    "targets": [
@@ -719,8 +839,8 @@
    "id": 17,
    "gridPos": {
     "h": 4,
-    "w": 4,
-    "x": 16,
+    "w": 3,
+    "x": 18,
     "y": 6
    },
    "targets": [
@@ -767,8 +887,8 @@
    "id": 18,
    "gridPos": {
     "h": 4,
-    "w": 4,
-    "x": 20,
+    "w": 3,
+    "x": 21,
     "y": 6
    },
    "targets": [
@@ -818,6 +938,110 @@
   },
   {
    "type": "table",
+   "title": "GPU memory without a running job",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 37,
+   "description": "GPUs whose processes hold memory while no running Slurm job holds the GPU: work started outside Slurm (docker run, ssh) or left behind by a job that ended. The stack's own containers (flywheel-*) are left out. Empty while the Slurm job data is stale. Slurm job: the job a leftover process belonged to (empty: started outside Slurm).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "instant": true,
+     "format": "table",
+     "legendFormat": "",
+     "expr": "(sum by (instance, gpu, user, workload, slurm_job) (label_replace(gpu_process_memory_bytes{job=\"gpu_processes\", workload!~\"flywheel-.*\"}, \"instance\", \"$1\", \"node\", \"(.*)\")) unless on (instance, gpu) slurm_job_gpu{job=\"slurm_jobs\"}) and on (instance, gpu) DCGM_FI_DEV_GPU_UTIL{partition=~\"$partition\", instance=~\"$node\", instance!~\"C2-GB300-02-C(0[5-9]|1[0-9])\"} and on () (time() - push_time_seconds{job=\"slurm_jobs\"} < 120)"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "indexByName": {
+       "instance": 0,
+       "gpu": 1,
+       "user": 2,
+       "workload": 3,
+       "slurm_job": 4,
+       "Value": 5
+      },
+      "renameByName": {
+       "instance": "node",
+       "gpu": "GPU",
+       "slurm_job": "Slurm job (ended)",
+       "Value": "GPU memory"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "node",
+        "desc": false
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "left"
+     },
+     "noValue": "none"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "GPU memory"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "bytes"
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background",
+         "mode": "basic"
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 24,
+    "x": 0,
+    "y": 11
+   }
+  },
+  {
+   "type": "table",
    "title": "Slurm queue: pending jobs",
    "datasource": {
     "type": "prometheus",
@@ -828,7 +1052,7 @@
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 11
+    "y": 17
    },
    "description": "Every pending Slurm job the job pusher sees (prometheus/slurm_exporter.py, scontrol), longest-waiting first: why it waits (Resources: no free nodes fit it; Priority: others go first; launch_failed_requeued_held: its start failed, often a Prolog error draining the node, and it is held until released), what it asks for, and its priority (0: held).",
    "targets": [
@@ -1001,7 +1225,7 @@
     "h": 31,
     "w": 24,
     "x": 0,
-    "y": 21
+    "y": 27
    },
    "description": "One row per Slurm node, by name (click a header to sort by it, e.g. Status for problems first). Status: DOWN (no ssh answer, or Slurm: down or not responding), NO SSH (up, refuses our key), DRAINED (Slurm won't start jobs on it), NO /TIER1 (shared file system missing: jobs using it fail), else SLURM JOB, MANUAL JOB (GPU work started outside Slurm) or IDLE. Problem: the most telling cause, from the collector (ssh, the node's pre-job health check, mounts; gpu_processes.py) or Slurm's reason. A health-check finding such as dmesg's 'task python blocked for more than 122 seconds' comes from a job running then, not from the one it tripped. Last run job: every job running on it now, SLURM (job \u00b7 user \u00b7 name) or MANUAL (a GPU workload started outside Slurm: user \u00b7 workload); with none, the Slurm job it went down on (requeued on a Prolog error, or failed with NODE_FAIL). Slurm columns from the Slurm job pusher (prometheus/slurm_exporter.py).",
    "targets": [
@@ -1314,7 +1538,7 @@
     "h": 23,
     "w": 10,
     "x": 0,
-    "y": 52
+    "y": 58
    },
    "description": "Each GPU's utilisation averaged over 15 min. Grey: under 5%, effectively unused.",
    "targets": [
@@ -1456,7 +1680,7 @@
     "h": 23,
     "w": 14,
     "x": 10,
-    "y": 52
+    "y": 58
    },
    "description": "The user and workload (container, Slurm job's script, or command) holding the most memory on each GPU; on nodes the collector can't reach, the Slurm job holding it (user and job name), else 'not visible'; free: no process and no Slurm job.",
    "targets": [
@@ -1544,7 +1768,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 75
+    "y": 81
    }
   },
   {
@@ -1560,7 +1784,7 @@
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 76
+    "y": 82
    },
    "targets": [
     {
@@ -1615,7 +1839,7 @@
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 76
+    "y": 82
    },
    "targets": [
     {
@@ -1670,7 +1894,7 @@
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 76
+    "y": 82
    },
    "targets": [
     {
@@ -1725,7 +1949,7 @@
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 85
+    "y": 91
    },
    "targets": [
     {
@@ -1777,7 +2001,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 94
+    "y": 100
    }
   },
   {
@@ -1792,7 +2016,7 @@
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 95
+    "y": 101
    },
    "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. Only the ones running now: GPUs, Nodes, GPU util and memory now; GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
    "targets": [
@@ -2020,7 +2244,7 @@
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 106
+    "y": 112
    },
    "description": "Running Slurm jobs the job pusher's account sees (prometheus/slurm_exporter.py): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -2238,7 +2462,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 116
+    "y": 122
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -2319,7 +2543,7 @@
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 116
+    "y": 122
    },
    "targets": [
     {
@@ -2367,7 +2591,7 @@
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 116
+    "y": 122
    },
    "targets": [
     {

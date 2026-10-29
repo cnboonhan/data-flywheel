@@ -18,8 +18,8 @@ Every node series carries `instance` (the node's name), `partition` (its Slurm p
 ## Use
 
 1. Open Grafana, then **Dashboards → Flywheel → Cluster usage**, and pick a partition or node at the top:
-   - **Now**: GPUs in use, free, not visible (nodes the collector can't reach) and held but idle; average GPU, CPU and CPU-memory use.
-   - **GPU map**: each node's GPUs, their 15-min utilisation and who is on each.
+   - **Now**: GPUs in use, free, not visible (nodes the collector can't reach), held but idle, and holding memory with no job (red when any); average GPU, CPU and CPU-memory use.
+   - **GPU map**: the GPUs holding memory while no running Slurm job holds them (work started outside Slurm, or left behind by a job that ended; the stack's own `flywheel-*` containers are left out), each node's GPUs, their 15-min utilisation and who is on each.
    - **Over time**: GPU, CPU and CPU-memory use by node; GPUs in use by user.
    - **Who is using them**: every workload on the GPUs (Slurm or not), Slurm jobs' allocation against use (click a job for **Slurm job**), GPU-hours by user.
    For the served models, open **Flywheel → Model usage**.
