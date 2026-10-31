@@ -1,4 +1,0 @@
-# The opening_front_door task (adapter/run_behavior.py): only house_single_floor's front door (door_tfdrhh_0, entryway to
-# garden, swinging into the entryway) gets the closer, latch and lever; spring_doors.yaml's settings otherwise.
-extends: spring_doors.yaml
-objects: [door_tfdrhh_0]

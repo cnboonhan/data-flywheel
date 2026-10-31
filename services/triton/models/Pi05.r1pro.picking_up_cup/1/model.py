@@ -1,6 +1,5 @@
 """Triton Python backend for a π0.5 checkpoint (XPolicyLab's policy/Pi_05: openpi, JAX), beside serve_pi05.py and
-r1pro.py in this version directory (copies of sensors/autolearn/adapter/pi05/'s: the HTTP server and the openpi configs
-it registers; update them together).
+r1pro.py in this version directory: the HTTP server and the openpi configs it registers; update them together.
 
 openpi runs in the image's own venv (/opt/venv-pi05, Dockerfile), not Triton's Python, so each instance starts
 serve_pi05.py there as a child process on its GPU and forwards requests to it on 127.0.0.1. Stateless: one request =

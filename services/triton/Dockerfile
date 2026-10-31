@@ -6,7 +6,7 @@
 # (services/mlflow/Dockerfile); diffusers>=0.36 is the floor Qwen-Image-Edit-2511 was run on (its card asks for the latest).
 #
 # π0.5 (XPolicyLab's policy/Pi_05: openpi, JAX) gets a venv of its own, /opt/venv-pi05: openpi pins its own JAX, torch
-# and numpy, which the image's can't share. It is built as sensors/autolearn/gb300/setup_pi05.sh builds the cluster's:
+# and numpy, which the image's can't share. It is built like this:
 # openpi's uv.lock exported (with the lerobot group) and installed as is, minus torchcodec (no Linux arm64 wheels), then
 # openpi and openpi-client themselves. The openpi source is the build context `openpi` (compose.yml). The backend
 # (a π0.5 model's 1/model.py) runs each checkpoint in it as a child process, without the image's dist-packages on

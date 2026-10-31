@@ -6,7 +6,7 @@
 #   nvidia/PhysicalAI-Robotics-NuRec        zh_lounge/*  nurec-zh_lounge   (gated)
 #   LightwheelAI/EgoPro (source: bucket)     EgoProStandard*/mcap/Paper Clips into Box/*  EgoPro   (gated; data is in an HF Bucket, the dataset repo holds only the card)
 #   sensenova/SenseNova-SI-800K             *  SenseNova-SI-800K   (~400 GB; images as zip parts, extract_all.sh unpacks them)
-#   agibot-world/GenieSimAssets             *  GenieSimAssets      (29 GB; Genie Sim's asset pack, a pip package: sensors/autolearn)
+#   agibot-world/GenieSimAssets             *  GenieSimAssets      (29 GB; Genie Sim's asset pack, a pip package)
 #   agibot-world/AgiBotWorldChallenge-2026  *  AgiBotWorldChallenge-2026   (5.7 TB, CC BY-NC-SA 4.0)
 #   agibot-world/AgiBotWorld2026            *  AgiBotWorld2026     (13.6 TB, CC BY-NC-SA 4.0; one dispatch at a time: a second cancels the first)
 #   XDOF/ABC-130k                           *  ABC-130k            (~23 TB, Apache-2.0, gated)

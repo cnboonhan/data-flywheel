@@ -1,4 +1,4 @@
-# Adapter: Genie Sim recordings (LeRobot v2.1 written by sensors/autolearn/adapter/to_lerobot.py, uploaded to
+# Adapter: Genie Sim recordings (LeRobot v2.1, uploaded to
 # raw/internal_datasets/geniesim/<task>/) -> XPolicyLab xspark in s3://processed/xpolicylab/geniesim/<task>/<env_cfg>/data/,
 # in the runner (CPU only): datasets read from the read-only /buckets mount, results written through the gateway.
 # A copy of galaxeaOpenWorldDataset_to_xpolicylab for this source (7-joint G2 arms, directories instead of archives).

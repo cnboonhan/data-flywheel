@@ -38,7 +38,7 @@ Expect an image edit at 1024×1024 in ~16 s.
 
 ## Serve a model
 
-1. Register the weights in MLflow (a training run does; `download-models-hf` for Hugging Face models, by an admin). A π0.5 checkpoint is registered from a run with params `model=Pi_05`, `openpi_config` (a config [`r1pro.py`](../../sensors/autolearn/adapter/pi05/r1pro.py) registers) and optionally `prompt`, its artifacts the step directory's `params/` and `assets/` (not `train_state/`):
+1. Register the weights in MLflow (a training run does; `download-models-hf` for Hugging Face models, by an admin). A π0.5 checkpoint is registered from a run with params `model=Pi_05`, `openpi_config` (a config [`r1pro.py`](models/Pi05.r1pro.picking_up_cup/1/r1pro.py) registers) and optionally `prompt`, its artifacts the step directory's `params/` and `assets/` (not `train_state/`):
    ```python
    with mlflow.start_run() as run:
        mlflow.log_params({"model": "Pi_05", "openpi_config": "pi05_r1pro_picking_up_cup", "prompt": "pick up the cup"})

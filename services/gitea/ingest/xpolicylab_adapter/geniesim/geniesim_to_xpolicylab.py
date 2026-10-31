@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Genie Sim recordings (LeRobot v2.1 from sensors/autolearn/adapter/to_lerobot.py, AgiBot G2) -> XPolicyLab "xspark v1.0" HDF5.
+"""Genie Sim recordings (LeRobot v2.1, AgiBot G2) -> XPolicyLab "xspark v1.0" HDF5.
 
 Input:  <raw-dir>/<task>/            one LeRobot v2.1 dataset per task (data/chunk-*/episode_*.parquet, videos/, meta/)
 Output: <out>/<bench>/<task>/<env_cfg>/data/episode_%07d.hdf5 + manifest.json, where <out> is a local directory or

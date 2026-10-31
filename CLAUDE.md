@@ -5,19 +5,16 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 ## Layout
 
 - Data and weights live in the S3 gateway (`services/`), not in the checkout. Gitea workflows fetch from Hugging Face: `services/gitea/ingest/download-datasets-hf.yml` into `raw/open_datasets/`, `download-models-hf.yml` into the MLflow model registry (self-contained workflows; each header lists the known repos).
-- `eval/system1/{RoboDojo,RoboTwin}`: VLA benchmarks. `eval/system2/IsaacLab-Arena`: agentic eval environments.
-- `sensors/{yubi-hw,yubi-sw}`: data-collection hardware.
-- `sensors/autolearn/`: skills learned by coding agents (`aspire/`, NVIDIA ASPIRE) in BEHAVIOR-1K scenes (OmniGibson on Isaac Sim 5.1), distilled into a VLA (π0.5); the plan is in its README. Data in `sensors/autolearn/` (gitignored).
+- `eval/system1/RoboDojo`: the VLA benchmark; XPolicyLab inside it trains and evaluates ACT/DP.
 - `services/triton/triton_endpoint.py`: the client for Triton models; each role's endpoint is a `<ROLE>_ENDPOINT` variable.
-- Everything under `eval/`, `sensors/yubi-*` and `sensors/autolearn/` is an **upstream git submodule**.
+- `eval/system1/RoboDojo` and `assets/bufo` are **upstream git submodules**.
 
 ## Rules
 
 - **Never commit large files** (data, weights, assets, videos). To add a dataset or model, add it to the list in `services/gitea/ingest/download-datasets-hf.yml` or `download-models-hf.yml` and run that workflow. Don't download data unless asked.
 - **Prefer models with the fewest licence restrictions.** When choosing a model or weights, pick permissive ones (Apache-2.0, MIT, BSD, CC0/CC-BY) over research-only, non-commercial or custom-restricted licences, and say which licence a model has when proposing it. Use a restricted one only when nothing permissive does the job, and say so.
 - **Treat submodules as upstream code.** Don't commit inside them, because their remotes are third-party. Changes belong on a fork; ask first. data-flywheel only records each submodule's commit.
-- **Keep nested submodules pinned.** The RoboDojo and RoboTwin installers move XPolicyLab to its latest commit. After running them, run `git submodule update` inside that benchmark.
-- **IsaacLab-Arena `uv.lock`:** upstream's lock is stale, and it's regenerated locally with `git update-index --skip-worktree uv.lock`. Use `uv sync --frozen --extra dev` so uv doesn't rewrite it. See the README before pulling Arena.
+- **Keep nested submodules pinned.** The RoboDojo installer moves XPolicyLab to its latest commit. After running them, run `git submodule update` inside it.
 - **Run one Isaac Sim instance at a time.** The GPU is an RTX 5090 Laptop with 24 GB.
 - **NVIDIA driver 580-open is held on purpose**, because Isaac Sim 5.1 crashes on 595. Don't change drivers or system packages without asking.
 - **Off-limits:** don't modify, run or copy from `~/workspaces/htx-robotics-release` or `~/workspaces/snippets`.
@@ -30,8 +27,6 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 |---|---|---|
 | RoboDojo | conda `RoboDojo` (Py 3.11, Isaac Sim 5.1, torch 2.7 cu128) | `eval "$(~/miniforge3/bin/conda shell.bash hook)" && conda activate RoboDojo` |
 | RoboDojo demo policy | conda `demo-policy` | passed to XPolicyLab `eval.sh` by name |
-| RoboTwin | conda `RoboTwin` (Py 3.10, SAPIEN, torch 2.7 cu128, CUDA 12.8 nvcc in env) | `conda activate RoboTwin` |
-| IsaacLab-Arena | uv `.venv` (Py 3.12, Isaac Sim 6.1) | `.venv/bin/python` |
 
 The host has no system `nvcc`, and `python3` on PATH is Homebrew's (no `yaml`). Always run benchmark scripts inside their env.
 
@@ -42,12 +37,6 @@ The host has no system `nvcc`, and `python3` on PATH is Homebrew's (no `yaml`). 
 cd eval/system1/RoboDojo && bash scripts/internal/verify_install.sh --policy-dir XPolicyLab/policy/demo_policy --policy-env demo-policy
 cd XPolicyLab/policy/demo_policy && EVAL_ENV_TYPE=debug bash eval.sh RoboDojo stack_bowls demo arx_x5 joint 0 0 0 demo-policy RoboDojo
 
-# RoboTwin: collect episodes (set episode_num in a copy of env_cfg/task_config/demo_clean.yml for a quick test, then delete it)
-cd eval/system1/RoboTwin && bash collect_data.sh beat_block_hammer demo_clean 0
-
-# IsaacLab-Arena
-cd eval/system2/IsaacLab-Arena && OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y \
-  .venv/bin/python isaaclab_arena/evaluation/policy_runner.py --policy_type zero_action --num_steps 20 cube_goal_pose
 ```
 
 XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_type> <seed> <policy_gpu> <env_gpu> <policy_env> <sim_env>`.

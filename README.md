@@ -14,8 +14,7 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
 
 | Folder | Contents |
 |---|---|
-| [`eval/`](eval/README.md) | Benchmarks for action models (system 1) and agentic models (system 2) (git submodules) |
-| [`sensors/`](sensors/README.md) | Data-collection hardware (git submodules) |
+| [`eval/`](eval/README.md) | Benchmark for action models (system 1): RoboDojo (git submodule) |
 | [`services/`](services/README.md) | Infra stack as Docker Compose behind Caddy: Keycloak SSO, Gitea + Actions, MLflow, S3 gateway, FiftyOne, Rerun, Grafana/Loki, Triton, Slurm job scripts |
 | `assets/` | The architecture diagram and its role variants, the developer roles that push the flywheel along ([Scientist](assets/devroles/scientist.md), [Engineering](assets/devroles/engineering.md)), the quickstart's landing-page screenshot, and the `bufo` image submodule |
 | `tools/` | Repo maintenance scripts; [`bin/`](tools/bin/README.md): the commands SSH keys may run on the service account (e.g. `dynamo-up` for `sync-dynamo`) |
@@ -38,7 +37,7 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
    ```
 4. Bring up the services: [services/](services/README.md#run).
 5. Get access and an account: [Access](services/README.md#access), [Users](services/README.md#users), [S3 client](services/versitygw/README.md#client-setup).
-6. Install the evaluation tooling you need: [eval/system2/](eval/system2/README.md#install), [eval/system1/](eval/system1/README.md).
+6. Install the evaluation tooling: [eval/system1/](eval/system1/README.md).
 7. Set up Slurm jobs: [slurm/](services/slurm/README.md).
 
 ## The flywheel, end to end
@@ -49,7 +48,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 
 | Box | Here |
 |---|---|
-| Off-Robot Data Collection | YUBI glove and gripper rigs: [sensors/](sensors/README.md) (`yubi-hw`, `yubi-sw`) |
+| Off-Robot Data Collection | not built yet |
 | Robot Teleoperation | Galaxea R1 data (public so far) |
 | Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
 | Virtual Scenes | not built yet |
@@ -91,7 +90,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 
 | Box | Here |
 |---|---|
-| Virtual Evals | `evaluate.sbatch` runs RoboDojo through XPolicyLab ([slurm/](services/slurm/README.md)); RoboTwin and IsaacLab-Arena in [eval/](eval/README.md) |
+| Virtual Evals | `evaluate.sbatch` runs RoboDojo through XPolicyLab ([slurm/](services/slurm/README.md)) |
 | Physical Evals | not built yet |
 
 **Eval Logs:** scores go onto the training run and its model version in MLflow, so the registry answers "how good is version N".

@@ -44,10 +44,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 
 ### Fresh install
 
-1. Clone and set the push URL: [Setup](../README.md#setup). For IsaacLab-Arena's nested submodules (SSH URLs the cluster can't reach):
-   ```bash
-   git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive eval/system2/IsaacLab-Arena
-   ```
+1. Clone and set the push URL: [Setup](../README.md#setup).
 2. Copy `services/.env` (or fill in `.env.example`) and run `services/ctl.sh up` (about 5 min). On a clean state it starts Caddy first and waits for its CA, then the rest, then provisions Gitea ([gitea/](gitea/README.md)), Keycloak, Grafana, the MLflow job token, `$STATE_DIR/flywheel.env` and the `$STATE_DIR/pipelines` checkout.
 3. Trust the CA: [Access](#access).
 4. Wait for `setup-envs`, which `up` dispatches: ~1 h for the envs on a cold cache, up to a day for the RoboDojo data ([gitea/setup/](gitea/setup/README.md)).
