@@ -54,8 +54,8 @@ BAG_RRD = re.compile(r"^/bag-rrd/(?P<bucket>raw|processed)/(?P<path>.+\.mcap)\.r
 BAG_BUILDS = threading.Semaphore(2)   # bags converted at once: each runs four ffmpeg encoders and a reader; untuned
 BAG_ROOT = {"raw": RAW, "processed": PROCESSED}
 _bags, _bags_guard = {}, threading.Lock()   # cache path -> job: state, read, total, started, error
-# Bumped when build() changes what a recording holds, so cached recordings are rebuilt (2: the fixed layout).
-RECORDING_VERSION = 2
+# Bumped when build() changes what a recording holds, so cached recordings are rebuilt (2: the fixed layout; 3: Rerun 0.41).
+RECORDING_VERSION = 3
 PAGE_ROWS = 2000   # episodes per dataset page: a 2000-row table still renders and filters at once; untuned
 _locks, _locks_guard = {}, threading.Lock()
 

@@ -19,7 +19,7 @@ import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 from typing_extensions import override
 
-STATE = pathlib.Path(os.environ.get("STATE", "/tier1/mistral/flywheel/autolearn"))
+STATE = pathlib.Path(os.environ.get("STATE", "."))   # holds pi05/ (norm stats, data) and models/openpi/ (base weights)
 PI05 = STATE / "pi05"
 # openpi's own download of gs://openpi-assets/checkpoints/pi05_base (setup_pi05.sh)
 BASE_PARAMS = STATE / "models/openpi/openpi-assets/checkpoints/pi05_base/params"

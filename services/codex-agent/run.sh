@@ -17,7 +17,10 @@ if [[ -f $folder/.env ]]; then
     < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' "$folder/.env")
 fi
 CODEX_MODEL=${CODEX_MODEL:-kimi-k3}                                     # any model the gateway serves
-LLM_URL=${LLM_URL:-https://llm.flywheel.10.80.81.30.sslip.io:8443/v1}   # the stack's LLM gateway (no token)
+if [[ -z ${LLM_URL:-} ]]; then   # the stack's LLM gateway (no token), from the host settings the quickstart reads
+  hostenv=$(dirname "$0")/../.env.example
+  LLM_URL=https://llm.$(sed -n 's/^SERVICE_HOST=//p' "$hostenv"):$(sed -n 's/^CADDY_PORT=//p' "$hostenv")/v1
+fi
 FLYWHEEL_CA=${FLYWHEEL_CA:-$HOME/.flywheel/ca.crt}                      # the quickstart's path for the stack's CA
 image=${CODEX_AGENT_IMAGE:-flywheel-codex-agent:0.162.1-noble}
 

@@ -26,7 +26,7 @@ x-flywheel:
   common_args: [--trust-remote-code, --tensor-parallel-size, "8", --distributed-executor-backend, mp,
                 --scheduling-policy, priority, --enable-prefix-caching, --disable-custom-all-reduce]
   common_env:
-    NCCL_SOCKET_IFNAME: bond0          # the trays' 10.80.81.x network (`ip -4 addr`); untuned
+    NCCL_SOCKET_IFNAME: bond0          # the trays' node network (`ip -4 addr`); untuned
     GLOO_SOCKET_IFNAME: bond0
     # NVLink-fabric memory (MNNVL) and NVLS hang NCCL on these racks, even within one tray (README: notes); the trays
     # talk over InfiniBand instead, GPUs within a tray over plain P2P
@@ -53,7 +53,7 @@ services:
       registered: Kimi-K3
       version: 1
       ports: {frontend: 8191, system: 9311, rendezvous: 29511}
-      # Dynamo's chat processor: vLLM's (in Dynamo 1.6's vLLM 0.31 image) builds K3's config without prefix caching
+      # Dynamo's chat processor: vLLM's builds K3's config without prefix caching
       # and refuses it (`--mamba-block-size can only be set with --enable-prefix-caching`)
       frontend_args: [--dyn-chat-processor, dynamo]
       licence: "Kimi K3 licence (modified MIT)"

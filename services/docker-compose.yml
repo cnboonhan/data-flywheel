@@ -52,7 +52,7 @@ services:
       - --iam-dir=/state/iam
       - --health=/health
       - posix
-      - --sidecar=/state/meta        # /tier1 (WekaFS) has no xattrs; keep object metadata in a sidecar dir
+      - --sidecar=/state/meta        # the state's file system (WekaFS) has no xattrs; keep object metadata in a sidecar dir
       - --disable-copy-file-range
       - /state/buckets               # backend flags must precede the directory
     environment:
@@ -228,7 +228,7 @@ services:
       GITEA_RUNNER_NAME: ${SERVICE_NODE}
       RERUN_BASE: https://rerun.${SERVICE_HOST}:${CADDY_PORT:-8443}
     volumes:
-      - ./act_runner/config.yaml:/config.yaml:ro
+      - ${STATE_DIR}/act_runner/config.yaml:/config.yaml:ro   # act_runner/config.yaml with this stack's paths (ctl.sh up)
       - ${STATE_DIR}/act_runner:/data
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -267,7 +267,7 @@ services:
   rerun:
     <<: *common
     build: ./rerun
-    image: flywheel-rerun:0.38.1
+    image: flywheel-rerun:0.41.0
     environment:
       HOME: /tmp
 
@@ -278,7 +278,7 @@ services:
     build:
       context: ./rerun
       dockerfile: Dockerfile.lerobot_recording_server
-    image: flywheel-rerun-lerobot:0.38.1
+    image: flywheel-rerun-lerobot:0.41.0
     environment:
       HOME: /tmp
       CACHE_GB: "20"   # recordings kept, newest first (~8 MB a HiFi-UMI episode); untuned

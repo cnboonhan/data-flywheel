@@ -91,7 +91,7 @@ Install the command-line tools once, with [uv](https://docs.astral.sh/uv/): each
 curl -LsSf https://astral.sh/uv/install.sh | sh    # uv itself, if `uv --version` fails; then open a new shell
 uv tool install awscli                             # aws: the S3 buckets
 uv tool install mlflow-skinny                      # mlflow: runs and the model registry
-uv tool install rerun-sdk==0.38.1                  # rerun: the desktop viewer at the stack's version, for large bags (services/rerun)
+uv tool install rerun-sdk==0.41.0                  # rerun: the desktop viewer at the stack's version, for large bags (services/rerun)
 brew install tea                                   # Gitea's CLI; on Linux, take the binary from https://dl.gitea.com/tea/
 ```
 

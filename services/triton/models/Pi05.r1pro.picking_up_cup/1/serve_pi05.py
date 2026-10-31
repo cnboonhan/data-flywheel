@@ -1,4 +1,4 @@
-"""A π0.5 (openpi, XPolicyLab's policy/Pi_05) checkpoint served over HTTP for eval_behavior.py.
+"""A π0.5 (openpi, XPolicyLab's policy/Pi_05) checkpoint served over HTTP.
 
     venv-pi05/bin/python serve_pi05.py --ckpt <checkpoint step dir, or pi05_base's> [--config pi05_r1pro_picking_up_cup] [--port 18400]
 

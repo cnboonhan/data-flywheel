@@ -28,13 +28,13 @@ container:
   workdir_parent: workspace
   force_pull: false
   # Bucket directories, read-only, at the same path the FiftyOne container
-  # uses, so ingested filepaths resolve there. Must match STATE_DIR in .env;
+  # uses, so ingested filepaths resolve there. ctl.sh up fills in this stack's paths (render_paths);
   # a bind mount is ignored unless its source is listed in valid_volumes.
   # --cpuset-mems: the service node's CPU memory only (NUMA nodes 0, 1 here; `cat /sys/devices/system/node/node*/cpulist`):
   # on a GB300 node each GPU's memory is a NUMA node too, and a job's file cache (downloads, syncs) would fill the GPUs.
-  options: -v /tier1/mistral/flywheel/versitygw/buckets:/buckets:ro --cpuset-mems=0,1
+  options: -v __STATE_DIR__/versitygw/buckets:/buckets:ro --cpuset-mems=0,1
   valid_volumes:
-    - /tier1/mistral/flywheel/versitygw/buckets
+    - __STATE_DIR__/versitygw/buckets
     # sync-triton mounts the checkout read-only, at its host path (repo variable FLYWHEEL_ROOT), for its packagers;
     # keep it in step with the checkout location. Nothing else of the host: work there goes through tools/bin (ssh).
-    - /home/htx_boonhan/workspaces/data-flywheel
+    - __FLYWHEEL_ROOT__

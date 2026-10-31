@@ -35,7 +35,7 @@ import time
 
 import mlflow
 
-BUCKETS_DIR = os.environ.get("BUCKETS_DIR", "/tier1/mistral/flywheel/versitygw/buckets")
+BUCKETS_DIR = os.environ.get("BUCKETS_DIR", os.path.join(os.environ.get("STATE_DIR", ""), "versitygw", "buckets"))   # flywheel.env sets it
 XSPARK_ROOT = os.path.join(BUCKETS_DIR, "processed", "xpolicylab")
 
 

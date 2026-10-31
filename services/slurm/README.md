@@ -25,7 +25,7 @@ slurm/
    ```
 3. Evaluate.
    ```bash
-   sbatch --export=ALL $S/evaluate.sbatch act arx_x5 stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 joint 0 5
+   sbatch --export=ALL ${EVAL_EXCLUDE:+--exclude=$EVAL_EXCLUDE} $S/evaluate.sbatch act arx_x5 stack_bowls RoboDojo-stack_bowls-arx_x5-joint-0 joint 0 5
    ```
 4. Watch or cancel.
    ```bash
@@ -85,7 +85,7 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 **Evaluation on GB300 (aarch64 Blackwell) nodes.** `evaluate.sbatch` already handles the following (except the GPU count, which is your choice); keep it that way when you change it.
 
 - **Run the simulation on the GPU device.** RoboDojo defaults Isaac Lab's simulation device to CPU, and on these nodes Isaac Sim 5.1 then delivers no camera frames, so RoboDojo's capture loop spins forever. Use an `eval_env_cfg` ending in `_gpu` (`arx_x5_gpu` for `arx_x5`): the job derives it from the base config with `device: cuda:0` and aliases the base's evaluation layouts and checkpoints. Expect scores to differ slightly from the official CPU-physics numbers.
-- **Keep the nodes in `evaluate.sbatch`'s `--exclude` excluded.** Their Kit viewport doesn't render, and Isaac Lab's viewport camera then fails with "Accessed invalid null prim".
+- **Submit with `${EVAL_EXCLUDE:+--exclude=$EVAL_EXCLUDE}`.** `EVAL_EXCLUDE` in `services/.env` lists the nodes whose Kit viewport doesn't render, and Isaac Lab's viewport camera then fails with "Accessed invalid null prim".
 - **To give the policy server its own GPU,** submit with `sbatch --gres=gpu:2 ...`; with the default single GPU, the simulator and the policy server share it.
 - **Keep the RoboDojo shim on `PYTHONPATH`.** RoboDojo assumes CPU tensors in places (`np.asarray` on a tensor, `.numpy()`); `lib/robodojo-shim/sitecustomize.py` converts CUDA tensors and makes the viewport camera placement best-effort. Drop it once a RoboDojo fork has a `device` setting.
 - **`ffmpeg` comes from the env.** The nodes have none; `install-robodojo.sh` puts `imageio-ffmpeg`'s static build in `$ROBODOJO_DIR/bin`, which the job puts on `PATH`. The same installer handles the aarch64 Isaac Sim 5.1 and torch cu128 wheels, the `libgomp` and NVRTC 12.9 preloads (torch's 12.8 doesn't know sm_103), user-space GL and curobo from source. The policy envs use the cu128 index because the pinned `torch==2.4.1` has no CUDA build for aarch64 Blackwell.

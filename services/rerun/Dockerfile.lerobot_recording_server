@@ -3,6 +3,6 @@
 # mcap-ros2-support to read and decode the bags. Same Rerun version as the viewer, so its recordings always open there.
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir rerun-sdk==0.38.1 pyarrow==21.0.0 numpy mcap==1.2.2 mcap-ros2-support==0.5.5 && rerun analytics disable
+    pip install --no-cache-dir rerun-sdk==0.41.0 pyarrow==21.0.0 numpy mcap==1.2.2 mcap-ros2-support==0.5.5 && rerun analytics disable
 COPY lerobot_recording_server.py mcap_recording.py /app/
 CMD ["python3", "/app/lerobot_recording_server.py"]

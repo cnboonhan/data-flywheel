@@ -38,7 +38,8 @@ here = os.path.dirname(os.path.abspath(__file__))
 SSH_TIMEOUT_S = 40   # per node: a hung node mustn't hold up the minute's push; untuned
 HEALTH_DAYS = 7      # older failed health checks aren't reported: by then the node was resumed or is long known; untuned
 HEALTH_DIR = "/cm/local/apps/slurm/var/pre-post-job-logs/failed-pre-jobs"   # Bright's per-job output of a failed check
-MOUNTS = ["/tier1"]   # shared file systems jobs need (data, checkouts, envs); missing on a node, its jobs fail at once
+MOUNTS = os.environ.get("FLYWHEEL_MOUNTS", "").split()   # shared file systems jobs need (data, checkouts, envs; ctl.sh monitor:
+# the one STATE_DIR is on); missing on a node, its jobs fail at once
 
 # Runs on each node: GPUs, processes (pid, bus, MiB), per process its user, cgroup and command line, Docker names,
 # and the CPU NUMA nodes' meminfo. One line per record, tab-separated, tagged by its first field.

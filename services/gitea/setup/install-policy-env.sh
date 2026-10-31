@@ -10,8 +10,8 @@
 set -euo pipefail
 policy=${1:?ACT|DP}
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
-ENVS_DIR=${ENVS_DIR:-/tier1/mistral/flywheel/envs}
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/tier1/mistral/flywheel/uv-cache}
+ENVS_DIR=${ENVS_DIR:?source $STATE_DIR/flywheel.env}
+export UV_CACHE_DIR=${UV_CACHE_DIR:?source $STATE_DIR/flywheel.env}
 export PATH="$HOME/.local/bin:$PATH"
 XPL=$PROJECT_ROOT/XPolicyLab
 env=$ENVS_DIR/${policy,,}

@@ -14,7 +14,7 @@
 #   services/ctl.sh ps|logs|pull|config|<any compose args>   the stack's compose
 #
 # When run elsewhere (e.g. the login node) it re-runs itself on $SERVICE_NODE
-# over ssh; the repo and the state dir are on /tier1, so paths are the same.
+# over ssh; the repo and the state dir are on the shared file system, so paths are the same.
 # Containers are owned by that node's dockerd with restart=unless-stopped, so
 # they keep running after this script returns.
 set -euo pipefail
@@ -101,7 +101,7 @@ dynamo() {
       done
       for m in $(q '" ".join(d["served"])'); do
         sv=($(q "' '.join(map(str, (d['served']['$m']['node'], d['served']['$m']['system'], d['served']['$m']['tray'])))"))
-        echo "dynamo: $m loading on ${sv[0]} (minutes: weights from /tier1, then compilation)"
+        echo "dynamo: $m loading on ${sv[0]} (minutes: weights from the shared file system, then compilation)"
         until ssh "${sv[0]}" "curl -fs http://127.0.0.1:${sv[1]}/health" >/dev/null 2>&1; do
           for node in "${sv[0]}" $([[ ${sv[2]} == True ]] && echo "$DYNAMO_WORKER"); do
             [[ $(ssh "$node" "bash -lc 'docker inspect -f {{.State.Running}} flywheel-dynamo-engine-$m-1'") == true ]] ||
@@ -127,6 +127,9 @@ triton_compose() {
 }
 
 gitea() { "${compose[@]}" exec -T gitea gitea --config /etc/gitea/app.ini "$@"; }
+# Files that must name this stack's host paths literally (act_runner/config.yaml, sync-triton's mount): their
+# placeholders filled in from this checkout and STATE_DIR.
+render_paths() { sed -e "s|__FLYWHEEL_ROOT__|$(cd "$here/.." && pwd)|g" -e "s|__STATE_DIR__|$STATE_DIR|g"; }
 
 # SSH keys that may run one command each, on this account: the command's script in tools/bin (its README lists them), which
 # the key's authorized_keys line forces (`restrict`: no shell, no forwarding), whatever the client asks for. Each entry
@@ -244,7 +247,7 @@ bootstrap_gitea() {
     esac
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null 2>&1 && continue
     "${compose[@]}" exec -T gitea curl -fs -u "$auth" -H 'Content-Type: application/json' \
-      -d "{\"content\":\"$(base64 -w0 "$f")\",\"message\":\"Add $path\"}" \
+      -d "{\"content\":\"$(render_paths < "$f" | base64 -w0)\",\"message\":\"Add $path\"}" \
       "$api/repos/$ADMIN_USER/pipelines/contents/$path" >/dev/null
   done
 }
@@ -383,13 +386,15 @@ AWS_ACCESS_KEY_ID=$ADMIN_USER
 AWS_SECRET_ACCESS_KEY=$ADMIN_PASSWORD
 AWS_DEFAULT_REGION=${S3_REGION:-us-east-1}
 UV_CACHE_DIR=$STATE_DIR/uv-cache
-# Where this checkout and the shared state live, for the Slurm jobs and setup-envs (their defaults assume /tier1).
+# Where this checkout and the shared state live, for the Slurm jobs and setup-envs (they have no defaults).
 FLYWHEEL_ROOT=$(cd "$here/.." && pwd)
 PROJECT_ROOT=$(cd "$here/.." && pwd)/eval/system1/RoboDojo
 ENVS_DIR=$STATE_DIR/envs
 ROBODOJO_DIR=$STATE_DIR/robodojo
 BUCKETS_DIR=$STATE_DIR/versitygw/buckets
 DATA_ROOT=$STATE_DIR/xpolicylab
+# Nodes evaluate.sbatch must avoid (services/slurm/README.md): sbatch ${EVAL_EXCLUDE:+--exclude=$EVAL_EXCLUDE} ...
+EVAL_EXCLUDE=${EVAL_EXCLUDE:-}
 TRITON_URL=triton.$SERVICE_HOST:$CADDY_PORT
 # The LLM gateway (Dynamo's models, OpenAI API, no token): sim tools' VLM, scripts
 LLM_URL=https://llm.$SERVICE_HOST:$CADDY_PORT/v1
@@ -768,6 +773,7 @@ if [[ $1 == up ]]; then
   for d in caddy/data caddy/config versitygw/buckets versitygw/buckets/raw versitygw/buckets/processed versitygw/buckets/processed/xpolicylab versitygw/buckets/mlflow versitygw/meta versitygw/iam mlflow loki grafana gitea/data gitea/config act_runner mongo fiftyone prometheus prometheus-sd slurm-exporter rerun-cache keycloak/db keycloak/import keycloak/login-background versitygw/buckets/triton/models versitygw/buckets/logging/chunks; do
     mkdir -p "$STATE_DIR/$d"
   done
+  render_paths < "$here/act_runner/config.yaml" > "$STATE_DIR/act_runner/config.yaml"   # mounted by the runner
   # The Slurm job pusher, where an account that sees every job can read it (it may not be able to read this checkout).
   cp -f "$here/prometheus/slurm_exporter.py" "$STATE_DIR/slurm-exporter/exporter.py"   # that name: existing crontabs run it
   # Keycloak imports the realm (clients, groups, the admin user) on first start.
@@ -811,7 +817,9 @@ fi
 # Who uses each GPU and each node's CPU memory, pushed for Prometheus (prometheus/gpu_processes.py): `monitor` runs it
 # once; the timer `up` installs (monitor_timer) runs it every minute on this node.
 if [[ $1 == monitor ]]; then
-  FLYWHEEL_CA=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt python3 "$here/prometheus/gpu_processes.py"
+  # FLYWHEEL_MOUNTS: the file system the state is on, which every node needs
+  FLYWHEEL_CA=$STATE_DIR/caddy/data/caddy/pki/authorities/local/root.crt FLYWHEEL_MOUNTS=$(findmnt -n -o TARGET -T "$STATE_DIR") \
+    python3 "$here/prometheus/gpu_processes.py"
   exit 0
 fi
 

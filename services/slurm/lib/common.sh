@@ -1,12 +1,12 @@
-# Sourced by train.sbatch and evaluate.sbatch. Paths come from flywheel.env (`ctl.sh up` writes it); the defaults match it.
+# Sourced by train.sbatch and evaluate.sbatch. Paths come from flywheel.env (`ctl.sh up` writes it).
 # sbatch runs a spooled copy of the job script, so the checkout comes from FLYWHEEL_ROOT, not the script's location.
 SLURM_DIR=${FLYWHEEL_ROOT:-$HOME/workspaces/data-flywheel}/services/slurm
 LIB=$SLURM_DIR/lib
 PROJECT_ROOT=${PROJECT_ROOT:-$HOME/workspaces/data-flywheel/eval/system1/RoboDojo}
-ENVS_DIR=${ENVS_DIR:-/tier1/mistral/flywheel/envs}
-ROBODOJO_DIR=${ROBODOJO_DIR:-/tier1/mistral/flywheel/robodojo}
-BUCKETS_DIR=${BUCKETS_DIR:-/tier1/mistral/flywheel/versitygw/buckets}
-DATA_ROOT=${DATA_ROOT:-/tier1/mistral/flywheel/xpolicylab}
+ENVS_DIR=${ENVS_DIR:?source $STATE_DIR/flywheel.env}
+ROBODOJO_DIR=${ROBODOJO_DIR:?source $STATE_DIR/flywheel.env}
+BUCKETS_DIR=${BUCKETS_DIR:?source $STATE_DIR/flywheel.env}
+DATA_ROOT=${DATA_ROOT:?source $STATE_DIR/flywheel.env}
 XPL=$PROJECT_ROOT/XPolicyLab
 export BUCKETS_DIR FLYWHEEL_ROOT
 export PYTHONPATH="$LIB${PYTHONPATH:+:$PYTHONPATH}"   # embodiment.py, flywheel_mlflow.py

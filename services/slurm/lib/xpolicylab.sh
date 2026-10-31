@@ -9,7 +9,7 @@ relink() {   # relink <link> <target>: create the link, or repoint one left by a
   ln -s "$2" "$1"
 }
 
-link_out() {   # link_out <path in checkout> <path on /tier1>
+link_out() {   # link_out <path in checkout> <path under STATE_DIR>
   [[ -L $1 ]] && { relink "$1" "$2"; return 0; }
   mkdir -p "$2"
   if [[ -d $1 ]]; then cp -a "$1/." "$2/" && rm -rf "${1:?}"; fi
