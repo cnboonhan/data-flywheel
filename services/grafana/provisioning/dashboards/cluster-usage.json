@@ -1535,7 +1535,7 @@
    },
    "id": 22,
    "gridPos": {
-    "h": 23,
+    "h": 25,
     "w": 10,
     "x": 0,
     "y": 58
@@ -1677,7 +1677,7 @@
    },
    "id": 23,
    "gridPos": {
-    "h": 23,
+    "h": 25,
     "w": 14,
     "x": 10,
     "y": 58
@@ -1768,7 +1768,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 81
+    "y": 83
    }
   },
   {
@@ -1784,7 +1784,7 @@
     "h": 9,
     "w": 8,
     "x": 0,
-    "y": 82
+    "y": 84
    },
    "targets": [
     {
@@ -1839,7 +1839,7 @@
     "h": 9,
     "w": 8,
     "x": 8,
-    "y": 82
+    "y": 84
    },
    "targets": [
     {
@@ -1894,7 +1894,7 @@
     "h": 9,
     "w": 8,
     "x": 16,
-    "y": 82
+    "y": 84
    },
    "targets": [
     {
@@ -1949,7 +1949,7 @@
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 91
+    "y": 93
    },
    "targets": [
     {
@@ -2001,7 +2001,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 100
+    "y": 102
    }
   },
   {
@@ -2016,7 +2016,7 @@
     "h": 11,
     "w": 24,
     "x": 0,
-    "y": 101
+    "y": 103
    },
    "description": "Every process group holding GPU memory, Slurm or not (gpu_processes.py): workload is its Docker container, else its script or command. Only the ones running now: GPUs, Nodes, GPU util and memory now; GPU-hours adds up the GPUs it held each minute over the dashboard's time range, and GPU equivalent is that as GPUs held for the whole range (2 GPUs for half of it: 1.0).",
    "targets": [
@@ -2244,7 +2244,7 @@
     "h": 10,
     "w": 24,
     "x": 0,
-    "y": 112
+    "y": 114
    },
    "description": "Running Slurm jobs the job pusher's account sees (prometheus/slurm_exporter.py): what they were allocated and what they use. GPU memory from the processes on its GPUs; CPU % is busy cores over allocated CPUs; RAM requested is empty for jobs that requested none (the pusher doesn't report RAM in use).",
    "targets": [
@@ -2462,7 +2462,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 122
+    "y": 124
    },
    "description": "GPU-hours each user's processes held over the dashboard's time range (recording rule flywheel:user_gpus_in_use, every minute, since 2026-10-15); GPU-hours busy weights them by utilisation.",
    "targets": [
@@ -2543,7 +2543,7 @@
     "h": 9,
     "w": 6,
     "x": 12,
-    "y": 122
+    "y": 124
    },
    "targets": [
     {
@@ -2591,7 +2591,7 @@
     "h": 9,
     "w": 6,
     "x": 18,
-    "y": 122
+    "y": 124
    },
    "targets": [
     {
