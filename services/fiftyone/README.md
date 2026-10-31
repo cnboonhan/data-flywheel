@@ -19,7 +19,7 @@ FiftyOne App over MongoDB (`mongo` service), showing the `raw` bucket. The Gitea
 4. If the App or the sync misbehaves, read the App's log and list the datasets in the database:
    ```bash
    services/ctl.sh logs -f fiftyone
-   docker exec flywheel-mongo-1 mongosh --quiet fiftyone --eval 'db.datasets.find({},{name:1,_id:0})'
+   services/ctl.sh exec -T mongo mongosh --quiet fiftyone --eval 'db.datasets.find({},{name:1,_id:0})'
    ```
 
 ## Notes

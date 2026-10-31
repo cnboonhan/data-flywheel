@@ -6,9 +6,9 @@ Gitea Actions runner (`config.yaml`): labels `ubuntu-latest` and `python`; jobs 
    ```bash
    services/ctl.sh logs -f act_runner
    ```
-2. After editing `config.yaml` (labels, mounts, capacity), recreate the runner.
+2. After editing `config.yaml` (labels, mounts, capacity), recreate the runner: remove its container and let `up` create it again (`up --force-recreate act_runner` would recreate every service).
    ```bash
-   services/ctl.sh up --force-recreate act_runner
+   services/ctl.sh rm -sf act_runner && services/ctl.sh up
    ```
 
 **Notes**

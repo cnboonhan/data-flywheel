@@ -19,7 +19,7 @@ An autonomous coding agent on the stack's self-hosted LLM: OpenAI's [Codex CLI](
 | `CODEX_MODEL` | `kimi-k3` | any model the gateway serves (`curl $LLM_URL/models`) |
 | `LLM_URL` | the stack's gateway | the OpenAI-compatible endpoint (`/v1`) |
 | `FLYWHEEL_CA` | `~/.flywheel/ca.crt` | the stack's CA, as in the [quickstart](../../quickstart.md); fetched from the gateway on first use |
-| `AGENT_PROMPT`, `AGENT_TASK_FILE` | `TASK.md` | the task when no arguments are given |
+| `AGENT_PROMPT`, `AGENT_TASK_FILE` | none, `TASK.md` | the task when no arguments are given: the prompt, else that file in the folder |
 | `CODEX_AGENT_IMAGE` | `flywheel-codex-agent:0.162.1-noble` | the image; `docker rmi` it to rebuild |
 
 Set them in the environment or in `<folder>/.env`, which wins. Every variable in `<folder>/.env` also reaches the agent's environment.

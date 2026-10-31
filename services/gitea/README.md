@@ -6,7 +6,7 @@ Gitea hosts the pipelines and runs them with Gitea Actions. Every workflow lives
 |---|---|
 | [setup/](setup/README.md) | environments the Slurm jobs need (dispatched by `ctl.sh up`) |
 | [ingest/](ingest/README.md) | Upload and Sync: Hugging Face downloads, FiftyOne mirror of `raw`; Data Conversion: raw datasets into the training format (`processed/xpolicylab/`, [ingest/xpolicylab_adapter/](ingest/xpolicylab_adapter/README.md)) |
-| [serve/](serve/README.md) | MLflow registry → Triton, Dynamo (the workflows live with each service, in `gitea_ci/`) |
+| [serve/](serve/README.md) | spec repos `triton`, `dynamo` → Triton, Dynamo (the workflows live with each service, in `gitea_ci/`) |
 | [clean/](clean/README.md), [mix/](mix/README.md) | Data Cleaning, Mixing (none yet) |
 | `services/<service>/gitea_ci/` | one service's own workflows, e.g. [`dynamo/gitea_ci/`](../dynamo/gitea_ci/), [`fiftyone/gitea_ci/`](../fiftyone/gitea_ci/), [`triton/gitea_ci/`](../triton/gitea_ci/) |
 
@@ -45,5 +45,5 @@ git -c http.sslCAInfo=flywheel-ca.crt clone https://$SERVICE_HOST:$CADDY_PORT/gi
 - **Where it runs:** each job is a container on the services' network, with the buckets mounted read-only at `/buckets` and the S3 gateway at `S3_ENDPOINT_URL=http://versitygw:7070`. The runner is described in [act_runner/](../act_runner/README.md).
 - **Secrets:** `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `MLFLOW_TOKEN`, and `HF_TOKEN` and `RERUN_RAW_TOKEN` when they are set in `services/.env`. `ctl.sh up` keeps them in sync.
 - **Variables:** `RERUN_BASE`, `SERVICE_URL`, `MLFLOW_USERNAME`, `STATE_DIR`, `FLYWHEEL_ROOT`, `USER_LOCAL`, `RUN_UID`, `RUN_GID`.
-- **Helper scripts:** setup and adapter scripts are in the repo under `setup/` and `adapter/`.
+- **Helper scripts:** the setup installers are in the repo under `setup/`, the adapter scripts under `xpolicylab_adapter/<source>/`.
 - **Triggers:** use `workflow_dispatch` or `push`; a `schedule` fills the Actions list with runs, each titled with the last commit message whatever its workflow. Nothing can fire on new objects in a bucket yet (the gateway could post bucket events to a webhook).

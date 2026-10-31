@@ -1,11 +1,12 @@
 # data-flywheel
 
-Monorepo for training and evaluating action models (system 1, VLA policies) and agentic models (system 2). See `README.md` for the human-facing overview.
+Monorepo for training and evaluating action models (system 1, VLA policies). See `README.md` for the human-facing overview.
 
 ## Layout
 
 - Data and weights live in the S3 gateway (`services/`), not in the checkout. Gitea workflows fetch from Hugging Face: `services/gitea/ingest/download-datasets-hf.yml` into `raw/open_datasets/`, `download-models-hf.yml` into the MLflow model registry (self-contained workflows; each header lists the known repos).
 - `eval/system1/RoboDojo`: the VLA benchmark; XPolicyLab inside it trains and evaluates ACT/DP.
+- `services/`: the infra stack and the Slurm train/eval jobs (`services/slurm/`).
 - `services/triton/triton_endpoint.py`: the client for Triton models; each role's endpoint is a `<ROLE>_ENDPOINT` variable.
 - `eval/system1/RoboDojo` and `assets/bufo` are **upstream git submodules**.
 
@@ -14,7 +15,7 @@ Monorepo for training and evaluating action models (system 1, VLA policies) and 
 - **Never commit large files** (data, weights, assets, videos). To add a dataset or model, add it to the list in `services/gitea/ingest/download-datasets-hf.yml` or `download-models-hf.yml` and run that workflow. Don't download data unless asked.
 - **Prefer models with the fewest licence restrictions.** When choosing a model or weights, pick permissive ones (Apache-2.0, MIT, BSD, CC0/CC-BY) over research-only, non-commercial or custom-restricted licences, and say which licence a model has when proposing it. Use a restricted one only when nothing permissive does the job, and say so.
 - **Treat submodules as upstream code.** Don't commit inside them, because their remotes are third-party. Changes belong on a fork; ask first. data-flywheel only records each submodule's commit.
-- **Keep nested submodules pinned.** The RoboDojo installer moves XPolicyLab to its latest commit. After running them, run `git submodule update` inside it.
+- **Keep nested submodules pinned.** The RoboDojo installer moves XPolicyLab to its latest commit. After running it, run `git submodule update` inside it.
 - **Run one Isaac Sim instance at a time.** The GPU is an RTX 5090 Laptop with 24 GB.
 - **NVIDIA driver 580-open is held on purpose**, because Isaac Sim 5.1 crashes on 595. Don't change drivers or system packages without asking.
 - **Off-limits:** don't modify, run or copy from `~/workspaces/htx-robotics-release` or `~/workspaces/snippets`.
@@ -36,7 +37,6 @@ The host has no system `nvcc`, and `python3` on PATH is Homebrew's (no `yaml`). 
 # RoboDojo: install checker (inside the RoboDojo env), then policy wiring without the simulator
 cd eval/system1/RoboDojo && bash scripts/internal/verify_install.sh --policy-dir XPolicyLab/policy/demo_policy --policy-env demo-policy
 cd XPolicyLab/policy/demo_policy && EVAL_ENV_TYPE=debug bash eval.sh RoboDojo stack_bowls demo arx_x5 joint 0 0 0 demo-policy RoboDojo
-
 ```
 
 XPolicyLab's `eval.sh` arguments: `<bench> <task> <ckpt> <env_cfg_type> <action_type> <seed> <policy_gpu> <env_gpu> <policy_env> <sim_env>`.

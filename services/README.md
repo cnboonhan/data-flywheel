@@ -14,7 +14,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
 | Rerun: episode viewer | [rerun/](rerun/README.md) | `https://rerun.$SERVICE_HOST:$CADDY_PORT/` |
 | Browse Data: the buckets as folders, LeRobot dataset pages | [browse/](browse/README.md) | `/data` |
 | Triton: image models and robot policies from the MLflow registry (on `TRITON_NODE`) | [triton/](triton/README.md) | `https://triton.$SERVICE_HOST:$CADDY_PORT/` (no token) |
-| Dynamo + LLM gateway: the large language model (Kimi K3, on the two trays), chosen in the Gitea repo `dynamo` (`compose.yaml`) | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
+| Dynamo + LLM gateway: the large language models, chosen in the Gitea repo `dynamo` (`compose.yaml`) | [dynamo/](dynamo/README.md), [llm-gateway/](llm-gateway/README.md) | `https://llm.$SERVICE_HOST:$CADDY_PORT/v1/` (no token) |
 | Codex agent: an autonomous coding agent on the self-hosted LLM, working in a folder you mount (yolo mode, in a container) | [codex-agent/](codex-agent/README.md) | `services/codex-agent/run.sh <folder> [task]` |
 | Slurm jobs: train, evaluate | [slurm/](slurm/README.md) | `sbatch` by hand |
 
@@ -33,7 +33,7 @@ The **Infra** column of the [architecture diagram](../README.md#architecture): D
    services/ctl.sh ps
    services/ctl.sh logs -f caddy
    services/ctl.sh restart <service>          # after editing a bind-mounted config (Caddyfile, loki.yml)
-   services/ctl.sh up --build                 # after editing mlflow/, rerun/ or triton/Dockerfile
+   services/ctl.sh up --build                 # after editing the Dockerfile in mlflow/, fiftyone/ or rerun/ (rebuilds all three; Triton: triton/)
    services/ctl.sh up --force-recreate        # after git deleted and recreated files under services/
    services/ctl.sh up --setup                 # also rebuild the Slurm-side envs (Gitea setup-envs); up does it when needed
    services/ctl.sh down

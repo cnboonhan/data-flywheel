@@ -111,8 +111,6 @@ aws s3 cp ./file s3://raw/<dest>/file                            # one file
 ### MLflow: runs and models
 
 ```bash
-export MLFLOW_TRACKING_URI=https://$SERVICE_HOST:$CADDY_PORT/mlflow   # if section 1 isn't in your shell
-export MLFLOW_TRACKING_USERNAME=$FLYWHEEL_USER MLFLOW_TRACKING_PASSWORD=$FLYWHEEL_MLFLOW_TOKEN MLFLOW_TRACKING_SERVER_CERT_PATH=$FLYWHEEL_CA
 mlflow experiments search                                        # experiments and their IDs
 mlflow runs list --experiment-id <id>                            # runs of one experiment
 uv run --with mlflow-skinny python -c 'import mlflow; [print(m.name, dict(m.aliases)) for m in mlflow.MlflowClient().search_registered_models()]'   # the registry
@@ -168,14 +166,14 @@ triton repository/index -X POST                                   # models and t
 triton models/<model>                                             # its inputs and outputs
 ```
 
-Calling a model from Python: [triton/](services/triton/README.md#call-a-model).
+Calling a model from Python: [triton/](services/triton/README.md#example-usage).
 
 ### LLMs: the gateway
 
 ```bash
-curl -s --cacert $FLYWHEEL_CA $LLM_URL/models
+curl -s --cacert $FLYWHEEL_CA $LLM_URL/models                     # the models served now; their ids go in "model"
 curl -s --cacert $FLYWHEEL_CA $LLM_URL/chat/completions -H 'Content-Type: application/json' \
-  -d '{"model": "glm-5.3", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "<model>", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-The first lists the models served now (GLM-5.3 and the Qwen LLMs and VLMs). From Python, with images, and for mission-critical requests: [dynamo/](services/dynamo/README.md#use).
+What is served, and calls from Python, with images or marked mission-critical: [dynamo/](services/dynamo/README.md#use).

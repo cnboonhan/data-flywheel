@@ -8,7 +8,7 @@ Builds the environments the Slurm jobs run in. Not a pipeline stage: `ctl.sh up`
 | `install-robodojo.sh` | RoboDojo eval env `$ENVS_DIR/robodojo` (Isaac Sim 5.1, Isaac Lab, curobo, XPolicyLab, ffmpeg, the `conda-shim/` here), sim assets into `$ROBODOJO_DIR/Assets`, RoboDojo data (sim 1.85 TB, real 273 GB) into `raw/open_datasets/robodojo{,_real}/` |
 | `install-policy-env.sh <ACT\|DP>` | policy env `$ENVS_DIR/<policy>` |
 
-1. To rebuild every env, run setup (safe to rerun; the data download resumes where it stopped).
+1. To rebuild every env, run setup (safe to rerun; the data download resumes where it stopped). Expect up to a day on a cold start, most of it the RoboDojo data.
    ```bash
    services/ctl.sh up --setup
    ```

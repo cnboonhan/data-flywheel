@@ -43,11 +43,7 @@ aws s3 ls s3://raw/                                                             
 
 An SSO page fetched without a browser answers `302` to the sign-in: use the browser for those, and tokens or keys for the APIs.
 
-**Notes** (for operators)
-- `/fiftyone`, `/rerun` and `/s3` on `$HOST` redirect to their subdomains; `rerun.…/browse` and `/dataset` redirect to `/data`.
-- The landing page is a template (`site/index.html`): its model tables read `/status/models` (the LLM gateway's `/v1/models`) and `/status/load` (one fixed Prometheus query), and nothing else of the gateway or Prometheus is reachable without login. Hovering pops up the architecture diagram (`assets/`, at `/assets/`) or a role page (`assets/devroles/`, included by the template; `/assets/devroles/` itself answers 404).
-- Rerun's viewer fetches files without a login cookie, so its links carry the path token `RERUN_RAW_TOKEN` instead (`/raw/<token>/`, `/processed/<token>/` for bags; `/lerobot/<token>/`, `/lerobot-processed/<token>/` for episodes): anyone with such a link can read that file.
-- Triton's admin calls (load, unload, settings) are refused here, since `sync-triton` manages its models; Caddy adds Triton's key on the way through. The LLM gateway runs on `DYNAMO_HEAD:8199`.
+## Operate
 
 Caddy's request metrics (per site: rate, latency, requests in flight; plus its CPU) are on `:9180` inside the compose network for [Prometheus](../prometheus/README.md); query them in Grafana's Explore (e.g. `rate(caddy_http_requests_total[5m])`). It is unlikely to be the bottleneck, but if requests in flight keep climbing while the backends' own latency stays flat, or its CPU stays near one core, it is.
 
@@ -60,6 +56,10 @@ Caddy's request metrics (per site: rate, latency, requests in flight; plus its C
 2. To trust the CA on a client, follow [Access](../README.md#access).
 
 **Notes**
+- `/fiftyone`, `/rerun` and `/s3` on `$HOST` redirect to their subdomains; `rerun.…/browse` and `/dataset` redirect to `/data`.
+- The landing page is a template (`site/index.html`): its model tables read `/status/models` (the LLM gateway's `/v1/models`) and `/status/load` (one fixed Prometheus query), and nothing else of the gateway or Prometheus is reachable without login. Hovering pops up the architecture diagram (`assets/`, at `/assets/`) or a role page (`assets/devroles/`, included by the template; `/assets/devroles/` itself answers 404).
+- Rerun's viewer fetches files without a login cookie, so its links carry the path token `RERUN_RAW_TOKEN` instead (`/raw/<token>/`, `/processed/<token>/` for bags; `/lerobot/<token>/`, `/lerobot-processed/<token>/` for episodes): anyone with such a link can read that file.
+- Triton's admin calls (load, unload, settings) are refused here, since `sync-triton` manages its models; Caddy adds Triton's key on the way through. The LLM gateway runs on `DYNAMO_HEAD:8199`.
 - To put a new app behind the login, import the `(sso)` snippet in its route, as `/loki`, `/data`, FiftyOne, Rerun and the S3 UI do (forward auth to oauth2-proxy). `POST /loki/api/v1/push` is the exception: it takes the `LOKI_PUSH_TOKEN` bearer token instead ([loki/](../loki/README.md)).
 - Set `$SERVICE_HOST` to a name every client resolves to the node; `flywheel.<ip>.sslip.io` works without DNS.
 - Find the CA files in `$STATE_DIR/caddy/data/caddy/pki/authorities/local/`. Gitea and oauth2-proxy mount `root.crt`, which is why `ctl.sh up` starts Caddy first on a clean state; keep that order if you change the startup.

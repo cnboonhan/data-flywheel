@@ -12,10 +12,11 @@ slurm/
 
 ## Submit jobs
 
-1. Load the credentials and pick a partition (the jobs name none and the cluster has no default).
+1. Load the credentials ([services/](../README.md#state)) and pick a partition (the jobs name none and the cluster has no default). Logs go to the current directory.
    ```bash
-   set -a; . /tier1/mistral/flywheel/flywheel.env; set +a; export SBATCH_PARTITION=<partition>
-   cd /tier1/mistral/flywheel/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
+   STATE_DIR=<the stack's STATE_DIR, from services/.env>
+   set -a; . $STATE_DIR/flywheel.env; set +a; export SBATCH_PARTITION=<partition>
+   cd $STATE_DIR/slurm-logs; S=$FLYWHEEL_ROOT/services/slurm
    ```
 2. Train.
    ```bash
@@ -81,10 +82,10 @@ Every run records `model`, `embodiment`, `datasets`, `episodes`, `data_fingerpri
 - **Envs** (RoboDojo eval env, ACT/DP policy envs): built by the Gitea workflow `setup-envs` ([gitea/setup/](../gitea/setup/README.md)).
 - **Data layout:** the checkout holds code only; `lib/xpolicylab.sh` links `XPolicyLab/policy/<P>/{processed_data,checkpoints}`, `policy/DP/data` → `$DATA_ROOT/<P>/`, RoboDojo `eval_result` → `$ROBODOJO_DIR/eval_result`, `data` → `$BUCKETS_DIR/processed/xpolicylab`, `Assets` → `$ROBODOJO_DIR/Assets`.
 
-**Evaluation on the GB300 nodes.** `evaluate.sbatch` already handles the following (except the GPU count, which is your choice); keep it that way when you change it.
+**Evaluation on GB300 (aarch64 Blackwell) nodes.** `evaluate.sbatch` already handles the following (except the GPU count, which is your choice); keep it that way when you change it.
 
 - **Run the simulation on the GPU device.** RoboDojo defaults Isaac Lab's simulation device to CPU, and on these nodes Isaac Sim 5.1 then delivers no camera frames, so RoboDojo's capture loop spins forever. Use an `eval_env_cfg` ending in `_gpu` (`arx_x5_gpu` for `arx_x5`): the job derives it from the base config with `device: cuda:0` and aliases the base's evaluation layouts and checkpoints. Expect scores to differ slightly from the official CPU-physics numbers.
-- **Keep C01 and C02 excluded.** Their Kit viewport doesn't render, and Isaac Lab's viewport camera then fails with "Accessed invalid null prim".
+- **Keep the nodes in `evaluate.sbatch`'s `--exclude` excluded.** Their Kit viewport doesn't render, and Isaac Lab's viewport camera then fails with "Accessed invalid null prim".
 - **To give the policy server its own GPU,** submit with `sbatch --gres=gpu:2 ...`; with the default single GPU, the simulator and the policy server share it.
 - **Keep the RoboDojo shim on `PYTHONPATH`.** RoboDojo assumes CPU tensors in places (`np.asarray` on a tensor, `.numpy()`); `lib/robodojo-shim/sitecustomize.py` converts CUDA tensors and makes the viewport camera placement best-effort. Drop it once a RoboDojo fork has a `device` setting.
 - **`ffmpeg` comes from the env.** The nodes have none; `install-robodojo.sh` puts `imageio-ffmpeg`'s static build in `$ROBODOJO_DIR/bin`, which the job puts on `PATH`. The same installer handles the aarch64 Isaac Sim 5.1 and torch cu128 wheels, the `libgomp` and NVRTC 12.9 preloads (torch's 12.8 doesn't know sm_103), user-space GL and curobo from source. The policy envs use the cu128 index because the pinned `torch==2.4.1` has no CUDA build for aarch64 Blackwell.

@@ -1,16 +1,10 @@
 # eval
 
-The evaluation benchmark, a git submodule. Fetch it:
+The evaluation benchmark, RoboDojo, a git submodule for action models (system 1): [`system1/`](system1/README.md). Fetch it:
 
 ```bash
 git submodule update --init --recursive eval/system1/RoboDojo
 ```
-
-| Benchmark | Path | Simulator | Env |
-|---|---|---|---|
-| [RoboDojo](https://github.com/robodojo-benchmark/RoboDojo) | [`system1/RoboDojo`](system1/README.md) | Isaac Sim 5.1 | conda `RoboDojo` |
-
-- [`system1/`](system1/README.md): action models (VLA policies)
 
 **Notes**
 - **Driver:** NVIDIA 580-open is required, because Isaac Sim 5.1 crashes on 595. It's held with `apt-mark hold`.

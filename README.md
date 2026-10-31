@@ -42,7 +42,7 @@ Edit the [source](assets/architecture.html); `assets/architecture.svg` and its r
 
 ## The flywheel, end to end
 
-The diagram reads left to right: tooling gathers data, the infra stores it raw, it is processed into training sets, trained on and evaluated, and evaluation feeds back into the tooling and the processing. Below, each box of the diagram and what implements it here. Gitea Actions jobs on the service node do the data work; training and evaluation are Slurm GPU jobs; all state is on `/tier1`, so containers, jobs and your shell see the same bytes.
+The diagram reads left to right: tooling gathers data, the infra stores it raw, it is processed into training sets, trained on and evaluated, and evaluation feeds back into the tooling and the processing. Below, each box of the diagram and what implements it here. Gitea Actions jobs on the service node do the data work; training and evaluation are Slurm GPU jobs; all state is under `$STATE_DIR` on the shared file system ([State](services/README.md#state)), so containers, jobs and your shell see the same bytes.
 
 ### Tooling
 
@@ -50,7 +50,7 @@ The diagram reads left to right: tooling gathers data, the infra stores it raw, 
 |---|---|
 | Off-Robot Data Collection | not built yet |
 | Robot Teleoperation | Galaxea R1 data (public so far) |
-| Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (HiFi-UMI-2K, Galaxea, RoboDojo, EgoPro): [ingest/](services/gitea/ingest/README.md) |
+| Public Datasets | `download-datasets-hf` into `s3://raw/open_datasets/` (e.g. HiFi-UMI-2K, Galaxea, EgoPro): [ingest/](services/gitea/ingest/README.md); RoboDojo's data by `setup-envs`: [setup/](services/gitea/setup/README.md) |
 | Virtual Scenes | not built yet |
 | Physical Scenes | not built yet |
 | Inference Compute | Triton on the service node's GPUs: [triton/](services/triton/README.md) |
